@@ -1,0 +1,4 @@
+.venv/
+__pycache__
+recon_cache/
+metric_3d/weight/*.pth

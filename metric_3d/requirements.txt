@@ -1,0 +1,24 @@
+torch == 2.0.1
+torchvision == 0.15.2
+xformers == 0.0.21
+opencv-python
+numpy == 1.23.1
+Pillow
+DateTime
+matplotlib
+plyfile
+HTML4Vision
+timm
+tensorboardX
+imgaug
+iopath
+imagecorruptions
+mmcv
+fire
+datetime
+gradio==4.37.2
+gradio-imageslider==0.0.16
+cupy-cuda12x
+plotly
+trimesh
+exifread
