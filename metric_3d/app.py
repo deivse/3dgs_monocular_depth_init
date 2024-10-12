@@ -52,7 +52,7 @@ model_small, _,  _, _ = load_ckpt('./weight/metric_depth_vit_small_800k.pth', mo
 model_small.eval()
 
 device = "cuda"
-# model_large.to(device)
+model_large.to(device)
 model_small.to(device)
 
 def predict_depth_normal(img, model_selection="vit-small", fx=1000.0, fy=1000.0, state_cache={}):

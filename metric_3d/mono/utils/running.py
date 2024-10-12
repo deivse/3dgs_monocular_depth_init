@@ -16,8 +16,9 @@ def load_ckpt(load_path, model, optimizer=None, scheduler=None, strict_match=Tru
     if os.path.isfile(load_path):
         if main_process():
             logger.info(f"Loading weight '{load_path}'")
-        checkpoint = torch.load(load_path, map_location="cpu")
-        ckpt_state_dict  = checkpoint['model_state_dict']
+        checkpoint = torch.load(
+            load_path, map_location="cpu", weights_only=True)
+        ckpt_state_dict = checkpoint['model_state_dict']
         try:
             model.module.load_state_dict(ckpt_state_dict, strict=strict_match)
         except:
@@ -57,18 +58,18 @@ def save_ckpt(cfg, model, optimizer, scheduler, curr_iter=0, curr_epoch=None, lo
     ckpt = dict(
         model_state_dict=model.module.state_dict(),
         optimizer=optimizer.state_dict(),
-        max_iter=cfg.runner.max_iters if 'max_iters' in cfg.runner \
-            else cfg.runner.max_epochs,
+        max_iter=cfg.runner.max_iters if 'max_iters' in cfg.runner
+        else cfg.runner.max_epochs,
         scheduler=scheduler.state_dict(),
     )
 
     if loss_scaler is not None:
         ckpt.update(dict(scaler=loss_scaler.state_dict()))
-    
+
     ckpt_dir = os.path.join(cfg.work_dir, 'ckpt')
     os.makedirs(ckpt_dir, exist_ok=True)
 
-    save_name = os.path.join(ckpt_dir, 'step%08d.pth' %curr_iter)
+    save_name = os.path.join(ckpt_dir, 'step%08d.pth' % curr_iter)
     saved_ckpts = glob.glob(ckpt_dir + '/step*.pth')
     torch.save(ckpt, save_name)
 
@@ -76,5 +77,5 @@ def save_ckpt(cfg, model, optimizer, scheduler, curr_iter=0, curr_epoch=None, lo
     if len(saved_ckpts) > 20:
         saved_ckpts.sort()
         os.remove(saved_ckpts.pop(0))
-    
+
     logger.info(f'Save model: {save_name}')
