@@ -803,7 +803,6 @@ class Runner:
         cfg = self.cfg
         device = self.device
         world_rank = self.world_rank
-        world_size = self.world_size
 
         valloader = torch.utils.data.DataLoader(
             self.valset, batch_size=1, shuffle=False, num_workers=1
@@ -1058,7 +1057,7 @@ if __name__ == "__main__":
         try:
             import plas
             import torchpq
-        except:
+        except ImportError:
             raise ImportError(
                 "To use PNG compression, you need to install "
                 "torchpq (instruction at https://github.com/DeMoriarty/TorchPQ?tab=readme-ov-file#install) "
