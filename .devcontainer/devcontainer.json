@@ -9,8 +9,8 @@
 		"context": ".."
 	},
 	"runArgs": [
-		"--gpus",
-		"all"
+		"--gpus=all",
+		"--ipc=host"
 	],
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
