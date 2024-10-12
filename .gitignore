@@ -2,3 +2,4 @@
 __pycache__
 recon_cache/
 metric_3d/weight/*.pth
+gsplat_examples/datasets/data

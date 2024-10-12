@@ -1,7 +1,9 @@
 #!/bin/sh
 
-git submodule init
-GIT_LFS_SKIP_SMUDGE=1 git submodule update
+echo ========================================
+echo Installing pip dependencies...
+echo ========================================
 
-poetry config virtualenvs.in-project true
-poetry install
+conda run --no-capture-output -n gs_init_compare pip install -r ./requirements.txt
+
+echo == Welcome... ==

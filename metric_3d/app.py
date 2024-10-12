@@ -41,10 +41,10 @@ import plotly.graph_objects as go
 #torch.hub.download_url_to_file('https://images.unsplash.com/photo-1437622368342-7a3d73a34c8f', 'turtle.jpg')
 #torch.hub.download_url_to_file('https://images.unsplash.com/photo-1519066629447-267fffa62d4b', 'lions.jpg')
 
-# cfg_large = Config.fromfile('./mono/configs/HourglassDecoder/vit.raft5.large.py')
-# model_large = get_configured_monodepth_model(cfg_large, )
-# model_large, _,  _, _ = load_ckpt('./weight/metric_depth_vit_large_800k.pth', model_large, strict_match=False)
-# model_large.eval()
+cfg_large = Config.fromfile('./mono/configs/HourglassDecoder/vit.raft5.large.py')
+model_large = get_configured_monodepth_model(cfg_large, )
+model_large, _,  _, _ = load_ckpt('./weight/metric_depth_vit_large_800k.pth', model_large, strict_match=False)
+model_large.eval()
 
 cfg_small = Config.fromfile('./mono/configs/HourglassDecoder/vit.raft5.small.py')
 model_small = get_configured_monodepth_model(cfg_small, )
@@ -60,8 +60,8 @@ def predict_depth_normal(img, model_selection="vit-small", fx=1000.0, fy=1000.0,
         model = model_small
         cfg = cfg_small
     elif model_selection == "vit-large":
-        # model = model_large
-        # cfg = cfg_large
+        model = model_large
+        cfg = cfg_large
         pass
     else:
         return None, None, None, None, state_cache, "Not implemented model."

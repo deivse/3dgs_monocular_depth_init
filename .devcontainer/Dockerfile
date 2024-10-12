@@ -1,18 +1,30 @@
-from mcr.microsoft.com/devcontainers/python:1-3.10-bullseye
+FROM mcr.microsoft.com/devcontainers/python:1-3.10-bullseye
 
-RUN sudo apt update
-RUN pipx install poetry
+ARG CUDA_VERSION=12.1
 
-RUN wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-wsl-ubuntu.pin
-RUN sudo mv cuda-wsl-ubuntu.pin /etc/apt/preferences.d/cuda-repository-pin-600
-RUN wget https://developer.download.nvidia.com/compute/cuda/12.6.2/local_installers/cuda-repo-wsl-ubuntu-12-6-local_12.6.2-1_amd64.deb
-RUN sudo dpkg -i cuda-repo-wsl-ubuntu-12-6-local_12.6.2-1_amd64.deb
-RUN sudo cp /var/cuda-repo-wsl-ubuntu-12-6-local/cuda-*-keyring.gpg /usr/share/keyrings/
+RUN sudo apt-get update && sudo apt-get -y install ninja-build
+
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.0-1_all.deb
+RUN sudo dpkg -i cuda-keyring_1.0-1_all.deb
 RUN sudo apt-get update
-RUN sudo apt-get -y install cuda-toolkit-12-6
+RUN sudo apt-get -y install cuda-$CUDA_VERSION
+RUN rm cuda-keyring_*.deb
 
-RUN echo "export VIRTUALENV_SYSTEM_SITE_PACKAGES=true" >> ~/.bashrc
-RUN echo "export VIRTUALENV_SYSTEM_SITE_PACKAGES=true" >> ~/.zshrc
+RUN ls /usr/local/cuda-$CUDA_VERSION/
+ENV CUDA_HOME=/usr/local/cuda-$CUDA_VERSION
 
-RUN sudo apt-get install -y python3-pip
-RUN /usr/bin/python3 -m pip install torch --index-url https://download.pytorch.org/whl/cu121
+SHELL ["/bin/bash", "--login", "-c"]
+
+RUN curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+RUN bash Miniforge3-$(uname)-$(uname -m).sh -b -f
+RUN rm Miniforge3-$(uname)-$(uname -m).sh
+
+ENV MAMBA_HOME="/root/miniforge3"
+ENV CONDA_HOME=$MAMBA_HOME
+RUN "$MAMBA_HOME/condabin/conda" init bash zsh
+
+# Install dependencies
+COPY ./environment.yml /tmp/environment.yml
+COPY requirements.txt /tmp/requirements.txt
+RUN conda update -n base -c conda-forge conda
+RUN conda env create --file /tmp/environment.yml
