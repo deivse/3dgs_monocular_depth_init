@@ -11,12 +11,12 @@ import cv2
 import gradio as gr
 import numpy as np
 import plotly.graph_objects as go
-from mono.model.monodepth_model import get_configured_monodepth_model
-from mono.utils.do_test import get_prediction, transform_test_data_scalecano
-from mono.utils.running import load_ckpt
-from mono.utils.transform import gray_to_colormap
-from mono.utils.unproj_pcd import reconstruct_pcd, save_point_cloud
-from mono.utils.visualization import vis_surface_normal
+from metric3d.mono.model.monodepth_model import get_configured_monodepth_model
+from metric3d.mono.utils.do_test import get_prediction, transform_test_data_scalecano
+from metric3d.mono.utils.running import load_ckpt
+from metric3d.mono.utils.transform import gray_to_colormap
+from metric3d.mono.utils.unproj_pcd import reconstruct_pcd, save_point_cloud
+from metric3d.mono.utils.visualization import vis_surface_normal
 from PIL import ExifTags, Image
 
 CODE_SPACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
