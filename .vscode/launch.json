@@ -5,11 +5,47 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "gsplat trainer metric3d vit large",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/trainer.py",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "default",
+                "--init-type=metric3d",
+                "--metric3d-config=${workspaceFolder}/src/metric3d/mono/configs/HourglassDecoder/vit.raft5.large.py",
+                "--metric3d-weights=${workspaceFolder}/src/metric3d/weight/metric_depth_vit_large_800k.pth",
+            ],
+            "cwd": "${workspaceFolder}/src/",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "gsplat trainer metric3d vit small",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/trainer.py",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "default",
+                "--init-type=metric3d",
+                "--metric3d-config=${workspaceFolder}/src/metric3d/mono/configs/HourglassDecoder/vit.raft5.small.py",
+                "--metric3d-weights=${workspaceFolder}/src/metric3d/weight/metric_depth_vit_small_800k.pth",
+            ],
+            "cwd": "${workspaceFolder}/src/",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "metric3d interactive",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/metric_3d/app.py",
-            "cwd": "${workspaceFolder}/metric_3d",
+            "program": "${workspaceFolder}/src/metric_3d/app.py",
+            "cwd": "${workspaceFolder}/src/metric_3d",
             "console": "integratedTerminal"
         },
     ]

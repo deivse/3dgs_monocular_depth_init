@@ -2,6 +2,9 @@
     "cSpell.words": [
         "colmap",
         "imageio",
+        "mmcv",
+        "mmengine",
+        "monodepth",
         "nerfview",
         "torchmetrics",
         "tqdm",
