@@ -7,8 +7,6 @@ import numpy as np
 from datasets.colmap import Parser
 from scipy.ndimage import gaussian_filter
 
-matplotlib.use('Qt5Agg')
-
 with open("rick.pkl", "rb") as f:
     inputs = pickle.load(f)
 
@@ -21,29 +19,7 @@ parser: Parser = inputs["parser"]
 
 
 
-def plot3d(xyz, color="b", ax=None):
-    if ax is None:
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection="3d")
 
-    coords = xyz.reshape(-1, 3)
-
-    ax.scatter(
-        coords[:, 0].flatten(),
-        coords[:, 1].flatten(),
-        coords[:, 2].flatten(),
-        s=1,
-        c=color,
-    )
-
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_zlabel("Z")
-
-    ax.set_box_aspect([1, 1, 1])  # Aspect ratio is 1:1:1
-    ax.set_xlim([-2, 2])
-    ax.set_ylim([-2, 2])
-    ax.set_zlim([-2, 2])
 
 
 ####

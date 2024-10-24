@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 import pickle
+from typing import List
 import imageio
+from matplotlib import pyplot as plt
 import numpy as np
 import torch
 import cv2
@@ -74,58 +76,111 @@ class Metric3dModel:
         return pred_depth, pred_normal
 
 
+def _plot3d(xyz, color="b", ax=None):
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection="3d")
+
+    coords = xyz.reshape(-1, 3)
+
+    ax.scatter(
+        coords[:, 0].flatten(),
+        coords[:, 1].flatten(),
+        coords[:, 2].flatten(),
+        s=1,
+        c=color,
+    )
+
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+
+    ax.set_box_aspect([1, 1, 1])  # Aspect ratio is 1:1:1
+    ax.set_xlim([-5, 5])
+    ax.set_ylim([-5, 5])
+    ax.set_zlim([-5, 5])
+
+
 def get_pts_from_depth(
     depth: np.ndarray,
     camera_id: int,
     image_name: str,
     parser: Parser,
 ):
-    # Save function inputs as pickle
-    # with open("rick.pkl", "wb") as f:
-    #     pickle.dump(
-    #         {
-    #             "depth": depth,
-    #             "camera_id": camera_id,
-    #             "image_name": image_name,
-    #             "parser": parser,
-    #         },
-    #         f,
-    #     )
-
     cam2world = parser.camtoworlds[camera_id]
     K = parser.Ks_dict[camera_id]
     imsize = parser.imsize_dict[camera_id]
 
     sfm_points = parser.points[parser.point_indices[image_name]]
-    world2cam = np.linalg.inv(cam2world)
-    P = K @ world2cam[:3]
 
-    sfm_points_camera = P @ np.vstack([sfm_points.T, np.ones(sfm_points.shape[0])])
-    sfm_points_camera = sfm_points_camera[:2] / sfm_points_camera[2]
-    valid_sfm_pt_indices = np.logical_and(
-        np.logical_and(sfm_points_camera[0] >= 0, sfm_points_camera[0] < imsize[0]),
-        np.logical_and(sfm_points_camera[1] >= 0, sfm_points_camera[1] < imsize[1]),
-    )
-    valid_sfm_pt_indices = np.logical_and(valid_sfm_pt_indices, sfm_points[:, 2] > 0)
-    sfm_points_camera = sfm_points_camera[:, valid_sfm_pt_indices]
+    def get_depth_scalar():
+        R = cam2world[:3, :3].T
+        C = -cam2world[:3, :3] @ cam2world[:3, 3]
 
-    depth_ratios = (
-        sfm_points[valid_sfm_pt_indices, 2]
-        / depth[sfm_points_camera[1].astype(int), sfm_points_camera[0].astype(int)]
-    )
-    depth_scalar = np.mean(depth_ratios)
-    print(f"{depth_scalar=}, {np.std(depth_ratios)=}")
+        P = K @ R @ np.hstack([np.eye(3), -C[:, None]])
 
-    camera_grid = np.dstack(
-        [np.mgrid[0 : imsize[1], 0 : imsize[0]].T, depth.T * depth_scalar]
-    )
-    xyz = (np.linalg.inv(K) @ camera_grid.reshape(-1, 3).T).T
-    xyz = xyz.reshape(imsize[0], imsize[1], 3)
+        sfm_points_camera = P @ np.vstack([sfm_points.T, np.ones(sfm_points.shape[0])])
+        sfm_points_camera_homo = sfm_points_camera
+        sfm_points_camera = sfm_points_camera[:2] / sfm_points_camera[2]
 
-    torch.nn.functional.grid_sample(
-        torch.tensor(xyz).permute(2, 0, 1).unsqueeze(0).float(),
-        torch.tensor(sfm_points).unsqueeze(0).float(),
+        valid_sfm_pt_indices = np.logical_and(
+            np.logical_and(sfm_points_camera[0] >= 0, sfm_points_camera[0] < imsize[0]),
+            np.logical_and(sfm_points_camera[1] >= 0, sfm_points_camera[1] < imsize[1]),
+        )
+        valid_sfm_pt_indices = np.logical_and(
+            valid_sfm_pt_indices, sfm_points[:, 2] > 0
+        )
+
+        if np.sum(valid_sfm_pt_indices) < 10:
+            return None
+
+        # TODO: beneficial?
+        # sfm_point_err = parser.points_err[parser.point_indices[image_name]]
+        # valid_sfm_pt_indices = np.logical_and(
+        #     valid_sfm_pt_indices, sfm_point_err < 1
+        # )
+
+        sfm_points_camera = sfm_points_camera[:, valid_sfm_pt_indices]
+        depth_ratios = sfm_points_camera_homo[2, valid_sfm_pt_indices] / (
+            1
+            + depth[sfm_points_camera[1].astype(int), sfm_points_camera[0].astype(int)]
+        )
+
+        depth_scalar = np.mean(depth_ratios)
+        # print(f"{depth_scalar=}, {np.std(depth_ratios)=}")
+        return depth_scalar
+
+    def transform_camera_to_world_space(camera_homo):
+        dense_world = np.linalg.inv(K) @ camera_homo.reshape((-1, 3)).T
+        dense_world = (
+            cam2world @ np.vstack([dense_world, np.ones(dense_world.shape[1])])
+        )[:3].T
+        # TODO: some scale issue??? parser.scene_scale
+        return dense_world.reshape((imsize[0], imsize[1], 3))
+
+    depth_scalar = get_depth_scalar()
+    if depth_scalar is None:
+        return None
+
+    camera_grid_homo = np.dstack(
+        [np.mgrid[0 : imsize[0], 0 : imsize[1]].T, depth_scalar * (1 + depth)]
     )
+
+    camera_grid_homo[:, :, 0] = camera_grid_homo[:, :, 0] * camera_grid_homo[:, :, 2]
+    camera_grid_homo[:, :, 1] = camera_grid_homo[:, :, 1] * camera_grid_homo[:, :, 2]
+
+    pts = transform_camera_to_world_space(camera_grid_homo)
+    camera_plane_xyz = transform_camera_to_world_space(
+        np.dstack([np.mgrid[0 : imsize[0], 0 : imsize[1]].T, np.ones(depth.shape)]),
+    )[::20, ::20, :]
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection="3d")
+    # _plot3d(parser.points[::10,], "y", ax)
+    _plot3d(sfm_points, "r", ax)
+    _plot3d(pts.reshape(-1, 3)[::30, :], "g", ax)
+    _plot3d(camera_plane_xyz, "b", ax)
+    plt.show()
 
 
 def get_init_points_from_metric3d_depth(
@@ -133,15 +188,14 @@ def get_init_points_from_metric3d_depth(
 ):
     m3d_model = Metric3dModel.load(config, device)
 
-    points: torch.Tensor
-    rgbs: torch.Tensor
+    points_list: List[torch.Tensor] = []
+    rgbs_list: List[torch.Tensor] = []
 
-    points_list = []
-    rgbs_list = []
+    downsample_factor = 100
 
     for i, image_info in enumerate(
         tqdm(
-            zip(parser.image_paths, parser.image_names),
+            list(zip(parser.image_paths, parser.image_names)),
             desc="Getting depths with Metric3D",
         )
     ):
@@ -153,9 +207,12 @@ def get_init_points_from_metric3d_depth(
         fy = K[1, 1]
         depth, normal = m3d_model.get_depth(image, fx, fy)
         points = get_pts_from_depth(depth, camera_id, image_name, parser)
+        if points is None:
+            continue
 
-    return torch.tensor(
-        [[0, 0, 0], [1, 1, 1], [0, 1, 1], [0, 2, 2], [0, 3, 1]]
-    ).float(), torch.tensor(
-        [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 1], [1, 1, 0]]
-    ).float()
+        points = torch.from_numpy(points.reshape([-1, 3])[::downsample_factor, :])
+        rgbs = torch.from_numpy(image.reshape([-1, 3])[::downsample_factor, :])
+        points_list.append(points)
+        rgbs_list.append(rgbs.float() / 255.0)
+
+    return torch.cat(points_list, dim=0).float(), torch.cat(rgbs_list, dim=0).float()

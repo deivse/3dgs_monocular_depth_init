@@ -1,7 +1,10 @@
 {
     "cSpell.words": [
         "colmap",
+        "downsample",
+        "dstack",
         "imageio",
+        "mgrid",
         "mmcv",
         "mmengine",
         "monodepth",
