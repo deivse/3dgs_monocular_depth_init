@@ -35,7 +35,7 @@
                 "--init-type=metric3d",
                 "--metric3d-config=${workspaceFolder}/src/metric3d/mono/configs/HourglassDecoder/vit.raft5.small.py",
                 "--metric3d-weights=${workspaceFolder}/src/metric3d/weight/metric_depth_vit_small_800k.pth",
-                "--no-normalize-world-space"
+                // "--no-normalize-world-space"
             ],
             "cwd": "${workspaceFolder}/src/",
             "console": "integratedTerminal",

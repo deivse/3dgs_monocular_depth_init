@@ -103,11 +103,13 @@ def _plot3d(xyz, color="b", ax=None):
 
 def get_pts_from_depth(
     depth: np.ndarray,
-    camera_id: int,
     image_name: str,
+    image_idx: int,
     parser: Parser,
+    downsample_factor=10,
 ):
-    cam2world = parser.camtoworlds[camera_id]
+    cam2world = parser.camtoworlds[image_idx]
+    camera_id = parser.camera_ids[image_idx]
     K = parser.Ks_dict[camera_id]
     imsize = parser.imsize_dict[camera_id]
     w2c = np.linalg.inv(cam2world)
@@ -124,8 +126,12 @@ def get_pts_from_depth(
         sfm_points_camera = sfm_points_camera_homo[:2] / sfm_points_camera_homo[2]
 
         valid_sfm_pt_indices = np.logical_and(
-            np.logical_and(sfm_points_camera[0] >= 0, sfm_points_camera[0] < imsize[0]),
-            np.logical_and(sfm_points_camera[1] >= 0, sfm_points_camera[1] < imsize[1]),
+            np.logical_and(
+                sfm_points_camera[0] >= 0, sfm_points_camera[0] <= imsize[0]
+            ),
+            np.logical_and(
+                sfm_points_camera[1] >= 0, sfm_points_camera[1] <= imsize[1]
+            ),
         )
 
         if np.sum(valid_sfm_pt_indices) < 10:
@@ -138,12 +144,12 @@ def get_pts_from_depth(
         # )
 
         sfm_points_camera = sfm_points_camera[:, valid_sfm_pt_indices]
-        depth_ratios = sfm_points_camera_homo[2, valid_sfm_pt_indices] / (
-            1
-            + depth[sfm_points_camera[1].astype(int), sfm_points_camera[0].astype(int)]
+        depth_ratios = (
+            sfm_points_camera_homo[2, valid_sfm_pt_indices]
+            / depth[sfm_points_camera[1].astype(int), sfm_points_camera[0].astype(int)]
         )
 
-        depth_scalar = np.mean(depth_ratios)
+        depth_scalar = np.median(depth_ratios)
         # print(f"{depth_scalar=}, {np.std(depth_ratios)=}")
         return depth_scalar, sfm_points_camera_homo
 
@@ -152,46 +158,56 @@ def get_pts_from_depth(
         dense_world = (
             cam2world @ np.vstack([dense_world, np.ones(dense_world.shape[1])])
         )[:3].T
-        return dense_world.reshape((imsize[1], imsize[0], 3))
+        return dense_world
 
     depth_scalar, sfm_points_camera_homo = get_depth_scalar()
+
     if depth_scalar is None:
         return None
 
-    camera_grid_homo = np.dstack(
-        [np.mgrid[0 : imsize[0], 0 : imsize[1]].T, depth_scalar * (1 + depth)]
-    )
+    pts_camera = np.dstack(
+        [np.mgrid[0 : imsize[0], 0 : imsize[1]].T, depth_scalar * depth]
+    )[::downsample_factor, ::downsample_factor, :].reshape(-1, 3)
 
-    camera_grid_homo[:, :, 0] = (camera_grid_homo[:, :, 0] + 0.5) * camera_grid_homo[:, :, 2]
-    camera_grid_homo[:, :, 1] = (camera_grid_homo[:, :, 1] + 0.5) * camera_grid_homo[:, :, 2]
+    outlier_factor = 5
+    inlier_indices = np.abs(
+        pts_camera[:, 2] - np.mean(pts_camera[:, 2])
+    ) < outlier_factor * np.std(pts_camera[:, 2])
+    pts_camera = pts_camera[inlier_indices]
 
-    pts = transform_camera_to_world_space(camera_grid_homo)
+    # outliers = pts_camera[
+    #     np.abs(pts_camera[:, 2] - np.mean(pts_camera[:, 2]))
+    #     >= outlier_factor * np.std(pts_camera[:, 2])
+    # ]
+    pts_camera[:, 0] = (pts_camera[:, 0] + 0.5) * pts_camera[:, 2]
+    pts_camera[:, 1] = (pts_camera[:, 1] + 0.5) * pts_camera[:, 2]
 
-    camera_plane_xyz = transform_camera_to_world_space(
-        np.dstack([np.mgrid[0 : imsize[0], 0 : imsize[1]].T, np.ones(depth.shape)]),
-    )[::50, ::50, :]
+    # outliers[:, 0] = (outliers[:, 0] + 0.5) * outliers[:, 2]
+    # outliers[:, 1] = (outliers[:, 1] + 0.5) * outliers[:, 2]
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection="3d")
-    # _plot3d(parser.points[::10,], "y", ax)
-    _plot3d(sfm_points[::3, :], "y", ax)
+    # get indices of points in 10% percentile
 
-    # tmp = sfm_points_camera_homo[0]
-    # sfm_points_camera_homo[0] = sfm_points_camera_homo[1]
-    # sfm_points_camera_homo[1] = tmp
-    sfm_points_camera_homo = (
-        np.linalg.inv(K) @ sfm_points_camera_homo.T.reshape((-1, 3)).T
-    )
-    sfm_points_camera_homo = (
-        cam2world
-        @ np.vstack([sfm_points_camera_homo, np.ones(sfm_points_camera_homo.shape[1])])
-    )[:3].T
-    _plot3d(sfm_points_camera_homo, "r", ax)
-    _plot3d(pts.reshape(-1, 3)[::30, :], "g", ax)
-    _plot3d(camera_plane_xyz, "b", ax)
-    plt.show(block=True)
+    pts = transform_camera_to_world_space(pts_camera)
+    # outliers = transform_camera_to_world_space(outliers)
 
-    return pts
+    # camera_plane_xyz = transform_camera_to_world_space(
+    #     np.dstack(
+    #         [
+    #             np.mgrid[0 : imsize[0], 0 : imsize[1]].T,
+    #             depth_scalar * np.ones(depth.shape),
+    #         ]
+    #     )[::downsample_factor, ::downsample_factor, :],
+    # )
+
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection="3d")
+    # _plot3d(sfm_points[::downsample_factor, :], "y", ax)
+    # _plot3d(pts, "g", ax)
+    # _plot3d(outliers, "r", ax)
+    # _plot3d(camera_plane_xyz, "b", ax)
+    # plt.show(block=True)
+
+    return pts, inlier_indices
 
 
 def get_init_points_from_metric3d_depth(
@@ -202,8 +218,7 @@ def get_init_points_from_metric3d_depth(
     points_list: List[torch.Tensor] = []
     rgbs_list: List[torch.Tensor] = []
 
-    downsample_factor = 100
-
+    downsample_factor = 10
     for i, image_info in enumerate(
         tqdm(
             list(zip(parser.image_paths, parser.image_names)),
@@ -217,15 +232,15 @@ def get_init_points_from_metric3d_depth(
         fx = K[0, 0]
         fy = K[1, 1]
         depth, normal = m3d_model.get_depth(image, fx, fy)
-        points = get_pts_from_depth(depth, camera_id, image_name, parser)
+        points, inlier_indices = get_pts_from_depth(
+            depth, image_name, i, parser, downsample_factor=downsample_factor
+        )
         if points is None:
             continue
-
-        if i > 0:
-            break
-
-        points = torch.from_numpy(points.reshape([-1, 3])[::downsample_factor, :])
-        rgbs = torch.from_numpy(image.reshape([-1, 3])[::downsample_factor, :])
+        points = torch.from_numpy(points.reshape([-1, 3]))
+        rgbs = image[::downsample_factor, ::downsample_factor, :].reshape([-1, 3])
+        # inlier indices are for a downsampled and flattened array
+        rgbs = torch.from_numpy(rgbs[inlier_indices])
         points_list.append(points)
         rgbs_list.append(rgbs.float() / 255.0)
 

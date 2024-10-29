@@ -2,6 +2,7 @@
     "cSpell.words": [
         "colmap",
         "downsample",
+        "downsampled",
         "dstack",
         "imageio",
         "mgrid",
@@ -9,6 +10,7 @@
         "mmengine",
         "monodepth",
         "nerfview",
+        "rgbs",
         "torchmetrics",
         "tqdm",
         "traj",
