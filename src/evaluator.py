@@ -8,7 +8,7 @@ from copy import deepcopy
 import logging
 from pathlib import Path
 import shutil
-from typing import Any, Iterable, Literal, Type
+from typing import Any, Iterable, Type
 
 from gsplat.strategy import DefaultStrategy
 from config import Config
@@ -85,7 +85,11 @@ class Metric3dPointDownsampleFactor(RunParam):
 
 
 class DataDir(RunParam):
-    all_values = ["garden", "bicycle", "bonsai", "counter", "kitchen", "room", "stump"]
+    all_values = [
+        "garden",
+        "stump",
+    ]  # "bicycle", "bonsai", "counter", "kitchen", "room", "stump"]
+    # all_values = ["garden", "stump", "bicycle", "bonsai", "counter", "kitchen", "room", "stump"]
 
     @classmethod
     def apply(cls, config: Config, value):
@@ -96,11 +100,11 @@ class DataDir(RunParam):
         return value
 
 
-def create_base_config():
+def create_base_config(max_steps=30_000):
     cfg = Config(strategy=DefaultStrategy(verbose=True))
     cfg.disable_viewer = True
     cfg.eval_steps = [500, 1000, 7_000, 30_000]
-    cfg.max_steps = 500  # TODO: Change this back to 30_000'
+    cfg.max_steps = max_steps
     return cfg
 
 
@@ -129,12 +133,17 @@ def run_all_combinations(
     params_metric3d: list[Type[RunParam]],
 ):
     metric3d_configs = create_configs_with_params([("", base_config)], params_metric3d)
-    sfm_configs = create_configs_with_params(metric3d_configs, params_sfm)
+    sfm_configs = create_configs_with_params([("", base_config)], params_sfm)
 
     for _, cfg in metric3d_configs:
         cfg.init_type = "metric3d"
 
-    configs = metric3d_configs + sfm_configs
+    # configs = metric3d_configs + sfm_configs
+    configs = sfm_configs
+
+    print(f"Running {len(configs)} configurations:")
+    print("\n".join([name for name, _ in configs]))
+
     for name, config in configs:
         # Run training and evaluation
         print("===================================")
@@ -170,16 +179,25 @@ if __name__ == "__main__":
         default=False,
         help="Overwrite target directory if it exists.",
     )
+    parser.add_argument(
+        "--combine-only",
+        action="store_true",
+        default=False,
+        help="Don't run training, just combine results.",
+    )
 
     args = parser.parse_args()
 
     results_dir = Path(args.results_dir)
-    run_all_combinations(
-        create_base_config(),
-        results_dir,
-        [DataDir],
-        [DataDir, Metric3dModel, Metric3dPointDownsampleFactor],
-    )
+
+    if not args.combine_only:
+        base_config = create_base_config(max_steps=7000)
+        run_all_combinations(
+            base_config,
+            results_dir,
+            [DataDir],
+            [DataDir, Metric3dModel, Metric3dPointDownsampleFactor],
+        )
 
     combine_results(
         args.output_dir,
