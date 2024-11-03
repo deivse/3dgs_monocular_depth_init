@@ -274,7 +274,7 @@ def get_init_points_from_metric3d_depth(
     points_list: List[torch.Tensor] = []
     rgbs_list: List[torch.Tensor] = []
 
-    downsample_factor = 5
+    downsample_factor = config.dense_depth_downsample_factor
     for i, image_info in enumerate(
         tqdm(
             list(zip(parser.image_paths, parser.image_names)),

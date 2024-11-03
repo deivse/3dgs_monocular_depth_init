@@ -4,7 +4,7 @@ import os
 import sys
 import time
 from collections import defaultdict
-from typing import Dict, Optional, Tuple
+from typing import Dict, Literal, Optional, Tuple
 
 import imageio
 import nerfview
@@ -886,6 +886,29 @@ def main(local_rank: int, world_rank, world_size: int, cfg: Config):
         time.sleep(1000000)
 
 
+def run_with_config(cfg: Config):
+    try:
+        cfg.validate()
+    except Exception as e:
+        print(f"Invalid CLI arguments: {e}")
+        sys.exit(1)
+    cfg.adjust_steps(cfg.steps_scaler)
+
+    # try import extra dependencies
+    if cfg.compression == "png":
+        try:
+            import plas
+            import torchpq
+        except ImportError:
+            raise ImportError(
+                "To use PNG compression, you need to install "
+                "torchpq (instruction at https://github.com/DeMoriarty/TorchPQ?tab=readme-ov-file#install) "
+                "and plas (via 'pip install git+https://github.com/fraunhoferhhi/PLAS.git') "
+            )
+
+    cli(main, cfg, verbose=True)
+
+
 if __name__ == "__main__":
     """
     Usage:
@@ -920,23 +943,4 @@ if __name__ == "__main__":
         ),
     }
     cfg = tyro.extras.overridable_config_cli(configs)
-    try:
-        cfg.validate()
-    except Exception as e:
-        print(f"Invalid CLI arguments: {e}")
-        sys.exit(1)
-    cfg.adjust_steps(cfg.steps_scaler)
-
-    # try import extra dependencies
-    if cfg.compression == "png":
-        try:
-            import plas
-            import torchpq
-        except ImportError:
-            raise ImportError(
-                "To use PNG compression, you need to install "
-                "torchpq (instruction at https://github.com/DeMoriarty/TorchPQ?tab=readme-ov-file#install) "
-                "and plas (via 'pip install git+https://github.com/fraunhoferhhi/PLAS.git') "
-            )
-
-    cli(main, cfg, verbose=True)
+    run_with_config(cfg)

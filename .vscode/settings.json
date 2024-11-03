@@ -1,6 +1,7 @@
 {
     "cSpell.words": [
         "colmap",
+        "densification",
         "downsample",
         "downsampled",
         "dstack",
@@ -12,9 +13,11 @@
         "nerfview",
         "reprojected",
         "rgbs",
+        "tensorboard",
         "torchmetrics",
         "tqdm",
         "traj",
+        "unprojected",
         "viser"
     ]
 }

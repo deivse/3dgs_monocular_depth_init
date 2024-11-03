@@ -56,6 +56,9 @@ class Config:
     metric3d_config: Optional[str] = None
     # Optional path to Metric3d model weights if using "metric3d" init_type.
     metric3d_weights: Optional[str] = None
+    # Factor by which the number of points unprojected from dense depth is reduced
+    # in each dimension. Ignored if using sfm.
+    dense_depth_downsample_factor: int = 10
 
     # Initial number of GSs. Ignored if using sfm
     init_num_pts: int = 100_000
