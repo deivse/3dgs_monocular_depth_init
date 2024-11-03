@@ -112,8 +112,9 @@ def get_depth_scalar(
     depth,
     interpolation: Literal["nearest", "bilinear"] = "nearest",
 ):
-    sfm_points_camera_homo = P @ np.vstack([sfm_points.T, np.ones(sfm_points.shape[0])])
-    sfm_points_camera = sfm_points_camera_homo[:2] / sfm_points_camera_homo[2]
+    sfm_points_camera = P @ np.vstack([sfm_points.T, np.ones(sfm_points.shape[0])])
+    sfm_points_depth = sfm_points_camera[2]
+    sfm_points_camera = sfm_points_camera[:2] / sfm_points_camera[2]
 
     def get_valid_sfm_pts(pts_camera, pts_camera_depth):
         valid_sfm_pt_indices = np.logical_and(
@@ -121,7 +122,7 @@ def get_depth_scalar(
             np.logical_and(pts_camera[1] >= 0, pts_camera[1] < imsize[1]),
         )
         valid_sfm_pt_indices = np.logical_and(
-            valid_sfm_pt_indices, pts_camera_depth >= 1
+            valid_sfm_pt_indices, pts_camera_depth >= 0
         )
         if np.sum(valid_sfm_pt_indices) < pts_camera.shape[1] * 3.0 / 4.0:
             _LOGGER.warning(
@@ -131,23 +132,22 @@ def get_depth_scalar(
                 image_name,
                 image_idx,
             )
-        return valid_sfm_pt_indices
+        return sfm_points_camera[:, valid_sfm_pt_indices], sfm_points_depth[
+            valid_sfm_pt_indices
+        ]
 
     if interpolation == "nearest":
         sfm_points_camera = np.round(sfm_points_camera).astype(int)
-        valid_sfm_pt_indices = get_valid_sfm_pts(
-            sfm_points_camera, sfm_points_camera_homo[2]
+        sfm_points_camera, sfm_points_depth = get_valid_sfm_pts(
+            sfm_points_camera, sfm_points_depth
         )
-        sfm_points_camera = sfm_points_camera[:, valid_sfm_pt_indices]
         depth_ratios = (
-            sfm_points_camera_homo[2, valid_sfm_pt_indices]
-            / depth[sfm_points_camera[1], sfm_points_camera[0]]
+            sfm_points_depth / depth[sfm_points_camera[1], sfm_points_camera[0]]
         )
     elif interpolation == "bilinear":
-        valid_sfm_pt_indices = get_valid_sfm_pts(
-            sfm_points_camera, sfm_points_camera_homo[2]
+        sfm_points_camera, sfm_points_depth = get_valid_sfm_pts(
+            sfm_points_camera, sfm_points_depth
         )
-        sfm_points_camera = sfm_points_camera[:, valid_sfm_pt_indices]
 
         torch_depth = torch.tensor(depth, dtype=float)
         sfm_points_camera = torch.tensor(sfm_points_camera, dtype=float)
@@ -177,13 +177,11 @@ def get_depth_scalar(
         )
         sampled_depth = sampled_depth.squeeze().squeeze()  # Shape: (N,)
 
-        depth_ratios = (
-            sfm_points_camera_homo[2, valid_sfm_pt_indices] / sampled_depth
-        ).numpy()
+        depth_ratios = (sfm_points_depth / sampled_depth).numpy()
 
     depth_scalar = np.median(depth_ratios)
     print(f"{depth_scalar=}, {np.std(depth_ratios)=}")
-    return depth_scalar, sfm_points_camera_homo
+    return depth_scalar, sfm_points_camera
 
 
 def get_pts_from_depth(
@@ -258,7 +256,7 @@ def get_pts_from_depth(
 
     # fig = plt.figure()
     # ax = fig.add_subplot(111, projection="3d")
-    # _plot3d(sfm_points[::downsample_factor, :], "y", ax)
+    # _plot3d(sfm_points[::downsample_factor, :], "r", ax)
     # _plot3d(pts, "g", ax)
     # # _plot3d(outliers, "r", ax)
     # # _plot3d(camera_plane_xyz, "b", ax)
@@ -270,12 +268,13 @@ def get_pts_from_depth(
 def get_init_points_from_metric3d_depth(
     config: Config, parser: Parser, device: str = "cuda"
 ):
+    _LOGGER.info("Loading Metric3D model...")
     m3d_model = Metric3dModel.load(config, device)
 
     points_list: List[torch.Tensor] = []
     rgbs_list: List[torch.Tensor] = []
 
-    downsample_factor = 10
+    downsample_factor = 5
     for i, image_info in enumerate(
         tqdm(
             list(zip(parser.image_paths, parser.image_names)),

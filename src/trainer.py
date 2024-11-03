@@ -410,6 +410,8 @@ class Runner:
         pbar = tqdm.tqdm(range(init_step, max_steps))
         for step in pbar:
             if not cfg.disable_viewer:
+                if step == init_step:
+                    time.sleep(10)
                 while self.viewer.state.status == "paused":
                     time.sleep(0.01)
                 self.viewer.lock.acquire()
