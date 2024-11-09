@@ -118,7 +118,10 @@ def create_configs_with_params(
     param = params[0]
     for curr_name, config in configs:
         for value in param.all_values:
-            new_name = f"{curr_name}_{param.get_run_id_str(value)}"
+            if curr_name != "":
+                new_name = f"{curr_name}_{param.get_run_id_str(value)}"
+            else:
+                new_name = param.get_run_id_str(value)
             new_config = deepcopy(config)
             param.apply(new_config, value)
             new_configs.append((new_name, new_config))
@@ -128,7 +131,6 @@ def create_configs_with_params(
 
 def run_all_combinations(
     base_config: Config,
-    results_dir: Path,
     params_sfm: list[Type[RunParam]],
     params_metric3d: list[Type[RunParam]],
 ):
@@ -138,8 +140,7 @@ def run_all_combinations(
     for _, cfg in metric3d_configs:
         cfg.init_type = "metric3d"
 
-    # configs = metric3d_configs + sfm_configs
-    configs = sfm_configs
+    configs = metric3d_configs + sfm_configs
 
     print(f"Running {len(configs)} configurations:")
     print("\n".join([name for name, _ in configs]))
@@ -151,10 +152,15 @@ def run_all_combinations(
         print("===================================")
 
         config.result_dir = f"results/{name}"
-        if Path(config.result_dir).exists():
-            logging.warning("Result directory already exists, deleting.")
+        try:
+            if Path(config.result_dir).exists():
+                logging.warning("Result directory already exists, deleting.")
+                shutil.rmtree(config.result_dir, ignore_errors=True)
+            trainer.run_with_config(config)
+        except KeyboardInterrupt:
+            print("Interrupted, deleting incomplete result dir.")
             shutil.rmtree(config.result_dir, ignore_errors=True)
-        trainer.run_with_config(config)
+            break
 
 
 if __name__ == "__main__":
@@ -194,7 +200,6 @@ if __name__ == "__main__":
         base_config = create_base_config(max_steps=7000)
         run_all_combinations(
             base_config,
-            results_dir,
             [DataDir],
             [DataDir, Metric3dModel, Metric3dPointDownsampleFactor],
         )
