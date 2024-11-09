@@ -1,11 +1,13 @@
-from dataclasses import dataclass
 import logging
-from typing import List, Literal
+from dataclasses import dataclass
+from typing import List
+
+import cv2
 import imageio
-from matplotlib import pyplot as plt
 import numpy as np
 import torch
-import cv2
+from matplotlib import pyplot as plt
+
 from config import Config
 from datasets.colmap import Parser
 from metric3d.mono.model.monodepth_model import get_configured_monodepth_model
@@ -103,15 +105,7 @@ def _plot3d(xyz, color="b", ax=None):
     ax.set_zlim([-5, 5])
 
 
-def get_depth_scalar(
-    sfm_points,
-    P,
-    image_name,
-    image_idx,
-    imsize,
-    depth,
-    interpolation: Literal["nearest", "bilinear"] = "nearest",
-):
+def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth):
     sfm_points_camera = P @ np.vstack([sfm_points.T, np.ones(sfm_points.shape[0])])
     sfm_points_depth = sfm_points_camera[2]
     sfm_points_camera = sfm_points_camera[:2] / sfm_points_camera[2]
@@ -136,52 +130,17 @@ def get_depth_scalar(
             valid_sfm_pt_indices
         ]
 
-    if interpolation == "nearest":
-        sfm_points_camera = np.round(sfm_points_camera).astype(int)
-        sfm_points_camera, sfm_points_depth = get_valid_sfm_pts(
-            sfm_points_camera, sfm_points_depth
-        )
-        depth_ratios = (
-            sfm_points_depth / depth[sfm_points_camera[1], sfm_points_camera[0]]
-        )
-    elif interpolation == "bilinear":
-        sfm_points_camera, sfm_points_depth = get_valid_sfm_pts(
-            sfm_points_camera, sfm_points_depth
-        )
+    sfm_points_camera = np.round(sfm_points_camera).astype(int)
+    sfm_points_camera, sfm_points_depth = get_valid_sfm_pts(
+        sfm_points_camera, sfm_points_depth
+    )
+    predicted_depth = depth[sfm_points_camera[1], sfm_points_camera[0]]
+    d = np.vstack([predicted_depth.reshape(-1), np.ones(predicted_depth.shape[0])])
 
-        torch_depth = torch.tensor(depth, dtype=float)
-        sfm_points_camera = torch.tensor(sfm_points_camera, dtype=float)
-
-        # Normalize sfm_points_camera coordinates to the range [-1, 1]
-        H, W = torch_depth.shape
-        sfm_points_camera_normalized = (
-            torch.stack(
-                [
-                    2.0 * sfm_points_camera[0] / (W - 1) - 1.0,
-                    2.0 * sfm_points_camera[1] / (H - 1) - 1.0,
-                ],
-                dim=-1,
-            )
-            .unsqueeze(0)
-            .unsqueeze(0)
-        )  # Shape: (1, 1, N, 2)
-
-        grid = sfm_points_camera_normalized.permute(0, 2, 1, 3)  # Shape: (1, N, 1, 2)
-        torch_depth = torch_depth.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, H, W)
-        sampled_depth = torch.nn.functional.grid_sample(
-            torch_depth,
-            grid,
-            mode="bilinear",
-            padding_mode="border",
-            align_corners=True,
-        )
-        sampled_depth = sampled_depth.squeeze().squeeze()  # Shape: (N,)
-
-        depth_ratios = (sfm_points_depth / sampled_depth).numpy()
-
-    depth_scalar = np.median(depth_ratios)
-    print(f"{depth_scalar=}, {np.std(depth_ratios)=}")
-    return depth_scalar, sfm_points_camera
+    # Eqations 2-5 in "Towards Robust Monocular Depth Estimation: Mixing Datasets for Zero-shot Cross-dataset Transfer"
+    # https://arxiv.org/pdf/1907.01341
+    h = np.sum(d * sfm_points_depth, axis=1) / np.linalg.norm(d) ** 2
+    return h[0], h[1], sfm_points_camera
 
 
 def get_pts_from_depth(
@@ -209,15 +168,18 @@ def get_pts_from_depth(
         )[:3].T
         return dense_world
 
-    depth_scalar, sfm_points_camera_homo = get_depth_scalar(
-        sfm_points, P, image_name, image_idx, imsize, depth, "nearest"
+    depth_scalar, depth_shift, sfm_points_camera_homo = get_depth_scalar(
+        sfm_points, P, image_name, image_idx, imsize, depth
     )
 
     if depth_scalar is None:
         return None
 
     pts_camera = np.dstack(
-        [np.mgrid[0 : imsize[0], 0 : imsize[1]].T, depth_scalar * depth]
+        [
+            np.mgrid[0 : imsize[0], 0 : imsize[1]].T,
+            depth_scalar * depth + depth_shift,
+        ]
     )[::downsample_factor, ::downsample_factor, :].reshape(-1, 3)
 
     outlier_factor = 2.5
@@ -239,8 +201,6 @@ def get_pts_from_depth(
 
     # outliers[:, 0] = (outliers[:, 0] + 0.5) * outliers[:, 2]
     # outliers[:, 1] = (outliers[:, 1] + 0.5) * outliers[:, 2]
-
-    # get indices of points in 10% percentile
 
     pts = transform_camera_to_world_space(pts_camera)
     # outliers = transform_camera_to_world_space(outliers)
