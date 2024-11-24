@@ -1,0 +1,3 @@
+[submodule "src/third_party/apple_depth_pro"]
+	path = src/third_party/apple_depth_pro
+	url = https://github.com/apple/ml-depth-pro.git

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, List, Literal, Union, Tuple
+from typing import Optional, List, Literal, Union, Tuple, get_type_hints
 from typing_extensions import assert_never
 
 # Assuming DefaultStrategy, MCMCStrategy, and assert_never are defined in a module named 'strategies'
@@ -52,11 +52,13 @@ class Config:
     # Initialization strategy
     init_type: Literal["sfm", "random", "monocular_depth"] = "sfm"
 
-    mono_depth_model: Optional[Literal["metric3d"]] = "metric3d"
+    mono_depth_model: Optional[Literal["metric3d", "depth_pro"]] = "metric3d"
     # Optional path to Metric3d config file if using "metric3d" init_type.
     metric3d_config: Optional[str] = None
     # Optional path to Metric3d model weights if using "metric3d" init_type.
     metric3d_weights: Optional[str] = None
+    # Optional path to DepthPro model checkpoint if using "depth_pro" init_type.
+    depth_pro_checkpoint: Optional[str] = None
     # Factor by which the number of points unprojected from dense depth is reduced
     # in each dimension. Ignored if not using "monocular_depth" init_type.
     dense_depth_downsample_factor: int = 10
@@ -162,8 +164,17 @@ class Config:
         """
 
         if self.init_type == "monocular_depth":
+            supported_models = (
+                get_type_hints(self)["mono_depth_model"].__args__[0].__args__
+            )
+
             if self.mono_depth_model is None:
                 raise ValueError(" is not provided for monocular_depth initialization.")
+            if self.mono_depth_model not in supported_models:
+                raise ValueError(
+                    f"Unsupported monodepth model: {self.mono_depth_model}"
+                )
+
             if self.mono_depth_model == "metric3d":
                 if self.metric3d_config is None:
                     raise ValueError(
@@ -173,7 +184,8 @@ class Config:
                     raise ValueError(
                         "Metric3d weights path is not provided for monocular_depth initialization."
                     )
-            else:
-                raise ValueError(
-                    f"Unsupported monodepth model: {self.mono_depth_model}"
-                )
+            elif self.mono_depth_model == "depth_pro":
+                if self.depth_pro_checkpoint is None:
+                    raise ValueError(
+                        "DepthPro model checkpoint path is not provided for monocular_depth initialization."
+                    )

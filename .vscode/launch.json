@@ -20,6 +20,24 @@
             "cwd": "${workspaceFolder}/src/",
         },
         {
+            "name": "gsplat trainer depth pro",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/trainer.py",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "default",
+                "--init-type=monocular_depth",
+                "--mono-depth-model=depth_pro",
+                "--depth-pro-checkpoint=${workspaceFolder}/src/third_party/apple_depth_pro/checkpoints/depth_pro.pt",
+            ],
+            "cwd": "${workspaceFolder}/src/",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "gsplat trainer metric3d vit large",
             "type": "debugpy",
             "request": "launch",
@@ -31,8 +49,8 @@
                 "default",
                 "--init-type=monocular_depth",
                 "--mono_depth_model=metric3d",
-                "--metric3d-config=${workspaceFolder}/src/third_party/metric3d/mono/configs/HourglassDecoder/vit.raft5.large.py",
-                "--metric3d-weights=${workspaceFolder}/src/third_party/metric3d/weight/metric_depth_vit_large_800k.pth",
+                "--metric3d-config=${workspaceFolder}/metric3d_configs/vit.raft5.large.py",
+                "--metric3d-weights=${workspaceFolder}/metric3d_configs/metric_depth_vit_large_800k.pth",
             ],
             "cwd": "${workspaceFolder}/src/",
             "console": "integratedTerminal",
@@ -50,8 +68,8 @@
                 "default",
                 "--init-type=monocular_depth",
                 "--mono_depth_model=metric3d",
-                "--metric3d-config=${workspaceFolder}/src/third_party/metric3d/mono/configs/HourglassDecoder/vit.raft5.small.py",
-                "--metric3d-weights=${workspaceFolder}/src/third_party/metric3d/weight/metric_depth_vit_small_800k.pth",
+                "--metric3d-config=${workspaceFolder}/metric3d_configs/vit.raft5.small.py",
+                "--metric3d-weights=${workspaceFolder}/metric3d_configs/metric_depth_vit_small_800k.pth",
                 // "--no-normalize-world-space"
             ],
             "cwd": "${workspaceFolder}/src/",

@@ -3,6 +3,7 @@ import logging
 import cv2
 import numpy as np
 import torch
+from PIL import Image
 
 from config import Config
 from third_party.metric3d.mono.model.monodepth_model import (
@@ -41,11 +42,15 @@ class Metric3d(DepthPredictor):
         self.model.eval()
         self.model.to(device)
 
+    @property
+    def name(self) -> str:
+        return "Metric3d"
+
     def can_predict_points_directly(self) -> bool:
         return False
 
-    def predict_depth(self, img, fx, fy):
-        cv_image = np.array(img)
+    def predict_depth(self, img: Image.Image, fx: float, fy: float) -> torch.Tensor:
+        cv_image = np.asarray(img)
         img = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
         intrinsic = [fx, fy, img.shape[1] / 2, img.shape[0] / 2]
         rgb_input, cam_models_stacks, pad, label_scale_factor = (
@@ -68,7 +73,7 @@ class Metric3d(DepthPredictor):
             H, W = pred_normal.shape[2:]
             pred_normal = pred_normal[:, :, pad[0] : H - pad[1], pad[2] : W - pad[3]]
 
-        pred_depth = pred_depth.squeeze().cpu().numpy()
+        pred_depth = pred_depth.squeeze()
         pred_depth[pred_depth < 0] = 0
 
         # pred_normal = torch.nn.functional.interpolate(

@@ -1,16 +1,19 @@
 import logging
 from typing import List, Type
 
-import imageio
+from PIL import Image
+import numpy as np
 import torch
 from tqdm import tqdm
 
 from config import Config
 from datasets.colmap import Parser
 from monocular_depth_init.predictors.depth_predictor_interface import DepthPredictor
-from monocular_depth_init.utils.points_from_depth import get_pts_from_depth
+from monocular_depth_init.utils.points_from_depth import (
+    DebugPlotConfig,
+    get_pts_from_depth,
+)
 
-from .predictors.metric3d import Metric3d
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,7 +24,13 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
         raise ValueError("No depth predictor model specified in config.")
 
     if config.mono_depth_model == "metric3d":
+        from .predictors.metric3d import Metric3d
+
         return Metric3d
+    elif config.mono_depth_model == "depth_pro":
+        from .predictors.apple_depth_pro import AppleDepthPro
+
+        return AppleDepthPro
     else:
         raise ValueError(f"Unsupported monodepth model: {config.mono_depth_model}")
 
@@ -42,24 +51,33 @@ def pts_and_rgb_from_monocular_depth(
         )
     ):
         image_path, image_name = image_info
-        image = imageio.imread(image_path)
+        pil_image = Image.open(image_path)
+        pil_image.load()
         camera_id: int = parser.camera_ids[i]
         K = parser.Ks_dict[camera_id]
         fx = K[0, 0]
         fy = K[1, 1]
 
         if model.can_predict_points_directly():
-            points, valid_point_indices = model.predict_3d_point_cloud(image, fx, fy)
+            points, valid_point_indices = model.predict_3d_point_cloud(
+                pil_image, fx, fy
+            )
         else:
-            depth = model.predict_depth(image, fx, fy)
+            depth = model.predict_depth(pil_image, fx, fy)
             points, valid_point_indices = get_pts_from_depth(
-                depth, image_name, i, parser, downsample_factor=downsample_factor
+                depth,
+                image_name,
+                i,
+                parser,
+                downsample_factor=downsample_factor,
+                debug_plot_conf=DebugPlotConfig(),
             )
 
         if points is None:
             _LOGGER.warning(f"Failed to get points for image {image_name}")
             continue
 
+        image = np.asarray(pil_image)
         rgbs = image[::downsample_factor, ::downsample_factor, :].reshape([-1, 3])
         # inlier indices are for a downsampled and flattened array
         rgbs = torch.from_numpy(rgbs[valid_point_indices])

@@ -1,6 +1,8 @@
 from abc import ABCMeta, abstractmethod
 from typing import Tuple
 
+from PIL import Image
+
 import torch
 
 
@@ -16,7 +18,14 @@ class DepthPredictor(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-    def predict_depth(self, img, fx, fy) -> torch.Tensor:
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """
+        Returns the name of the predictor.
+        """
+
+    def predict_depth(self, img: Image.Image, fx: float, fy: float) -> torch.Tensor:
         """
         Predict depth from a single image.
 
