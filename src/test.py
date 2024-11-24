@@ -17,14 +17,9 @@ image_name: str = inputs["image_name"]
 parser: Parser = inputs["parser"]
 
 
-
-
-
-
-
 ####
 
-cam2world = parser.camtoworlds[camera_id]
+cam2world = parser.cam_to_worlds[camera_id]
 K = parser.Ks_dict[camera_id]
 imsize = parser.imsize_dict[camera_id]
 
@@ -48,9 +43,7 @@ valid_sfm_pt_indices = np.logical_and(
 )
 valid_sfm_pt_indices = np.logical_and(valid_sfm_pt_indices, sfm_points[:, 2] > 0)
 
-valid_sfm_pt_indices = np.logical_and(
-    valid_sfm_pt_indices, sfm_point_err < 1
-)
+valid_sfm_pt_indices = np.logical_and(valid_sfm_pt_indices, sfm_point_err < 1)
 print(f"{np.sum(valid_sfm_pt_indices)=}", len(valid_sfm_pt_indices))
 sfm_points_camera = sfm_points_camera[:, valid_sfm_pt_indices]
 

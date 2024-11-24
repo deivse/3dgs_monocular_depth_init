@@ -874,7 +874,7 @@ class Runner:
         cfg = self.cfg
         device = self.device
 
-        camtoworlds = self.parser.camtoworlds[5:-5]
+        camtoworlds = self.parser.cam_to_worlds[5:-5]
         camtoworlds = generate_interpolated_path(camtoworlds, 1)  # [N, 3, 4]
         camtoworlds = np.concatenate(
             [

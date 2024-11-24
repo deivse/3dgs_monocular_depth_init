@@ -4,3 +4,5 @@ recon_cache/
 src/metric3d/weight/*.pth
 src/data/
 results/
+combined_results/
+combined_results*/

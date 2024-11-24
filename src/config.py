@@ -92,7 +92,7 @@ class Config:
     antialiased: bool = False
 
     # Use random background for training to discourage transparency
-    random_bkgd: bool = False
+    random_background: bool = False
 
     # Opacity regularization
     opacity_reg: float = 0.0

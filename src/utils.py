@@ -1,4 +1,5 @@
 import random
+from typing import Optional
 
 import numpy as np
 import torch
@@ -199,9 +200,9 @@ def apply_float_colormap(img: torch.Tensor, colormap: str = "turbo") -> torch.Te
 
 def apply_depth_colormap(
     depth: torch.Tensor,
-    acc: torch.Tensor = None,
-    near_plane: float = None,
-    far_plane: float = None,
+    acc: Optional[torch.Tensor] = None,
+    near_plane: Optional[float] = None,
+    far_plane: Optional[float] = None,
 ) -> torch.Tensor:
     """Converts a depth image to color for easier analysis.
 
