@@ -1,7 +1,7 @@
 .venv/
 __pycache__
 recon_cache/
-src/metric3d/weight/*.pth
+src/third_party/metric3d/weight/*.pth
 src/data/
 results/
 combined_results/

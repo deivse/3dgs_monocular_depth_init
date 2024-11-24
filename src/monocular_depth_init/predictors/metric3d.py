@@ -5,9 +5,14 @@ import numpy as np
 import torch
 
 from config import Config
-from metric3d.mono.model.monodepth_model import get_configured_monodepth_model
-from metric3d.mono.utils.do_test import get_prediction, transform_test_data_scalecano
-from metric3d.mono.utils.running import load_ckpt
+from third_party.metric3d.mono.model.monodepth_model import (
+    get_configured_monodepth_model,
+)
+from third_party.metric3d.mono.utils.do_test import (
+    get_prediction,
+    transform_test_data_scalecano,
+)
+from third_party.metric3d.mono.utils.running import load_ckpt
 from monocular_depth_init.predictors.depth_predictor_interface import DepthPredictor
 
 try:
