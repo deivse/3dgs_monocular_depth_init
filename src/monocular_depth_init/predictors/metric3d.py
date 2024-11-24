@@ -31,6 +31,7 @@ class Metric3d(DepthPredictor):
         if config.metric3d_weights is None:
             raise ValueError("Metric3d weights path is not provided.")
 
+        self.__name = f"Metric3d_{config.metric3d_config.split('.')[-2]}"
         self.cfg = Metric3dConfig.fromfile(config.metric3d_config)
         self.model, _, _, _ = load_ckpt(
             config.metric3d_weights,
@@ -44,7 +45,7 @@ class Metric3d(DepthPredictor):
 
     @property
     def name(self) -> str:
-        return "Metric3d"
+        return self.__name
 
     def can_predict_points_directly(self) -> bool:
         return False

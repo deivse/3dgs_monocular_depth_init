@@ -53,6 +53,9 @@ class Config:
     init_type: Literal["sfm", "random", "monocular_depth"] = "sfm"
 
     mono_depth_model: Optional[Literal["metric3d", "depth_pro"]] = "metric3d"
+    mono_depth_cache_dir: str = "__mono_depth_cache__"
+    invalidate_mono_depth_cache: bool = False
+
     # Optional path to Metric3d config file if using "metric3d" init_type.
     metric3d_config: Optional[str] = None
     # Optional path to Metric3d model weights if using "metric3d" init_type.

@@ -1,4 +1,6 @@
 import logging
+from pathlib import Path
+import shutil
 from typing import List, Type
 
 from PIL import Image
@@ -35,6 +37,39 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
         raise ValueError(f"Unsupported monodepth model: {config.mono_depth_model}")
 
 
+def predict_depth_or_get_cached_depth(
+    model: DepthPredictor,
+    pil_image: Image.Image,
+    fx: float,
+    fy: float,
+    image_name: str,
+    config: Config,
+):
+    cache_dir = Path(config.mono_depth_cache_dir) / model.name
+    if config.invalidate_mono_depth_cache:
+        _LOGGER.info("Invalidating monocular depth cache for model %s", model.name)
+        shutil.rmtree(cache_dir, ignore_errors=True)
+
+    cache_dir.mkdir(exist_ok=True, parents=True)
+    cache_path = cache_dir / f"{image_name}.pth"
+
+    depth = None
+    if cache_path.exists():
+        try:
+            depth = torch.load(cache_path)
+        except Exception as e:
+            _LOGGER.warning(f"Failed to load cached depth for image {image_name}: {e}")
+
+    if depth is None:
+        depth = model.predict_depth(pil_image, fx, fy)
+        try:
+            torch.save(depth, cache_path)
+        except KeyboardInterrupt:
+            cache_path.unlink(missing_ok=True)
+            raise
+    return depth
+
+
 def pts_and_rgb_from_monocular_depth(
     config: Config, parser: Parser, device: str = "cuda"
 ):
@@ -63,14 +98,17 @@ def pts_and_rgb_from_monocular_depth(
                 pil_image, fx, fy
             )
         else:
-            depth = model.predict_depth(pil_image, fx, fy)
+            depth = predict_depth_or_get_cached_depth(
+                model, pil_image, fx, fy, image_name, config
+            )
             points, valid_point_indices = get_pts_from_depth(
                 depth,
                 image_name,
                 i,
                 parser,
                 downsample_factor=downsample_factor,
-                debug_plot_conf=DebugPlotConfig(),
+                debug_plot_conf=None,
+                # debug_plot_conf=DebugPlotConfig(),
             )
 
         if points is None:
