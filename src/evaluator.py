@@ -57,22 +57,30 @@ class RunParam(metaclass=abc.ABCMeta):
         """
 
 
-class Metric3dModel(RunParam):
-    all_values = ["small", "large"]
+class MonoDepthModel(RunParam):
+    all_values = ["metric3d-vit-small", "metric3d-vit-large"]
 
     @classmethod
-    def apply(cls, config: Config, value):
-        config.metric3d_config = (
-            f"metric3d/mono/configs/HourglassDecoder/vit.raft5.{value}.py"
-        )
-        config.metric3d_weights = f"metric3d/weight/metric_depth_vit_{value}_800k.pth"
+    def apply(cls, config: Config, value: str):
+        if value.startswith("metric3d-vit"):
+            config.mono_depth_model = "metric3d"
+            suffix = value.split("-")[-1]
+
+            config.metric3d_config = (
+                f"metric3d/mono/configs/HourglassDecoder/vit.raft5.{suffix}.py"
+            )
+            config.metric3d_weights = (
+                f"metric3d/weight/metric_depth_vit_{suffix}_800k.pth"
+            )
+        else:
+            raise NotImplementedError(f"Unsupported model: {value}")
 
     @classmethod
     def get_run_id_str(cls, value):
         return f"vit.raft5.{value}"
 
 
-class Metric3dPointDownsampleFactor(RunParam):
+class DensePointDownsampleFactor(RunParam):
     all_values = [10, 20]
 
     @classmethod
@@ -132,15 +140,17 @@ def create_configs_with_params(
 def run_all_combinations(
     base_config: Config,
     params_sfm: list[Type[RunParam]],
-    params_metric3d: list[Type[RunParam]],
+    params_monocular_depth: list[Type[RunParam]],
 ):
-    metric3d_configs = create_configs_with_params([("", base_config)], params_metric3d)
+    mono_depth_configs = create_configs_with_params(
+        [("", base_config)], params_monocular_depth
+    )
     sfm_configs = create_configs_with_params([("", base_config)], params_sfm)
 
-    for _, cfg in metric3d_configs:
-        cfg.init_type = "metric3d"
+    for _, cfg in mono_depth_configs:
+        cfg.init_type = "monocular_depth"
 
-    configs = metric3d_configs + sfm_configs
+    configs = mono_depth_configs + sfm_configs
 
     print(f"Running {len(configs)} configurations:")
     print("\n".join([name for name, _ in configs]))
@@ -201,7 +211,7 @@ if __name__ == "__main__":
         run_all_combinations(
             base_config,
             [DataDir],
-            [DataDir, Metric3dModel, Metric3dPointDownsampleFactor],
+            [DataDir, MonoDepthModel, DensePointDownsampleFactor],
         )
 
     combine_results(

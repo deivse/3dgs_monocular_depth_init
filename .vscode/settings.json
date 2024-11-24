@@ -24,12 +24,14 @@
         "mmcv",
         "mmengine",
         "monodepth",
+        "ndarray",
         "nerfview",
         "psnr",
         "quats",
         "regularizations",
         "reprojected",
         "rgbs",
+        "scalecano",
         "ssim",
         "tensorboard",
         "torchmetrics",
@@ -40,6 +42,12 @@
         "unprojected",
         "valset",
         "viewmats",
-        "viser"
+        "viser",
+        "xlabel",
+        "xlim",
+        "ylabel",
+        "ylim",
+        "zlabel",
+        "zlim"
     ]
 }

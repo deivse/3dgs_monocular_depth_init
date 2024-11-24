@@ -1,15 +1,10 @@
-import math
 import sys
 import time
-from typing import Dict, Optional, Tuple
 
 import torch
 import tyro
 from config import Config
-from datasets.colmap import Parser
-from monocular_depth_init import pts_and_rgb_from_monocular_depth
 from runner import Runner
-from utils import knn, rgb_to_sh
 
 from gsplat.distributed import cli
 from gsplat.strategy import DefaultStrategy, MCMCStrategy

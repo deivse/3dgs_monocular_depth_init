@@ -64,7 +64,7 @@ def create_splats_with_optimizers(
     elif init_type == "random":
         points = init_extent * scene_scale * (torch.rand((init_num_pts, 3)) * 2 - 1)
         rgbs = torch.rand((init_num_pts, 3))
-    elif init_type == "metric3d":
+    elif init_type == "monocular_depth":
         points, rgbs = pts_and_rgb_from_monocular_depth(config, parser, device)
     else:
         raise ValueError("Please specify a correct init_type: sfm or random")

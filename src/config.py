@@ -50,14 +50,15 @@ class Config:
     save_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
 
     # Initialization strategy
-    init_type: str = "sfm"
+    init_type: Literal["sfm", "random", "monocular_depth"] = "sfm"
 
+    mono_depth_model: Optional[Literal["metric3d"]] = "metric3d"
     # Optional path to Metric3d config file if using "metric3d" init_type.
     metric3d_config: Optional[str] = None
     # Optional path to Metric3d model weights if using "metric3d" init_type.
     metric3d_weights: Optional[str] = None
     # Factor by which the number of points unprojected from dense depth is reduced
-    # in each dimension. Ignored if using sfm.
+    # in each dimension. Ignored if not using "monocular_depth" init_type.
     dense_depth_downsample_factor: int = 10
 
     # Initial number of GSs. Ignored if using sfm
@@ -157,11 +158,22 @@ class Config:
         """
         Validate the configuration.
 
-        NOTE: This currently only checks the new Metric3D-related parameters.
+        NOTE: This currently only checks the monocular_depth configuration.
         """
 
-        if self.init_type == "metric3d":
-            if self.metric3d_config is None or self.metric3d_weights is None:
+        if self.init_type == "monocular_depth":
+            if self.mono_depth_model is None:
+                raise ValueError(" is not provided for monocular_depth initialization.")
+            if self.mono_depth_model == "metric3d":
+                if self.metric3d_config is None:
+                    raise ValueError(
+                        "Metric3d config path is not provided for monocular_depth initialization."
+                    )
+                if self.metric3d_weights is None:
+                    raise ValueError(
+                        "Metric3d weights path is not provided for monocular_depth initialization."
+                    )
+            else:
                 raise ValueError(
-                    "If using 'metric3d' as the 'init_type', 'metric3d_config' and 'metric3d_weights' must be provided."
+                    f"Unsupported monodepth model: {self.mono_depth_model}"
                 )
