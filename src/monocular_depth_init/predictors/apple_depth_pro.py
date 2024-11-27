@@ -1,15 +1,13 @@
 from copy import deepcopy
 import logging
 
-import cv2
 import depth_pro
 import numpy as np
-import torch
 
 from config import Config
 from PIL import Image
 
-from .depth_predictor_interface import DepthPredictor
+from .depth_predictor_interface import DepthPredictor, PredictedDepth
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,13 +61,20 @@ def _load_rgb(pil_img: Image.Image, auto_rotate: bool, remove_alpha: bool):
 class AppleDepthPro(DepthPredictor):
     def __init__(self, config: Config, device: str):
         # Load model and preprocessing transform
-        depth_pro_config = deepcopy(depth_pro.depth_pro.DEFAULT_MONODEPTH_CONFIG_DICT)
+        depth_pro_config = deepcopy(
+            depth_pro.depth_pro.DEFAULT_MONODEPTH_CONFIG_DICT)
         depth_pro_config.checkpoint_uri = config.depth_pro_checkpoint
 
-        self.model, self.transform = depth_pro.create_model_and_transforms(
-            depth_pro_config, device
-        )
-        self.model.eval()
+        try:
+            self.__model, self.__transform = depth_pro.create_model_and_transforms(
+                depth_pro_config, device
+            )
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"Could not find the DepthPro checkpoint at {config.depth_pro_checkpoint}."
+                " You can download the checkpoint with src/third_party/apple_depth_pro/get_pretrained_models.sh"
+            ) from e
+        self.__model.eval()
 
     def can_predict_points_directly(self) -> bool:
         return False
@@ -78,14 +83,14 @@ class AppleDepthPro(DepthPredictor):
     def name(self) -> str:
         return "AppleDepthPro"
 
-    def predict_depth(self, img: Image.Image, *_) -> torch.Tensor:
+    def predict_depth(self, img: Image.Image, *_) -> PredictedDepth:
         # Load and preprocess an image.
         image, _, f_px = _load_rgb(img, auto_rotate=True, remove_alpha=True)
-        image = self.transform(img)
+        image = self.__transform(img)
 
         # Run inference.
-        prediction = self.model.infer(image, f_px=f_px)
+        prediction = self.__model.infer(image, f_px=f_px)
         depth = prediction["depth"]  # Depth in [m].
         # focallength_px = prediction["focallength_px"]  # Focal length in pixels.
 
-        return depth
+        return PredictedDepth(depth, None)

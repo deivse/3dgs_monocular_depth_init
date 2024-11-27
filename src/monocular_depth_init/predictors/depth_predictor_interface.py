@@ -1,9 +1,28 @@
 from abc import ABCMeta, abstractmethod
-from typing import Tuple
+from typing import Optional, NamedTuple
 
 from PIL import Image
 
 import torch
+
+
+class PredictedDepth(NamedTuple):
+    depth: torch.Tensor
+    """ Float tensor of shape (H, W) """
+    mask: Optional[torch.Tensor]
+    """ Bool tensor indicating valid pixels. (H, W) """
+
+
+class PredictedPoints(NamedTuple):
+    points: torch.Tensor
+    """ Float tensor of shape (H, W, 3) """
+    mask: Optional[torch.Tensor]
+    """
+    Bool tensor indicating valid pixels. (H, W)
+    """
+
+
+torch.serialization.add_safe_globals([PredictedDepth, PredictedPoints])
 
 
 class DepthPredictor(metaclass=ABCMeta):
@@ -25,7 +44,7 @@ class DepthPredictor(metaclass=ABCMeta):
         Returns the name of the predictor.
         """
 
-    def predict_depth(self, img: Image.Image, fx: float, fy: float) -> torch.Tensor:
+    def predict_depth(self, img: Image.Image, fx: float, fy: float) -> PredictedDepth:
         """
         Predict depth from a single image.
 
@@ -39,7 +58,7 @@ class DepthPredictor(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-    def predict_3d_point_cloud(self, img, fx, fy) -> Tuple[torch.Tensor, torch.Tensor]:
+    def predict_points(self, img, fx, fy) -> PredictedPoints:
         """
         Predict 3D point cloud from a single image.
 

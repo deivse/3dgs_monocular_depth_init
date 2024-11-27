@@ -11,7 +11,7 @@ from monocular_depth_init.utils.plot3d import plot3d
 _LOGGER = logging.getLogger(__name__)
 
 
-def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth):
+def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
     device = sfm_points.device
 
     sfm_points_camera = P @ torch.vstack(
@@ -36,6 +36,15 @@ def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth):
                 image_name,
                 image_idx,
             )
+
+        if mask is not None:
+            # Set invalid points to 0 so we can index the mask with them
+            # Will be filtered out later anyways
+            sfm_points_camera[:, ~valid_sfm_pt_indices] = torch.zeros_like(
+                sfm_points_camera[:, ~valid_sfm_pt_indices])
+            valid_sfm_pt_indices = torch.logical_and(
+                valid_sfm_pt_indices, mask[sfm_points_camera[1], sfm_points_camera[0]])
+
         return sfm_points_camera[:, valid_sfm_pt_indices], sfm_points_depth[
             valid_sfm_pt_indices
         ]
@@ -44,7 +53,8 @@ def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth):
     sfm_points_camera, sfm_points_depth = get_valid_sfm_pts(
         sfm_points_camera, sfm_points_depth
     )
-    predicted_depth: torch.Tensor = depth[sfm_points_camera[1], sfm_points_camera[0]]
+    predicted_depth: torch.Tensor = depth[sfm_points_camera[1],
+                                          sfm_points_camera[0]]
     d = torch.vstack(
         [
             predicted_depth.reshape(-1),
@@ -61,7 +71,6 @@ def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth):
 @dataclass
 class DebugPlotConfig:
     show_sfm_points: bool = True
-    show_outliers: bool = True
     show_camera_plane: bool = True
     sfm_pts_downsample_factor: int = 10
     camera_plane_downsample_factor: int = 40
@@ -69,31 +78,21 @@ class DebugPlotConfig:
     def plot(
         self,
         sfm_points,
-        pts_camera,
         pts_world,
-        outlier_factor,
         imsize,
         depth_scalar,
         depth,
         transform_camera_to_world_space,
     ):
-        outliers = pts_camera[
-            torch.abs(pts_camera[:, 2] - torch.mean(pts_camera[:, 2]))
-            >= outlier_factor * torch.std(pts_camera[:, 2])
-        ]
-
-        outliers[:, 0] = (outliers[:, 0] + 0.5) * outliers[:, 2]
-        outliers[:, 1] = (outliers[:, 1] + 0.5) * outliers[:, 2]
-
-        outliers = transform_camera_to_world_space(outliers)
 
         camera_plane_xyz = transform_camera_to_world_space(
             torch.dstack(
                 [
-                    torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(
+                    torch.from_numpy(np.mgrid[0: imsize[0], 0: imsize[1]].T).to(
                         depth.device
                     ),
-                    depth_scalar * torch.ones(depth.shape, device=depth.device),
+                    depth_scalar *
+                    torch.ones(depth.shape, device=depth.device),
                 ]
             )[
                 :: self.camera_plane_downsample_factor,
@@ -105,9 +104,8 @@ class DebugPlotConfig:
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")
         if self.show_sfm_points:
-            plot3d(sfm_points[:: self.sfm_pts_downsample_factor, :].cpu(), "g", ax)
-        if self.show_outliers:
-            plot3d(outliers.cpu(), "r", ax)
+            plot3d(
+                sfm_points[:: self.sfm_pts_downsample_factor, :].cpu(), "g", ax)
         if self.show_camera_plane:
             plot3d(camera_plane_xyz.cpu(), "b", ax)
         plot3d(pts_world.cpu(), "k", ax)
@@ -116,6 +114,7 @@ class DebugPlotConfig:
 
 def get_pts_from_depth(
     depth: torch.Tensor,
+    mask: Optional[torch.Tensor],
     image_name: str,
     image_idx: int,
     parser: Parser,
@@ -153,22 +152,23 @@ def get_pts_from_depth(
         dense_world = (
             cam2world
             @ torch.vstack(
-                [dense_world, torch.ones(dense_world.shape[1], device=cam2world.device)]
+                [dense_world, torch.ones(
+                    dense_world.shape[1], device=cam2world.device)]
             )
         )[:3].T
         return dense_world
 
     depth_scalar, depth_shift, sfm_points_camera_homo = get_depth_scalar(
-        sfm_points, P, image_name, image_idx, imsize, depth
+        sfm_points, P, image_name, image_idx, imsize, depth, mask
     )
 
     if depth_scalar is None:
         return None
 
-    pts_camera = (
+    pts_camera: torch.Tensor = (
         torch.dstack(
             [
-                torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(
+                torch.from_numpy(np.mgrid[0: imsize[0], 0: imsize[1]].T).to(
                     depth.device
                 ),
                 depth_scalar * depth + depth_shift,
@@ -178,14 +178,29 @@ def get_pts_from_depth(
         .to(depth.device)
     )
 
+    valid_indices = torch.ones(
+        pts_camera.shape[0], dtype=bool, device=pts_camera.device)
+    if mask is not None:
+        downsampled_mask = mask[::downsample_factor,
+                                ::downsample_factor].reshape(-1)
+        valid_indices[~downsampled_mask] = 0
+
     inlier_indices = torch.abs(
-        pts_camera[:, 2] - torch.mean(pts_camera[:, 2])
-    ) < outlier_factor * torch.std(pts_camera[:, 2])
+        pts_camera[:, 2] - torch.mean(pts_camera[valid_indices, 2])
+    ) < outlier_factor * torch.std(pts_camera[valid_indices, 2])
+
+    # Only keep inliers that are not masked out
+    inlier_indices = torch.logical_and(valid_indices, inlier_indices)
+
     print(
         "Inlier depth ratio:",
-        float(torch.sum(inlier_indices).to(float) / pts_camera.shape[0]),
+        float(torch.sum(inlier_indices).to(float) /
+              torch.sum(valid_indices).to(float)),
     )
-    pts_camera = pts_camera[inlier_indices]
+
+    # Now valid indices filters out both masked out values and outliers
+    valid_indices = inlier_indices
+    pts_camera = pts_camera[valid_indices]
 
     pts_camera[:, 0] = (pts_camera[:, 0] + 0.5) * pts_camera[:, 2]
     pts_camera[:, 1] = (pts_camera[:, 1] + 0.5) * pts_camera[:, 2]
@@ -195,13 +210,11 @@ def get_pts_from_depth(
     if debug_plot_conf is not None:
         debug_plot_conf.plot(
             sfm_points,
-            pts_camera,
             pts_world,
-            outlier_factor,
             imsize,
             depth_scalar,
             depth,
             transform_camera_to_world_space,
         )
 
-    return pts_world.reshape([-1, 3]).float(), inlier_indices.cpu()
+    return pts_world.reshape([-1, 3]).float(), valid_indices.cpu()

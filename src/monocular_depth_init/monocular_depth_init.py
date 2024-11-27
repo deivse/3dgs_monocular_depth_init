@@ -6,6 +6,7 @@ from typing import List, Type
 from PIL import Image
 import numpy as np
 import torch
+import torchvision
 from tqdm import tqdm
 
 from config import Config
@@ -33,8 +34,13 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
         from .predictors.apple_depth_pro import AppleDepthPro
 
         return AppleDepthPro
+    elif config.mono_depth_model == "moge":
+        from .predictors.moge import MoGe
+
+        return MoGe
     else:
-        raise ValueError(f"Unsupported monodepth model: {config.mono_depth_model}")
+        raise ValueError(
+            f"Unsupported monodepth model: {config.mono_depth_model}")
 
 
 def predict_depth_or_get_cached_depth(
@@ -47,7 +53,8 @@ def predict_depth_or_get_cached_depth(
 ):
     cache_dir = Path(config.mono_depth_cache_dir) / model.name
     if config.invalidate_mono_depth_cache:
-        _LOGGER.info("Invalidating monocular depth cache for model %s", model.name)
+        _LOGGER.info(
+            "Invalidating monocular depth cache for model %s", model.name)
         shutil.rmtree(cache_dir, ignore_errors=True)
 
     cache_dir.mkdir(exist_ok=True, parents=True)
@@ -56,10 +63,12 @@ def predict_depth_or_get_cached_depth(
     depth = None
     if cache_path.exists():
         try:
-            depth = torch.load(cache_path)
+            depth = torch.load(cache_path, weights_only=True)
         except Exception as e:
-            _LOGGER.warning(f"Failed to load cached depth for image {image_name}: {e}")
+            _LOGGER.warning(
+                f"Failed to load cached depth for image {image_name}: {e}")
 
+    # TODO: support for models that can predict points directly
     if depth is None:
         depth = model.predict_depth(pil_image, fx, fy)
         try:
@@ -93,16 +102,18 @@ def pts_and_rgb_from_monocular_depth(
         fx = K[0, 0]
         fy = K[1, 1]
 
-        if model.can_predict_points_directly():
-            points, valid_point_indices = model.predict_3d_point_cloud(
+        if False: #model.can_predict_points_directly():
+            points, valid_point_indices = model.predict_points(
                 pil_image, fx, fy
             )
         else:
-            depth = predict_depth_or_get_cached_depth(
+            depth, mask = predict_depth_or_get_cached_depth(
                 model, pil_image, fx, fy, image_name, config
             )
+            depth_image = torchvision.transforms.ToPILImage()(depth)
             points, valid_point_indices = get_pts_from_depth(
                 depth,
+                mask,
                 image_name,
                 i,
                 parser,
@@ -116,7 +127,8 @@ def pts_and_rgb_from_monocular_depth(
             continue
 
         image = np.asarray(pil_image)
-        rgbs = image[::downsample_factor, ::downsample_factor, :].reshape([-1, 3])
+        rgbs = image[::downsample_factor,
+                     ::downsample_factor, :].reshape([-1, 3])
         # inlier indices are for a downsampled and flattened array
         rgbs = torch.from_numpy(rgbs[valid_point_indices])
         points_list.append(points)

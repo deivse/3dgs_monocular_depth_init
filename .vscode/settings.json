@@ -23,6 +23,7 @@
         "mgrid",
         "mmcv",
         "mmengine",
+        "moge",
         "monodepth",
         "ndarray",
         "nerfview",

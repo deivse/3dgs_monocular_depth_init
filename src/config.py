@@ -52,7 +52,8 @@ class Config:
     # Initialization strategy
     init_type: Literal["sfm", "random", "monocular_depth"] = "sfm"
 
-    mono_depth_model: Optional[Literal["metric3d", "depth_pro"]] = "metric3d"
+    mono_depth_model: Optional[Literal["metric3d",
+                                       "depth_pro", "moge"]] = "metric3d"
     mono_depth_cache_dir: str = "__mono_depth_cache__"
     invalidate_mono_depth_cache: bool = False
 
@@ -148,12 +149,14 @@ class Config:
 
         strategy = self.strategy
         if isinstance(strategy, DefaultStrategy):
-            strategy.refine_start_iter = int(strategy.refine_start_iter * factor)
+            strategy.refine_start_iter = int(
+                strategy.refine_start_iter * factor)
             strategy.refine_stop_iter = int(strategy.refine_stop_iter * factor)
             strategy.reset_every = int(strategy.reset_every * factor)
             strategy.refine_every = int(strategy.refine_every * factor)
         elif isinstance(strategy, MCMCStrategy):
-            strategy.refine_start_iter = int(strategy.refine_start_iter * factor)
+            strategy.refine_start_iter = int(
+                strategy.refine_start_iter * factor)
             strategy.refine_stop_iter = int(strategy.refine_stop_iter * factor)
             strategy.refine_every = int(strategy.refine_every * factor)
         else:
@@ -172,7 +175,8 @@ class Config:
             )
 
             if self.mono_depth_model is None:
-                raise ValueError(" is not provided for monocular_depth initialization.")
+                raise ValueError(
+                    " is not provided for monocular_depth initialization.")
             if self.mono_depth_model not in supported_models:
                 raise ValueError(
                     f"Unsupported monodepth model: {self.mono_depth_model}"

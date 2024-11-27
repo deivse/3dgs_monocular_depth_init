@@ -20,6 +20,24 @@
             "cwd": "${workspaceFolder}/src/",
         },
         {
+            "name": "gsplat trainer MoGe",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/trainer.py",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "default",
+                "--init-type=monocular_depth",
+                "--mono-depth-model=moge",
+                "--invalidate-mono-depth-cache"
+            ],
+            "cwd": "${workspaceFolder}/src/",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "gsplat trainer depth pro",
             "type": "debugpy",
             "request": "launch",

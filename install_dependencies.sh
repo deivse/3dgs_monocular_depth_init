@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+git submodule update --init --recursive
+
 if conda env list | grep -q 'gs_init_compare'; then
     echo "Environment 'gs_init_compare' already exists, updating..."
     conda env update --file ./environment.yml --prune

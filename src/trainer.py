@@ -25,7 +25,8 @@ def main(local_rank: int, world_rank, world_size: int, cfg: Config):
             for file in cfg.ckpt
         ]
         for k in runner.splats.keys():
-            runner.splats[k].data = torch.cat([ckpt["splats"][k] for ckpt in ckpts])
+            runner.splats[k].data = torch.cat(
+                [ckpt["splats"][k] for ckpt in ckpts])
         step = ckpts[0]["step"]
         runner.eval(step=step)
         runner.render_traj(step=step)

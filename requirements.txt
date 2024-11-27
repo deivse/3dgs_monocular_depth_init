@@ -18,4 +18,8 @@ git+https://github.com/microsoft/python-type-stubs.git # microsoft type stubs
 ruff
 src/third_party/apple_depth_pro
 pillow
+-r src/third_party/MoGe/requirements.txt
+# utils3d is a dependency of MoGe that is included in their repo, but the imports are broken 
+# so it's better to install it separately
+git+https://github.com/EasternJournalist/utils3d.git#egg=utils3d
 
