@@ -51,10 +51,12 @@ def predict_depth_or_get_cached_depth(
     image_name: str,
     config: Config,
 ):
-    cache_dir = Path(config.mono_depth_cache_dir) / model.name
+    dataset_name = config.data_dir.removeprefix(
+        "data/360_v2").replace("/", "_")
+    cache_dir = Path(config.mono_depth_cache_dir) / model.name / dataset_name
     if config.invalidate_mono_depth_cache:
         _LOGGER.info(
-            "Invalidating monocular depth cache for model %s", model.name)
+            "Invalidating monocular depth cache dir %s", cache_dir)
         shutil.rmtree(cache_dir, ignore_errors=True)
 
     cache_dir.mkdir(exist_ok=True, parents=True)
