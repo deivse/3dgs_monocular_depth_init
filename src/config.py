@@ -10,6 +10,8 @@ from gsplat.strategy import DefaultStrategy, MCMCStrategy
 class Config:
     # Disable viewer
     disable_viewer: bool = False
+    # Don't wait for user to close viewer after finishing training
+    non_blocking_viewer: bool = False
     # Path to the .pt files. If provide, it will skip training and run evaluation only.
     ckpt: Optional[List[str]] = None
     # Name of compression strategy to use

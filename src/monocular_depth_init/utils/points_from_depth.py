@@ -192,11 +192,8 @@ def get_pts_from_depth(
     # Only keep inliers that are not masked out
     inlier_indices = torch.logical_and(valid_indices, inlier_indices)
 
-    print(
-        "Inlier depth ratio:",
-        float(torch.sum(inlier_indices).to(float) /
-              torch.sum(valid_indices).to(float)),
-    )
+    inlier_ratio = float(torch.sum(inlier_indices).to(float) /
+                         torch.sum(valid_indices).to(float))
 
     # Now valid indices filters out both masked out values and outliers
     valid_indices = inlier_indices
@@ -217,4 +214,4 @@ def get_pts_from_depth(
             transform_camera_to_world_space,
         )
 
-    return pts_world.reshape([-1, 3]).float(), valid_indices.cpu()
+    return pts_world.reshape([-1, 3]).float(), valid_indices.cpu(), inlier_ratio

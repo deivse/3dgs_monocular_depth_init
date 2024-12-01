@@ -88,12 +88,12 @@ def pts_and_rgb_from_monocular_depth(
     rgbs_list: List[torch.Tensor] = []
 
     downsample_factor = config.dense_depth_downsample_factor
-    for i, image_info in enumerate(
-        tqdm(
-            list(zip(parser.image_paths, parser.image_names)),
-            desc="Calculating init points from monocular depth",
-        )
-    ):
+    progress_bar = tqdm(
+        list(zip(parser.image_paths, parser.image_names)),
+        desc="Calculating init points from monocular depth",
+    )
+    print("Running monocular depth initialization...")
+    for i, image_info in enumerate(progress_bar):
         image_path, image_name = image_info
         pil_image = Image.open(image_path)
         pil_image.load()
@@ -102,7 +102,7 @@ def pts_and_rgb_from_monocular_depth(
         fx = K[0, 0]
         fy = K[1, 1]
 
-        if False: #model.can_predict_points_directly():
+        if False:  # model.can_predict_points_directly():
             points, valid_point_indices = model.predict_points(
                 pil_image, fx, fy
             )
@@ -110,8 +110,7 @@ def pts_and_rgb_from_monocular_depth(
             depth, mask = predict_depth_or_get_cached_depth(
                 model, pil_image, fx, fy, image_name, config
             )
-            depth_image = torchvision.transforms.ToPILImage()(depth)
-            points, valid_point_indices = get_pts_from_depth(
+            points, valid_point_indices, inlier_ratio = get_pts_from_depth(
                 depth,
                 mask,
                 image_name,
@@ -121,6 +120,9 @@ def pts_and_rgb_from_monocular_depth(
                 debug_plot_conf=None,
                 # debug_plot_conf=DebugPlotConfig(),
             )
+            progress_bar.set_description(
+                f"Last processed '{image_name}',"
+                f" (inlier depth ratio {inlier_ratio:.2f})", refresh=True)
 
         if points is None:
             _LOGGER.warning(f"Failed to get points for image {image_name}")

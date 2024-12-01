@@ -35,7 +35,7 @@ def main(local_rank: int, world_rank, world_size: int, cfg: Config):
     else:
         runner.train()
 
-    if not cfg.disable_viewer:
+    if not cfg.disable_viewer and not cfg.non_blocking_viewer:
         print("Viewer running... Ctrl+C to exit.")
         time.sleep(1000000)
 
