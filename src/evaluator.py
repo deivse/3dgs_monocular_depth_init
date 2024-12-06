@@ -6,6 +6,7 @@ from abc import abstractmethod
 import abc
 from copy import deepcopy
 from datetime import datetime, timezone
+import gc
 import logging
 from pathlib import Path
 import shutil
@@ -39,7 +40,7 @@ def append_timestamp_to_dir_name(dir: Path) -> Path:
 def directory_exists_and_has_files(dir: Path) -> bool:
     if not dir.exists():
         return False
-    for d in dir.glob("*"):
+    for d in dir.rglob("*"):
         if d.is_file():
             return True
     return False
@@ -61,7 +62,7 @@ def combine_results(
     tensorboard_target_dirs = [combined_tb_dir / d.name for d in result_dirs]
 
     for tb_dir, target_dir in zip(tensorboard_dirs, tensorboard_target_dirs):
-        target_dir.mkdir(parents=True, exist_ok=False)
+        target_dir.mkdir(parents=True, exist_ok=True)
         for event_file in tb_dir.glob("events*"):
             target_file = target_dir / event_file.name
             shutil.copy(event_file, target_file)
@@ -180,8 +181,9 @@ def run_all_combinations(
     params_sfm: list[Type[RunParam]],
     params_monocular_depth: list[Type[RunParam]],
     results_dir: Path,
+    sfm_only: bool = False,
 ):
-    mono_depth_configs = create_configs_with_params(
+    mono_depth_configs = [] if sfm_only else create_configs_with_params(
         [("", base_config)], params_monocular_depth
     )
     sfm_configs = create_configs_with_params([("", base_config)], params_sfm)
@@ -200,11 +202,6 @@ def run_all_combinations(
         logging.warning(
             f"Result directory already exists and is not empty, moving it to {new_path}"
         )
-    elif results_dir.exists():
-        # Directory exists, but may contain empty subdirectories
-        # Let's clean up just in case
-        shutil.rmtree(results_dir)
-        logging.info(f"Deleted empty result directory {results_dir}")
 
     for name, config in configs:
         # Run training and evaluation
@@ -213,11 +210,17 @@ def run_all_combinations(
         print("=" * (len(name) + 14))
 
         config.result_dir = str(results_dir / name)
+
+        if Path(config.result_dir).exists():
+            shutil.rmtree(results_dir)
+            logging.info(f"Deleted empty result directory {results_dir}")
+
         try:
             if Path(config.result_dir).exists():
                 logging.warning("Result directory already exists, deleting.")
                 shutil.rmtree(config.result_dir, ignore_errors=True)
             trainer.run_with_config(config)
+            gc.collect()
         except KeyboardInterrupt:
             print("Interrupted, deleting incomplete result dir.")
             shutil.rmtree(config.result_dir, ignore_errors=True)
@@ -308,6 +311,12 @@ def create_argument_parser():
         default=False,
         help="Enable the viewer for the training process.",
     )
+    add_argument(
+        "--sfm-only",
+        action="store_true",
+        default=False,
+        help="Only evaluate SFM initialization.",
+    )
     return parser
 
 
@@ -315,11 +324,11 @@ def create_base_config(args: argparse.Namespace):
     cfg = Config(strategy=DefaultStrategy(verbose=True))
     cfg.non_blocking_viewer = True
     cfg.disable_viewer = not args.enable_viewer
-    cfg.invalidate_mono_depth_cache = args.invalidate_mono_depth_cache
+    cfg.ignore_mono_depth_cache = args.invalidate_mono_depth_cache
 
     cfg.max_steps = args.max_steps
 
-    cfg.eval_steps = list(range(250, 1500, 500)) + \
+    cfg.eval_steps = list(range(0, 1500, 500)) + \
         list(range(1500, args.max_steps, args.eval_frequency))
     cfg.eval_steps.append(args.max_steps)
     cfg.eval_steps = list(set(cfg.eval_steps))
@@ -346,7 +355,8 @@ def main():
             base_config,
             [DataDir],
             [DataDir, MonoDepthModel, DensePointDownsampleFactor],
-            results_dir
+            results_dir,
+            args.sfm_only,
         )
 
     combine_results(

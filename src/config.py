@@ -57,7 +57,7 @@ class Config:
     mono_depth_model: Optional[Literal["metric3d",
                                        "depth_pro", "moge"]] = "metric3d"
     mono_depth_cache_dir: str = "__mono_depth_cache__"
-    invalidate_mono_depth_cache: bool = False
+    ignore_mono_depth_cache: bool = False
 
     # Optional path to Metric3d config file if using "metric3d" init_type.
     metric3d_config: Optional[str] = None
@@ -187,14 +187,14 @@ class Config:
             if self.mono_depth_model == "metric3d":
                 if self.metric3d_config is None:
                     raise ValueError(
-                        "Metric3d config path is not provided for monocular_depth initialization."
+                        "--metric3d_config is required for monocular_depth initialization using Metric3d."
                     )
                 if self.metric3d_weights is None:
                     raise ValueError(
-                        "Metric3d weights path is not provided for monocular_depth initialization."
+                        "--metric3d_weights is required for monocular_depth initialization using Metric3d."
                     )
             elif self.mono_depth_model == "depth_pro":
                 if self.depth_pro_checkpoint is None:
                     raise ValueError(
-                        "DepthPro model checkpoint path is not provided for monocular_depth initialization."
+                        "--depth_pro_checkpoint is required for monocular_depth initialization using DepthPro."
                     )
