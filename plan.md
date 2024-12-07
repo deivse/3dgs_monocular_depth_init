@@ -1,7 +1,7 @@
 # TODO
 
-- [ ] Fix GPU memory not being freed when running via evaluator.py and after depth inference
-- [ ] Use nerfbaselines dataset loaders (and evaluation??)
+- [x] Fix GPU memory not being freed when running via evaluator.py and after depth inference
+- [ ] Add my impl as nerfbaselines method and use nerfbaselines for evaluation.
 - [ ] Test on other datasets -> Tanks and Temples pry dobry
 - [ ] Export init pts as some format to be able to visualize in Meshlab (or other software but Meshlab is good.)
 - [ ] Analyze results, write report, make presentation, get zapocet.

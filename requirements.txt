@@ -22,4 +22,4 @@ pillow
 # utils3d is a dependency of MoGe that is included in their repo, but the imports are broken 
 # so it's better to install it separately
 git+https://github.com/EasternJournalist/utils3d.git#egg=utils3d
-
+git+https://github.com/deivse/nerfbaselines.git@0b23fe2c65e1346e11d4a0eb62cf5afbb042bda4
