@@ -612,6 +612,8 @@ class DepthInitGsplat(Method):
             with open(f"{checkpoint}/cfg.yml", "r") as f:
                 cfg_dict = yaml.load(f, Loader=yaml.UnsafeLoader)
             cfg.__dict__.update(cfg_dict)
+            if cfg.init_type == "monocular_depth":
+                cfg.init_type = "sfm"
 
         # Apply config overrides
         field_types = {k.name: k.type for k in dataclasses.fields(cfg)}

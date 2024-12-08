@@ -50,6 +50,7 @@ fi
             "description": """TODO""",
         },
         "presets": {
+            "sfm": {},
             "metric3d_vit_large": {
                 "init_type": "monocular_depth",
                 "mono_depth_model": "metric3d",
