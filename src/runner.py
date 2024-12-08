@@ -408,7 +408,7 @@ class Runner:
                 )
             )
 
-        train_loader = torch.utils.data.DataLoader(
+        trainloader = torch.utils.data.DataLoader(
             self.trainset,
             batch_size=cfg.batch_size,
             shuffle=True,
@@ -416,12 +416,12 @@ class Runner:
             persistent_workers=True,
             pin_memory=True,
         )
-        train_loader_iter = iter(train_loader)
+        trainloader_iter = iter(trainloader)
 
         # Training loop.
         global_tic = time.time()
-        progress_bar = tqdm.tqdm(range(init_step, max_steps))
-        for step in progress_bar:
+        pbar = tqdm.tqdm(range(init_step, max_steps))
+        for step in pbar:
             cuda_stats_msg(device, f"Step {step}")
 
             if not cfg.disable_viewer:
@@ -433,10 +433,10 @@ class Runner:
                 tic = time.time()
 
             try:
-                data = next(train_loader_iter)
+                data = next(trainloader_iter)
             except StopIteration:
-                train_loader_iter = iter(train_loader)
-                data = next(train_loader_iter)
+                trainloader_iter = iter(trainloader)
+                data = next(trainloader_iter)
 
             cam_to_worlds = cam_to_worlds_gt = data["camtoworld"].to(
                 device
@@ -507,11 +507,11 @@ class Runner:
 
             # loss
             l1loss = F.l1_loss(colors, pixels)
-            ssim_loss = 1.0 - fused_ssim(
+            ssimloss = 1.0 - fused_ssim(
                 colors.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2), padding="valid"
             )
             loss = l1loss * (1.0 - cfg.ssim_lambda) + \
-                ssim_loss * cfg.ssim_lambda
+                ssimloss * cfg.ssim_lambda
             if cfg.depth_loss:
                 # query depths from depth map
                 points = torch.stack(
@@ -564,7 +564,7 @@ class Runner:
                 # monitor the pose error if we inject noise
                 pose_err = F.l1_loss(cam_to_worlds_gt, cam_to_worlds)
                 desc += f"pose err={pose_err.item():.6f}| "
-            progress_bar.set_description(desc)
+            pbar.set_description(desc)
 
             # write images (gt and render)
             # if world_rank == 0 and step % 800 == 0:
@@ -580,7 +580,7 @@ class Runner:
                 self.writer.add_scalar("train/loss", loss.item(), step)
                 self.writer.add_scalar("train/l1loss", l1loss.item(), step)
                 self.writer.add_scalar(
-                    "train/ssimloss", ssim_loss.item(), step)
+                    "train/ssimloss", ssimloss.item(), step)
                 self.writer.add_scalar(
                     "train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)

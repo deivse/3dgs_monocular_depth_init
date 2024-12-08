@@ -292,11 +292,11 @@ class gs_Dataset:
 
 
 # Extract code dynamically
-def _build_simple_trainer_module():
-    module_spec = importlib.util.find_spec("simple_trainer", __package__)
-    assert module_spec is not None and module_spec.origin is not None, "Failed to find simple_trainer module"
+def _build_runner_module():
+    module_spec = importlib.util.find_spec("runner", __package__)
+    assert module_spec is not None and module_spec.origin is not None, "Failed to find runner module"
     with open(module_spec.origin, "r") as f:
-        simple_trainer_ast = ast.parse(f.read())
+        runner_ast = ast.parse(f.read())
 
     # Transform simple trainer, set num_workers=0
     class _Visitor(ast.NodeVisitor):
@@ -308,33 +308,14 @@ def _build_simple_trainer_module():
                 if persistent_workers is not None:
                     node.keywords.remove(persistent_workers)
             super().visit(node)
-    _Visitor().visit(simple_trainer_ast)
+    _Visitor().visit(runner_ast)
 
     # Filter imports
-    simple_trainer_ast.body.remove(next(x for x in simple_trainer_ast.body if ast.unparse(x) == "from torch.utils.tensorboard import SummaryWriter"))
-    simple_trainer_ast.body.remove(next(x for x in simple_trainer_ast.body if ast.unparse(x) == "import viser"))
-    # simple_trainer_ast.body.remove(next(x for x in simple_trainer_ast.body if ast.unparse(x) == "import nerfview"))
+    runner_ast.body.remove(next(x for x in runner_ast.body if ast.unparse(x) == "from torch.utils.tensorboard import SummaryWriter"))
+    runner_ast.body.remove(next(x for x in runner_ast.body if ast.unparse(x) == "import viser"))
+    # runner_ast.body.remove(next(x for x in runner_ast.body if ast.unparse(x) == "import nerfview"))
 
-    # Update config
-    config_ast = next(x for x in simple_trainer_ast.body if getattr(x, "name", None) == "Config")
-    assert isinstance(config_ast, ast.ClassDef)
-    config_ast.body.insert(-1, ast.AnnAssign(
-        target=ast.Name(id="app_test_opt_steps", ctx=ast.Store(), lineno=0, col_offset=0),
-        annotation=ast.Name(id="int", ctx=ast.Load(), lineno=0, col_offset=0),
-        value=ast.Constant(value=128, kind=None, lineno=0, col_offset=0), 
-        simple=True, col_offset=0, lineno=0))
-    config_ast.body.insert(-1, ast.AnnAssign(
-        target=ast.Name(id="app_test_opt_lr", ctx=ast.Store(), lineno=0, col_offset=0),
-        annotation=ast.Name(id="float", ctx=ast.Load(), lineno=0, col_offset=0),
-        value=ast.Constant(value=0.1, kind=None, lineno=0, col_offset=0), 
-        simple=True, col_offset=0, lineno=0))
-    config_ast.body.insert(-1, ast.AnnAssign(  # type: ignore
-        target=ast.Name(id="background_color", ctx=ast.Store(), lineno=0, col_offset=0),
-        annotation=ast.parse("Optional[Tuple[float, float, float]]").body[0].value,  # type: ignore
-        value=ast.Constant(value=None, kind=None, lineno=0, col_offset=0), 
-        simple=True, col_offset=0, lineno=0))
-
-    runner_ast = next(x for x in simple_trainer_ast.body if getattr(x, "name", None) == "Runner")
+    runner_ast = next(x for x in runner_ast.body if getattr(x, "name", None) == "Runner")
     assert isinstance(runner_ast, ast.ClassDef)
     runner_train_ast = next(x for x in runner_ast.body if getattr(x, "name", None) == "train")
     assert isinstance(runner_train_ast, ast.FunctionDef)
@@ -357,9 +338,9 @@ schedulers=self.schedulers
 """).body)
     iter_step_body.extend(init_train_body[:4])
     iter_step_body.extend((runner_train_ast.body[-1].body)[1:-1])
-    iter_step_body.pop(-10)  # Remove write to tensorboard step
-    save_step = iter_step_body.pop(-9)  # Remove save() step
-    iter_step_body.pop(-2)  # Remove eval() step
+    iter_step_body.pop(-11)  # Remove write to tensorboard step
+    save_step = iter_step_body.pop(-10)  # Remove save() step
+    iter_step_body.pop(-3)  # Remove eval() step
     # Remove pbar.set_description
     iter_step_body.pop(next(i for i, step in enumerate(iter_step_body) if ast.unparse(step) == "pbar.set_description(desc)"))
 
@@ -371,8 +352,8 @@ schedulers=self.schedulers
     alphas = alphas * sampling_mask + alphas.detach() * (1 - sampling_mask)
 """).body[0])
     
-    bkgd_blend_step_idx = next(i for i, step in enumerate(iter_step_body) if ast.unparse(step).startswith("if cfg.random_bkgd:"))
-    iter_step_body.insert(bkgd_blend_step_idx + 1, ast.parse("""if not cfg.random_bkgd and cfg.background_color is not None:
+    bkgd_blend_step_idx = next(i for i, step in enumerate(iter_step_body) if ast.unparse(step).startswith("if cfg.random_background:"))
+    iter_step_body.insert(bkgd_blend_step_idx + 1, ast.parse("""if not cfg.random_background and cfg.background_color is not None:
     bkgd = torch.tensor(cfg.background_color, dtype=colors.dtype, device=self.device).view(1, 1, 1, 3)
     colors = colors + bkgd * (1.0 - alphas)
 """).body[0])
@@ -427,7 +408,7 @@ schedulers=self.schedulers
 
     # Execute code to build module
     module = {}
-    exec(compile(simple_trainer_ast, "<string>", "exec"), module)
+    exec(compile(runner_ast, "<string>", "exec"), module)
     return argparse.Namespace(**module)
 
 
@@ -436,7 +417,7 @@ class GSplat(Method):
         super().__init__()
 
         self.checkpoint = checkpoint
-        self.simple_trainer = _build_simple_trainer_module()
+        self.runner_module = _build_runner_module()
 
         # Build trainer
         self.cfg = self._get_config(checkpoint, config_overrides)
@@ -450,7 +431,7 @@ class GSplat(Method):
         # Build runner
         local_rank = world_rank = 0
         world_size = 1
-        self.runner = self.simple_trainer.Runner(
+        self.runner_module = self.runner_module.Runner(
             local_rank, world_rank, world_size, self.cfg, Dataset=gs_Dataset, Parser=partial(gs_Parser, dataset=train_dataset, state=parser_state))
         self.step = 0
         self._loaded_step = None
@@ -460,25 +441,25 @@ class GSplat(Method):
             ckpt_files = [os.path.join(checkpoint, x) for x in os.listdir(checkpoint) if x.startswith("ckpt_") and x.endswith(".pt")]
             ckpt_files.sort(key=lambda x: int(x.split("_rank")[-1].split(".")[0]))
             ckpts = [
-                torch.load(file, map_location=self.runner.device, weights_only=True)
+                torch.load(file, map_location=self.runner_module.device, weights_only=True)
                 for file in ckpt_files
             ]
-            for k in self.runner.splats.keys():
+            for k in self.runner_module.splats.keys():
                 feat = torch.cat([ckpt["splats"][k] for ckpt in ckpts]) if len(ckpts) > 1 else ckpts[0]["splats"][k]
-                self.runner.splats[k].data = feat
+                self.runner_module.splats[k].data = feat
             if self.cfg.pose_opt:
-                self.runner.pose_adjust.load_state_dict(ckpts[0]["pose_adjust"])
+                self.runner_module.pose_adjust.load_state_dict(ckpts[0]["pose_adjust"])
             if self.cfg.app_opt:
-                self.runner.app_module.load_state_dict(ckpts[0]["app_module"])
+                self.runner_module.app_module.load_state_dict(ckpts[0]["app_module"])
             self.step = self._loaded_step = ckpts[0]["step"]
 
         # Setup dataloaders if training mode
         if train_dataset is not None:
-            self.runner.setup_train()
+            self.runner_module.setup_train()
 
     def _get_config(self, checkpoint, config_overrides):
-        cfg = self.simple_trainer.Config(
-            strategy=self.simple_trainer.DefaultStrategy(verbose=True),
+        cfg = self.runner_module.Config(
+            strategy=self.runner_module.DefaultStrategy(verbose=True),
         )
         cfg.data_factor = 1
 
@@ -529,7 +510,7 @@ class GSplat(Method):
 
     def train_iteration(self, step):
         self.step = step
-        out = self.runner.train_iteration(step)
+        out = self.runner_module.train_iteration(step)
         self.step = step+1
         return out
 
@@ -538,8 +519,8 @@ class GSplat(Method):
         with open(f"{path}/cfg.yml", "w") as f:
             yaml.dump(vars(self.cfg), f)
         with open(f"{path}/parser.json", "w") as f:
-            json.dump(self.runner.parser.export(), f)
-        self.runner.save(self.step, path)
+            json.dump(self.runner_module.parser.export(), f)
+        self.runner_module.save(self.step, path)
 
     @contextmanager
     def _patch_embedding(self, embedding=None):
@@ -550,21 +531,21 @@ class GSplat(Method):
         try:
             was_called = False
             if self.cfg.app_opt:
-                embeds_module = self.runner.app_module.embeds
+                embeds_module = self.runner_module.app_module.embeds
                 class _embed(torch.nn.Module):
                     def forward(*args, **kwargs):
                         del args, kwargs
                         nonlocal was_called
                         was_called = True
                         return embedding[None]
-                self.runner.app_module.embeds = _embed()
+                self.runner_module.app_module.embeds = _embed()
             yield None
             if self.cfg.app_opt:
                 assert was_called, "Failed to patch appearance embedding"
         finally:
             # Return embeds back
             if embeds_module is not None:
-                self.runner.app_module.embeds = embeds_module
+                self.runner_module.app_module.embeds = embeds_module
 
     def _add_background_color(self, img, accumulation):
         if self.cfg.background_color is None:
@@ -577,8 +558,8 @@ class GSplat(Method):
         camera = camera.item()
         from datasets.normalize import transform_cameras  # type: ignore
         cfg = self.cfg
-        device = self.runner.device
-        camtoworlds_np = transform_cameras(self.runner.parser.transform, pad_poses(camera.poses[None]))
+        device = self.runner_module.device
+        camtoworlds_np = transform_cameras(self.runner_module.parser.transform, pad_poses(camera.poses[None]))
         camtoworlds = torch.from_numpy(camtoworlds_np).float().to(device)
         fx, fy, cx, cy = camera.intrinsics
         Ks = torch.from_numpy(np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])).float().to(device)
@@ -586,10 +567,10 @@ class GSplat(Method):
 
         # Patch appearance
         embedding_np = (options or {}).get("embedding")
-        embedding = torch.from_numpy(embedding_np).to(self.runner.device) if embedding_np is not None else None
+        embedding = torch.from_numpy(embedding_np).to(self.runner_module.device) if embedding_np is not None else None
         outputs = (options or {}).get("outputs") or ()
         with self._patch_embedding(embedding):
-            colors, accumulation, _ = self.runner.rasterize_splats(
+            colors, accumulation, _ = self.runner_module.rasterize_splats(
                 camtoworlds=camtoworlds,
                 Ks=Ks[None],
                 width=width,
@@ -612,7 +593,7 @@ class GSplat(Method):
     def get_train_embedding(self, index):
         if not self.cfg.app_opt:
             return None
-        return self.runner.app_module.embeds.weight[index].detach().cpu().numpy()
+        return self.runner_module.app_module.embeds.weight[index].detach().cpu().numpy()
 
     def optimize_embedding(self, dataset: Dataset, *, embedding=None) -> OptimizeEmbeddingOutput:
         if not self.cfg.app_opt:
@@ -621,8 +602,8 @@ class GSplat(Method):
         camera = dataset["cameras"].item()
         from datasets.normalize import transform_cameras  # type: ignore
         cfg = self.cfg
-        device = self.runner.device
-        camtoworlds_np = transform_cameras(self.runner.parser.transform, pad_poses(camera.poses[None]))
+        device = self.runner_module.device
+        camtoworlds_np = transform_cameras(self.runner_module.parser.transform, pad_poses(camera.poses[None]))
         camtoworlds = torch.from_numpy(camtoworlds_np).float().to(device)
         fx, fy, cx, cy = camera.intrinsics
         Ks = torch.from_numpy(np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])).float().to(device)
@@ -637,9 +618,9 @@ class GSplat(Method):
 
         # Patch appearance
         if embedding is not None:
-            embedding_th = torch.from_numpy(embedding).to(self.runner.device)
+            embedding_th = torch.from_numpy(embedding).to(self.runner_module.device)
         else:
-            embedding_th = torch.zeros_like(self.runner.app_module.embeds.weight[0])
+            embedding_th = torch.zeros_like(self.runner_module.app_module.embeds.weight[0])
         embedding_th = torch.nn.Parameter(embedding_th.requires_grad_())
         optimizer = torch.optim.Adam([embedding_th], lr=self.cfg.app_test_opt_lr)
         l1losses: List[float] = []
@@ -647,7 +628,7 @@ class GSplat(Method):
         losses: List[float] = []
         with torch.enable_grad(), self._patch_embedding(embedding_th):
             for _ in range(self.cfg.app_test_opt_steps):
-                colors, accumulation, _ = self.runner.rasterize_splats(
+                colors, accumulation, _ = self.runner_module.rasterize_splats(
                     camtoworlds=camtoworlds,
                     Ks=Ks[None],
                     width=width,
@@ -664,7 +645,7 @@ class GSplat(Method):
                     colors = colors * sampling_masks + colors.detach() * (1.0 - sampling_masks)
 
                 l1loss = F.l1_loss(colors, pixels[None])
-                ssimloss = 1.0 - self.runner.ssim(
+                ssimloss = 1.0 - self.runner_module.ssim(
                     pixels[None].permute(0, 3, 1, 2), colors.permute(0, 3, 1, 2)
                 )
                 loss = l1loss * (1.0 - cfg.ssim_lambda) + ssimloss * cfg.ssim_lambda
@@ -689,7 +670,7 @@ class GSplat(Method):
 
         options = options or {}
         dataset_metadata = options.get("dataset_metadata") or {}
-        splats = self.runner.splats
+        splats = self.runner_module.splats
 
         if self.cfg.app_opt:
             from nerfbaselines.utils import apply_transform, invert_transform
@@ -700,10 +681,10 @@ class GSplat(Method):
                 camera_center = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32, device="cuda")
             logging.warning("gsplat does not support view-dependent demo when appearance is enabled (app_opt=True). We will bake the appearance of a single appearance embedding and single viewing direction.")
             embedding_np = (options or {}).get("embedding")
-            embedding = torch.from_numpy(embedding_np).to(self.runner.device) if embedding_np is not None else None
+            embedding = torch.from_numpy(embedding_np).to(self.runner_module.device) if embedding_np is not None else None
             with torch.no_grad(), self._patch_embedding(embedding):
                 # Get the embedding
-                colors = self.runner.app_module(
+                colors = self.runner_module.app_module(
                     features=splats["features"],
                     embed_ids=torch.zeros((1,), dtype=torch.long, device="cuda"),
                     dirs=splats["means"][None, :, :] - camera_center[None, None, :],
@@ -720,8 +701,8 @@ class GSplat(Method):
 
         # Apply transform to viewer transform
         options = options or {}
-        if self.runner.parser.transform is not None:
-            transform = self.runner.parser.transform.copy()
+        if self.runner_module.parser.transform is not None:
+            transform = self.runner_module.parser.transform.copy()
             inv_transform = invert_transform(transform, has_scale=True)
             options["dataset_metadata"] = options.get("dataset_metadata", {})
             viewer_transform = options["dataset_metadata"].get("viewer_transform", np.eye(4))

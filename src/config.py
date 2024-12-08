@@ -141,7 +141,17 @@ class Config:
     # Save training images to tensorboard
     tb_save_image: bool = False
 
+    # Network used for Learned Perceptual Image Patch Similarity (LPIPS) loss
     lpips_net: Literal["vgg", "alex"] = "alex"
+
+    # ====== nerfbaselines extensions ======
+
+    # Appearance optimization eval settings
+    app_test_opt_steps: int = 128
+    app_test_opt_lr: float = 0.1
+
+    # Background color for rendering
+    background_color: Optional[Tuple[float, float, float]] = None
 
     def adjust_steps(self, factor: float):
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
