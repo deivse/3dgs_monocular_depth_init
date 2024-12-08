@@ -10,4 +10,4 @@ else
     echo "Creating environment 'gs_init_compare'..."
     conda env create --file ./environment.yml
 fi
-conda run --live-stream -n gs_init_compare pip install -r requirements.txt
+conda run --live-stream -n gs_init_compare pip install --editable .

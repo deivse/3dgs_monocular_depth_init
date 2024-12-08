@@ -5,6 +5,43 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "editast",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/test_edit_ast.py",
+            "console": "integratedTerminal",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/",
+        },
+        {
+            "name": "nerfbaselines install",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "nerfbaselines",
+            "args": [
+                "install",
+                "--spec=${workspaceFolder}/src/nerfbaselines_integration/method_spec.py",
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "nerfbaselines train",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "nerfbaselines",
+            "args": [
+                "train",
+                "--method=depthinit_gsplat",
+                "--backend=python",
+                "--data=external://seathru-nerf/iui3",
+                "--presets=metric3d_vit_large"
+            ],
+            "env": {
+                "NERFBASELINES_REGISTER": "${workspaceFolder}/gs_init_compare/nerfbaselines_integration/method_spec.py"
+            },
+            "justMyCode": false
+        },
+        {
             "name": "evaluator",
             "type": "debugpy",
             "request": "launch",

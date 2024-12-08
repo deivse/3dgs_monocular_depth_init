@@ -1,10 +1,11 @@
 .venv/
 __pycache__
 recon_cache/
-src/third_party/metric3d/weight/*.pth
-src/data/
+gs_init_compare/third_party/metric3d/weight/*.pth
+gs_init_compare/data/
 results/
 results_*-*-*_*:*:*/
 combined_results/
 combined_results_*-*-*_*:*:*/
 __mono_depth_cache__/
+*.egg-info/

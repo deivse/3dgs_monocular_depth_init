@@ -4,9 +4,9 @@ import logging
 import depth_pro
 import numpy as np
 
-from config import Config
 from PIL import Image
 
+from gs_init_compare.config import Config
 from .depth_predictor_interface import DepthPredictor, PredictedDepth
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,8 +61,7 @@ def _load_rgb(pil_img: Image.Image, auto_rotate: bool, remove_alpha: bool):
 class AppleDepthPro(DepthPredictor):
     def __init__(self, config: Config, device: str):
         # Load model and preprocessing transform
-        depth_pro_config = deepcopy(
-            depth_pro.depth_pro.DEFAULT_MONODEPTH_CONFIG_DICT)
+        depth_pro_config = deepcopy(depth_pro.depth_pro.DEFAULT_MONODEPTH_CONFIG_DICT)
         depth_pro_config.checkpoint_uri = config.depth_pro_checkpoint
 
         try:
@@ -84,6 +83,9 @@ class AppleDepthPro(DepthPredictor):
         return "AppleDepthPro"
 
     def predict_depth(self, img: Image.Image, *_) -> PredictedDepth:
+        raise NotImplementedError(
+            "AppleDepthPro needs exif data that is not available via the Dataset right now."
+        )
         # Load and preprocess an image.
         image, _, f_px = _load_rgb(img, auto_rotate=True, remove_alpha=True)
         image = self.__transform(img)

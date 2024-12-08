@@ -5,16 +5,19 @@ import numpy as np
 import torch
 from PIL import Image
 
-from config import Config
-from third_party.metric3d.mono.model.monodepth_model import (
+from gs_init_compare.config import Config
+from gs_init_compare.third_party.metric3d.mono.model.monodepth_model import (
     get_configured_monodepth_model,
 )
-from third_party.metric3d.mono.utils.do_test import (
+from gs_init_compare.third_party.metric3d.mono.utils.do_test import (
     get_prediction,
     transform_test_data_scalecano,
 )
-from third_party.metric3d.mono.utils.running import load_ckpt
-from monocular_depth_init.predictors.depth_predictor_interface import DepthPredictor, PredictedDepth
+from gs_init_compare.third_party.metric3d.mono.utils.running import load_ckpt
+from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
+    DepthPredictor,
+    PredictedDepth,
+)
 
 try:
     from mmcv.utils import Config as Metric3dConfig
@@ -50,13 +53,11 @@ class Metric3d(DepthPredictor):
     def can_predict_points_directly(self) -> bool:
         return False
 
-    def predict_depth(self, img: Image.Image, fx: float, fy: float) -> PredictedDepth:
-        cv_image = np.asarray(img)
-        img = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+    def predict_depth(self, img: torch.Tensor, fx: float, fy: float) -> PredictedDepth:
+        img = img.cpu().numpy()
         intrinsic = [fx, fy, img.shape[1] / 2, img.shape[0] / 2]
         rgb_input, cam_models_stacks, pad, label_scale_factor = (
-            transform_test_data_scalecano(
-                img, intrinsic, self.__cfg.data_basic)
+            transform_test_data_scalecano(img, intrinsic, self.__cfg.data_basic)
         )
 
         with torch.no_grad():
@@ -73,7 +74,7 @@ class Metric3d(DepthPredictor):
 
             pred_normal = output["normal_out_list"][0][:, :3, :, :]
             H, W = pred_normal.shape[2:]
-            pred_normal = pred_normal[:, :, pad[0]: H - pad[1], pad[2]: W - pad[3]]
+            pred_normal = pred_normal[:, :, pad[0] : H - pad[1], pad[2] : W - pad[3]]
 
         pred_depth = pred_depth.squeeze()
         pred_depth[pred_depth < 0] = 0

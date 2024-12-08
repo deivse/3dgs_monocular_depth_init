@@ -385,6 +385,9 @@ class Dataset:
         return data
 
 
+Parser.DatasetCls = Dataset
+
+
 if __name__ == "__main__":
     import argparse
 

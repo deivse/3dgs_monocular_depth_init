@@ -5,8 +5,8 @@ from matplotlib import pyplot as plt
 import numpy as np
 import torch
 
-from datasets.colmap import Parser
-from monocular_depth_init.utils.plot3d import plot3d
+from gs_init_compare.nerfbaselines_integration.method import gs_Parser as Parser
+from gs_init_compare.monocular_depth_init.utils.plot3d import plot3d
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -115,9 +115,10 @@ class DebugPlotConfig:
 def get_pts_from_depth(
     depth: torch.Tensor,
     mask: Optional[torch.Tensor],
-    image_name: str,
-    image_idx: int,
+    image_id: int,
     parser: Parser,
+    cam2world: torch.Tensor,
+    K: torch.Tensor,
     downsample_factor=10,
     outlier_factor=2.5,
     debug_plot_conf: Optional[DebugPlotConfig] = None,
@@ -128,11 +129,9 @@ def get_pts_from_depth(
         inlier_indices: torch.Tensor on CPU of shape [depth.shape[0] * depth.shape[1]] with True for inliers
     """
     depth = depth.float()
-    cam2world = torch.from_numpy(parser.cam_to_worlds[image_idx])
-    camera_id = parser.camera_ids[image_idx]
-    imsize = parser.imsize_dict[camera_id]
+    imsize = depth.T.shape
+    image_name = parser.image_names[image_id]
     w2c = torch.linalg.inv(cam2world)
-    K = torch.from_numpy(parser.Ks_dict[camera_id])
     R = w2c[:3, :3]
     C = -R.T @ w2c[:3, 3]
     P = K @ R @ torch.hstack([torch.eye(3), -C[:, None]])
@@ -159,7 +158,7 @@ def get_pts_from_depth(
         return dense_world
 
     depth_scalar, depth_shift, sfm_points_camera_homo = get_depth_scalar(
-        sfm_points, P, image_name, image_idx, imsize, depth, mask
+        sfm_points, P, image_name, image_id, imsize, depth, mask
     )
 
     if depth_scalar is None:

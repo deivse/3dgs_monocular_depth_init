@@ -44,12 +44,12 @@ class DepthPredictor(metaclass=ABCMeta):
         Returns the name of the predictor.
         """
 
-    def predict_depth(self, img: Image.Image, fx: float, fy: float) -> PredictedDepth:
+    def predict_depth(self, img: torch.Tensor, fx: float, fy: float) -> PredictedDepth:
         """
         Predict depth from a single image.
 
         Args:
-            img: Image.
+            img: tensor of shape (H, W, 3).
             fx: Focal length in x direction.
             fy: Focal length in y direction.
 

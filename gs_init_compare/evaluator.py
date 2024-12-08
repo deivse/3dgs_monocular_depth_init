@@ -5,32 +5,32 @@ Runs training and evaluation for multiple scenes and initialization strategies, 
 from abc import abstractmethod
 import abc
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime
 import gc
 import logging
 from pathlib import Path
 import shutil
 from typing import Any, Iterable, Type
 
-from gsplat.strategy import DefaultStrategy
-from config import Config
 import argparse
+from gsplat.strategy import DefaultStrategy
 
-import trainer
+from gs_init_compare.config import Config
+import gs_init_compare.trainer as trainer
+
 
 
 def append_timestamp_to_dir_name(dir: Path) -> Path:
     """
     Appends a timestamp to the directory name to avoid conflicts
-    when the directory already exists. 
+    when the directory already exists.
 
     `dir` is not modified, a new Path object is returned.
     """
-    last_edit_time = max(
-        f.stat().st_mtime for f in dir.rglob("*"))
-    last_edit_time_str = datetime.fromtimestamp(
-        last_edit_time
-    ).strftime('_%d-%m-%Y_%H:%M:%S')
+    last_edit_time = max(f.stat().st_mtime for f in dir.rglob("*"))
+    last_edit_time_str = datetime.fromtimestamp(last_edit_time).strftime(
+        "_%d-%m-%Y_%H:%M:%S"
+    )
     new_old_dir_name = dir.name + last_edit_time_str
     # This doesn't point combined_tb_dir to the new location
     # (Which is what we want)
@@ -99,9 +99,7 @@ class MonoDepthModel(RunParam):
             config.mono_depth_model = "metric3d"
             suffix = value.split("-")[-1]
 
-            config.metric3d_config = (
-                f"third_party/metric3d/mono/configs/HourglassDecoder/vit.raft5.{suffix}.py"
-            )
+            config.metric3d_config = f"third_party/metric3d/mono/configs/HourglassDecoder/vit.raft5.{suffix}.py"
             config.metric3d_weights = (
                 f"third_party/metric3d/weight/metric_depth_vit_{suffix}_800k.pth"
             )
@@ -115,7 +113,9 @@ class MonoDepthModel(RunParam):
                 )
         elif value == "depth_pro":
             config.mono_depth_model = "depth_pro"
-            config.depth_pro_checkpoint = "third_party/apple_depth_pro/checkpoints/depth_pro.pt"
+            config.depth_pro_checkpoint = (
+                "third_party/apple_depth_pro/checkpoints/depth_pro.pt"
+            )
             if not Path(config.depth_pro_checkpoint).exists():
                 raise FileNotFoundError(
                     f"DepthPro checkpoint file not found: {config.depth_pro_checkpoint}"
@@ -143,8 +143,16 @@ class DensePointDownsampleFactor(RunParam):
 
 
 class DataDir(RunParam):
-    values = ["garden", "stump", "bicycle",
-              "bonsai", "counter", "kitchen", "room", "stump"]
+    values = [
+        "garden",
+        "stump",
+        "bicycle",
+        "bonsai",
+        "counter",
+        "kitchen",
+        "room",
+        "stump",
+    ]
 
     @classmethod
     def apply(cls, config: Config, value):
@@ -183,8 +191,10 @@ def run_all_combinations(
     results_dir: Path,
     sfm_only: bool = False,
 ):
-    mono_depth_configs = [] if sfm_only else create_configs_with_params(
-        [("", base_config)], params_monocular_depth
+    mono_depth_configs = (
+        []
+        if sfm_only
+        else create_configs_with_params([("", base_config)], params_monocular_depth)
     )
     sfm_configs = create_configs_with_params([("", base_config)], params_sfm)
 
@@ -275,27 +285,36 @@ def create_argument_parser():
         "--eval-frequency",
         type=int,
         default=1000,
-        help=("How often evaluation is run during training. Evaluation is always run at steps 250, 500, 750, 1000, 1500 and max_steps."
-              "After step 1500 the next steps are determined by this value: range(1000, max_steps, eval_frequency)."),
+        help=(
+            "How often evaluation is run during training. Evaluation is always run at steps 250, 500, 750, 1000, 1500 and max_steps."
+            "After step 1500 the next steps are determined by this value: range(1000, max_steps, eval_frequency)."
+        ),
     )
     add_argument(
         "--data-dirs",
         nargs="+",
-        default=["garden", "stump", "bicycle", "bonsai",
-                 "counter", "kitchen", "room", "stump"],
+        default=[
+            "garden",
+            "stump",
+            "bicycle",
+            "bonsai",
+            "counter",
+            "kitchen",
+            "room",
+            "stump",
+        ],
         help="Data directories to run training and evaluation for.",
     )
     add_argument(
         "--invalidate-mono-depth-cache",
         action="store_true",
         default=False,
-        help="Invalidate the cache for monocular depth predictors"
+        help="Invalidate the cache for monocular depth predictors",
     )
     add_argument(
         "--models",
         nargs="+",
-        default=["metric3d-vit-small",
-                 "metric3d-vit-large", "depth_pro", "moge"],
+        default=["metric3d-vit-small", "metric3d-vit-large", "depth_pro", "moge"],
         help="Monocular depth models to evaluate.",
     )
     add_argument(
@@ -328,8 +347,9 @@ def create_base_config(args: argparse.Namespace):
 
     cfg.max_steps = args.max_steps
 
-    cfg.eval_steps = list(range(0, 1500, 500)) + \
-        list(range(1500, args.max_steps, args.eval_frequency))
+    cfg.eval_steps = list(range(0, 1500, 500)) + list(
+        range(1500, args.max_steps, args.eval_frequency)
+    )
     cfg.eval_steps.append(args.max_steps)
     cfg.eval_steps = list(set(cfg.eval_steps))
     cfg.eval_steps.sort()

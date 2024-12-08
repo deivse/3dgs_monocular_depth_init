@@ -3,8 +3,8 @@ import time
 
 import torch
 import tyro
-from config import Config
-from runner import Runner
+from gs_init_compare.config import Config
+from gs_init_compare.runner import Runner
 
 from gsplat.distributed import cli
 from gsplat.strategy import DefaultStrategy, MCMCStrategy
@@ -25,8 +25,7 @@ def main(local_rank: int, world_rank, world_size: int, cfg: Config):
             for file in cfg.ckpt
         ]
         for k in runner.splats.keys():
-            runner.splats[k].data = torch.cat(
-                [ckpt["splats"][k] for ckpt in ckpts])
+            runner.splats[k].data = torch.cat([ckpt["splats"][k] for ckpt in ckpts])
         step = ckpts[0]["step"]
         runner.eval(step=step)
         runner.render_traj(step=step)

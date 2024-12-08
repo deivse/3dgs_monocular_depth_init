@@ -1,6 +1,5 @@
 import logging
 from pathlib import Path
-import shutil
 from typing import List, Type
 
 from PIL import Image
@@ -8,14 +7,16 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from config import Config
-from datasets.colmap import Parser
-from monocular_depth_init.predictors.depth_predictor_interface import DepthPredictor
-from monocular_depth_init.utils.points_from_depth import (
+from gs_init_compare.config import Config
+from gs_init_compare.datasets.colmap import Parser
+from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
+    DepthPredictor,
+)
+from gs_init_compare.monocular_depth_init.utils.points_from_depth import (
     DebugPlotConfig,
     get_pts_from_depth,
 )
-from utils.cuda_memory import cuda_stats_msg
+from gs_init_compare.utils.cuda_memory import cuda_stats_msg
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,23 +40,22 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
 
         return MoGe
     else:
-        raise ValueError(
-            f"Unsupported monodepth model: {config.mono_depth_model}")
+        raise ValueError(f"Unsupported monodepth model: {config.mono_depth_model}")
 
 
 def predict_depth_or_get_cached_depth(
     model: DepthPredictor,
-    pil_image: Image.Image,
+    image: torch.Tensor,
     fx: float,
     fy: float,
-    image_name: str,
+    image_id,
     config: Config,
 ):
-    dataset_name = config.data_dir.removeprefix(
-        "data/360_v2").replace("/", "_")
+    dataset_name = config.data_dir.removeprefix("data/360_v2").replace("/", "_")
     cache_dir = Path(config.mono_depth_cache_dir) / model.name / dataset_name
 
     cache_dir.mkdir(exist_ok=True, parents=True)
+    image_name = str(image_id)
     cache_path = cache_dir / f"{image_name}.pth"
 
     depth = None
@@ -63,12 +63,11 @@ def predict_depth_or_get_cached_depth(
         try:
             depth = torch.load(cache_path, weights_only=True)
         except Exception as e:
-            _LOGGER.warning(
-                f"Failed to load cached depth for image {image_name}: {e}")
+            _LOGGER.warning(f"Failed to load cached depth for image {image_name}: {e}")
 
     # TODO: support for models that can predict points directly
     if depth is None:
-        depth = model.predict_depth(pil_image, fx, fy)
+        depth = model.predict_depth(image, fx, fy)
         try:
             torch.save(depth, cache_path)
         except KeyboardInterrupt:
@@ -89,48 +88,51 @@ def pts_and_rgb_from_monocular_depth(
     rgbs_list: List[torch.Tensor] = []
 
     downsample_factor = config.dense_depth_downsample_factor
+    dataset = type(parser).DatasetCls(parser, split="train")
     progress_bar = tqdm(
-        list(zip(parser.image_paths, parser.image_names)),
+        dataset,
         desc="Calculating init points from monocular depth",
     )
     print("Running monocular depth initialization...")
-    for i, image_info in enumerate(progress_bar):
-        image_path, image_name = image_info
-        pil_image = Image.open(image_path)
-        pil_image.load()
-        camera_id: int = parser.camera_ids[i]
-        K = parser.Ks_dict[camera_id]
+    for data in progress_bar:
+        image_id = data["image_id"]
+        cam2world = data["camtoworld"]
+        image_name = parser.image_names[image_id]
+        K = data["K"]
         fx = K[0, 0]
         fy = K[1, 1]
 
+        image: torch.Tensor = data["image"]
+
         with torch.no_grad():
             depth, mask = predict_depth_or_get_cached_depth(
-                model, pil_image, fx, fy, image_name, config
+                model, image, fx, fy, image_id, config
             )
 
         points, valid_point_indices, inlier_ratio = get_pts_from_depth(
             depth,
             mask,
-            image_name,
-            i,
+            image_id,
             parser,
+            cam2world,
+            K,
             downsample_factor=downsample_factor,
             debug_plot_conf=None,
             # debug_plot_conf=DebugPlotConfig(),
         )
         progress_bar.set_description(
             f"Last processed '{image_name}',"
-            f" (inlier depth ratio {inlier_ratio:.2f})", refresh=True)
+            f" (inlier depth ratio {inlier_ratio:.2f})",
+            refresh=True,
+        )
 
         if points is None:
             _LOGGER.warning(f"Failed to get points for image {image_name}")
             continue
 
-        image = np.asarray(pil_image)
-        rgbs = image[::downsample_factor,
-                     ::downsample_factor, :].reshape([-1, 3])
+        rgbs = image[::downsample_factor, ::downsample_factor, :].reshape([-1, 3])
         # inlier indices are for a downsampled and flattened array
-        rgbs = torch.from_numpy(rgbs[valid_point_indices])
+        rgbs = rgbs[valid_point_indices]
         points_list.append(points)
         rgbs_list.append(rgbs.float() / 255.0)
     print(cuda_stats_msg(device, "After processing points"))

@@ -4,6 +4,6 @@ echo ========================================
 echo Installing pip dependencies...
 echo ========================================
 
-conda run --no-capture-output -n gs_init_compare pip install -r ./requirements.txt
+conda run --live-stream -n gs_init_compare pip install --editable .
 
 echo == Welcome... ==

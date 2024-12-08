@@ -14,7 +14,13 @@ import os
 import ast
 import importlib.util
 from typing import cast, Optional, List
-from nerfbaselines import Method, MethodInfo, ModelInfo, Dataset, OptimizeEmbeddingOutput
+from nerfbaselines import (
+    Method,
+    MethodInfo,
+    ModelInfo,
+    Dataset,
+    OptimizeEmbeddingOutput,
+)
 from nerfbaselines.utils import pad_poses, image_to_srgb, convert_image_dtype
 from typing import Optional, Union
 from typing_extensions import Literal, get_origin, get_args
@@ -101,12 +107,17 @@ def flatten_hparams(hparams, *, separator: str = "/", _prefix: str = ""):
             if not only_simple_types:
                 return type(v)([format_value(x, only_simple_types=False) for x in v])
             formatted = [format_value(x) for x in v]
-            if all(isinstance(x, (str, float, int, bool, bytes, type(None))) for x in formatted):
+            if all(
+                isinstance(x, (str, float, int, bool, bytes, type(None)))
+                for x in formatted
+            ):
                 return ",".join(str(x) for x in formatted)
             return ",".join(pprint.pformat(x) for x in formatted)
         if isinstance(v, dict):
             if not only_simple_types:
-                return {k: format_value(v, only_simple_types=False) for k, v in v.items()}
+                return {
+                    k: format_value(v, only_simple_types=False) for k, v in v.items()
+                }
             return pprint.pformat(format_value(v, only_simple_types=False))
         if isinstance(v, type):
             return v.__module__ + ":" + v.__name__
@@ -121,7 +132,9 @@ def flatten_hparams(hparams, *, separator: str = "/", _prefix: str = ""):
 
     flat = {}
     if dataclasses.is_dataclass(hparams):
-        hparams = {f.name: getattr(hparams, f.name) for f in dataclasses.fields(hparams)}
+        hparams = {
+            f.name: getattr(hparams, f.name) for f in dataclasses.fields(hparams)
+        }
     _blacklist = set(
         (
             "port",
@@ -175,7 +188,7 @@ class gs_Parser:
         self.num_train_images = len(dataset.get("images"))
 
         # Optional normalize
-        from datasets.normalize import (  # type: ignore
+        from gs_init_compare.datasets.normalize import (  # type: ignore
             similarity_from_cameras,
             transform_cameras,
             transform_points,
@@ -198,7 +211,9 @@ class gs_Parser:
 
             # Apply transform to the dataset
             dataset = dataset.copy()
-            dataset["cameras"] = dataset["cameras"].replace(poses=camtoworlds[..., :3, :4])
+            dataset["cameras"] = dataset["cameras"].replace(
+                poses=camtoworlds[..., :3, :4]
+            )
             dataset["points3D_xyz"] = points
         else:
             transform = np.eye(4)
@@ -213,6 +228,13 @@ class gs_Parser:
         self.points = dataset.get("points3D_xyz")
         self.points_rgb = dataset.get("points3D_rgb")
         self.dataset = dataset
+
+        # Compatibility with original parser
+        self.image_names = [os.path.basename(p) for p in dataset["image_paths"]]
+        self.point_indices = {
+            self.image_names[i]: indices
+            for i, indices in enumerate(dataset["images_points3D_indices"])
+        }
 
     def export(self):
         return {
@@ -270,7 +292,9 @@ class gs_Dataset:
             y = np.random.randint(0, max(h - self.patch_size, 1))
             image = image[y : y + self.patch_size, x : x + self.patch_size]
             if sampling_mask is not None:
-                sampling_mask = sampling_mask[y : y + self.patch_size, x : x + self.patch_size]
+                sampling_mask = sampling_mask[
+                    y : y + self.patch_size, x : x + self.patch_size
+                ]
             K[0, 2] -= x
             K[1, 2] -= y
 
@@ -281,12 +305,16 @@ class gs_Dataset:
             "image_id": idx,  # the index of the image in the dataset
         }
         if sampling_mask is not None:
-            data["sampling_mask"] = torch.from_numpy(convert_image_dtype(sampling_mask, "float32"))
+            data["sampling_mask"] = torch.from_numpy(
+                convert_image_dtype(sampling_mask, "float32")
+            )
 
         if self.load_depths:
             # projected points to image plane to get depths
             worldtocams = np.linalg.inv(camtoworlds)
-            points_world = dataset["points3D_xyz"][dataset["images_points3D_indides"][idx]]
+            points_world = dataset["points3D_xyz"][
+                dataset["images_points3D_indides"][idx]
+            ]
             points_cam = (worldtocams[:3, :3] @ points_world.T + worldtocams[:3, 3:4]).T
             points_proj = (K @ points_cam.T).T
             points = points_proj[:, :2] / points_proj[:, 2:3]  # (M, 2)
@@ -306,14 +334,17 @@ class gs_Dataset:
         return data
 
 
+gs_Parser.DatasetCls = gs_Dataset
+
+
 # Extract code dynamically
 def _build_runner_module():
-    module_spec = importlib.util.find_spec("runner", __package__)
+    module_spec = importlib.util.find_spec("gs_init_compare.runner")
     assert (
         module_spec is not None and module_spec.origin is not None
     ), "Failed to find runner module"
     with open(module_spec.origin, "r") as f:
-        runner_ast = ast.parse(f.read())
+        runner_module_ast = ast.parse(f.read())
 
     # Transform simple trainer, set num_workers=0
     class _Visitor(ast.NodeVisitor):
@@ -323,7 +354,9 @@ def _build_runner_module():
                 and ast.unparse(node.func) == "torch.utils.data.DataLoader"
             ):
                 num_workers = next(x for x in node.keywords if x.arg == "num_workers")
-                num_workers.value = ast.Constant(value=0, kind=None, lineno=0, col_offset=0)
+                num_workers.value = ast.Constant(
+                    value=0, kind=None, lineno=0, col_offset=0
+                )
                 persistent_workers = next(
                     (x for x in node.keywords if x.arg == "persistent_workers"), None
                 )
@@ -331,22 +364,28 @@ def _build_runner_module():
                     node.keywords.remove(persistent_workers)
             super().visit(node)
 
-    _Visitor().visit(runner_ast)
+    _Visitor().visit(runner_module_ast)
 
     # Filter imports
-    runner_ast.body.remove(
+    runner_module_ast.body.remove(
         next(
             x
-            for x in runner_ast.body
+            for x in runner_module_ast.body
             if ast.unparse(x) == "from torch.utils.tensorboard import SummaryWriter"
         )
     )
-    runner_ast.body.remove(next(x for x in runner_ast.body if ast.unparse(x) == "import viser"))
-    # runner_ast.body.remove(next(x for x in runner_ast.body if ast.unparse(x) == "import nerfview"))
+    runner_module_ast.body.remove(
+        next(x for x in runner_module_ast.body if ast.unparse(x) == "import viser")
+    )
+    # runner_module_ast.body.remove(next(x for x in runner_module_ast.body if ast.unparse(x) == "import nerfview"))
 
-    runner_ast = next(x for x in runner_ast.body if getattr(x, "name", None) == "Runner")
+    runner_ast = next(
+        x for x in runner_module_ast.body if getattr(x, "name", None) == "Runner"
+    )
     assert isinstance(runner_ast, ast.ClassDef)
-    runner_train_ast = next(x for x in runner_ast.body if getattr(x, "name", None) == "train")
+    runner_train_ast = next(
+        x for x in runner_ast.body if getattr(x, "name", None) == "train"
+    )
     assert isinstance(runner_train_ast, ast.FunctionDef)
     runner_train_ast.name = "setup_train"
     # Training loop
@@ -387,7 +426,9 @@ schedulers=self.schedulers
     render_step_idx = next(
         i
         for i, step in enumerate(iter_step_body)
-        if ast.unparse(step).startswith("(renders, alphas, info) = self.rasterize_splats")
+        if ast.unparse(step).startswith(
+            "(renders, alphas, info) = self.rasterize_splats"
+        )
     )
     iter_step_body.insert(
         render_step_idx + 1,
@@ -479,19 +520,27 @@ schedulers=self.schedulers
     )
 
     # Init method
-    init_method = next(x for x in runner_ast.body if getattr(x, "name", None) == "__init__")
+    init_method = next(
+        x for x in runner_ast.body if getattr(x, "name", None) == "__init__"
+    )
     assert isinstance(init_method, ast.FunctionDef)
-    init_method.body = init_method.body[:6] + init_method.body[14:-2]  # Remove unused code
-    init_method.args.args.append(ast.arg(arg="Parser", annotation=None, lineno=0, col_offset=0))
-    init_method.args.args.append(ast.arg(arg="Dataset", annotation=None, lineno=0, col_offset=0))
+    init_method.body = (
+        init_method.body[:6] + init_method.body[14:-2]
+    )  # Remove unused code
+    init_method.args.args.append(
+        ast.arg(arg="Parser", annotation=None, lineno=0, col_offset=0)
+    )
+    init_method.args.args.append(
+        ast.arg(arg="Dataset", annotation=None, lineno=0, col_offset=0)
+    )
 
     # Execute code to build module
     module = {}
-    exec(compile(runner_ast, "<string>", "exec"), module)
+    exec(compile(runner_module_ast, "<string>", "exec"), module)
     return argparse.Namespace(**module)
 
 
-class GSplat(Method):
+class DepthInitGsplat(Method):
     def __init__(self, *, train_dataset=None, checkpoint=None, config_overrides=None):
         super().__init__()
 
@@ -530,7 +579,9 @@ class GSplat(Method):
             ]
             ckpt_files.sort(key=lambda x: int(x.split("_rank")[-1].split(".")[0]))
             ckpts = [
-                torch.load(file, map_location=self.runner_module.device, weights_only=True)
+                torch.load(
+                    file, map_location=self.runner_module.device, weights_only=True
+                )
                 for file in ckpt_files
             ]
             for k in self.runner_module.splats.keys():
@@ -555,6 +606,7 @@ class GSplat(Method):
             strategy=self.runner_module.DefaultStrategy(verbose=True),
         )
         cfg.data_factor = 1
+        cfg.disable_viewer = True
 
         if checkpoint is not None:
             with open(f"{checkpoint}/cfg.yml", "r") as f:
@@ -658,16 +710,20 @@ class GSplat(Method):
     @torch.no_grad()
     def render(self, camera, *, options=None):
         camera = camera.item()
-        from datasets.normalize import transform_cameras  # type: ignore
+        from gs_init_compare.datasets.normalize import transform_cameras  # type: ignore
 
         cfg = self.cfg
         device = self.runner_module.device
         camtoworlds_np = transform_cameras(
             self.runner_module.parser.transform, pad_poses(camera.poses[None])
         )
-        camtoworlds = torch.from_numpy(camtoworlds_np).float().to(device)
+        cam_to_worlds = torch.from_numpy(camtoworlds_np).float().to(device)
         fx, fy, cx, cy = camera.intrinsics
-        Ks = torch.from_numpy(np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])).float().to(device)
+        Ks = (
+            torch.from_numpy(np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]]))
+            .float()
+            .to(device)
+        )
         width, height = camera.image_sizes
 
         # Patch appearance
@@ -680,7 +736,7 @@ class GSplat(Method):
         outputs = (options or {}).get("outputs") or ()
         with self._patch_embedding(embedding):
             colors, accumulation, _ = self.runner_module.rasterize_splats(
-                camtoworlds=camtoworlds,
+                cam_to_worlds=cam_to_worlds,
                 Ks=Ks[None],
                 width=width,
                 height=height,
@@ -704,14 +760,18 @@ class GSplat(Method):
             return None
         return self.runner_module.app_module.embeds.weight[index].detach().cpu().numpy()
 
-    def optimize_embedding(self, dataset: Dataset, *, embedding=None) -> OptimizeEmbeddingOutput:
+    def optimize_embedding(
+        self, dataset: Dataset, *, embedding=None
+    ) -> OptimizeEmbeddingOutput:
         if not self.cfg.app_opt:
             raise NotImplementedError(
                 "Appearance optimization is not enabled, add --set app_opt=True to the command line."
             )
-        assert len(dataset["images"]) == 1, "Only single image optimization is supported"
+        assert (
+            len(dataset["images"]) == 1
+        ), "Only single image optimization is supported"
         camera = dataset["cameras"].item()
-        from datasets.normalize import transform_cameras  # type: ignore
+        from gs_init_compare.datasets.normalize import transform_cameras  # type: ignore
 
         cfg = self.cfg
         device = self.runner_module.device
@@ -720,7 +780,11 @@ class GSplat(Method):
         )
         camtoworlds = torch.from_numpy(camtoworlds_np).float().to(device)
         fx, fy, cx, cy = camera.intrinsics
-        Ks = torch.from_numpy(np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])).float().to(device)
+        Ks = (
+            torch.from_numpy(np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]]))
+            .float()
+            .to(device)
+        )
         width, height = camera.image_sizes
         dataset = gs_Dataset.preprocess_images(dataset)
         pixels = torch.from_numpy(dataset["images"][0]).float().to(device).div(255.0)
@@ -736,7 +800,9 @@ class GSplat(Method):
         if embedding is not None:
             embedding_th = torch.from_numpy(embedding).to(self.runner_module.device)
         else:
-            embedding_th = torch.zeros_like(self.runner_module.app_module.embeds.weight[0])
+            embedding_th = torch.zeros_like(
+                self.runner_module.app_module.embeds.weight[0]
+            )
         embedding_th = torch.nn.Parameter(embedding_th.requires_grad_())
         optimizer = torch.optim.Adam([embedding_th], lr=self.cfg.app_test_opt_lr)
         l1losses: List[float] = []
@@ -758,7 +824,9 @@ class GSplat(Method):
 
                 # Scale colors grad by sampling masks
                 if sampling_masks is not None:
-                    colors = colors * sampling_masks + colors.detach() * (1.0 - sampling_masks)
+                    colors = colors * sampling_masks + colors.detach() * (
+                        1.0 - sampling_masks
+                    )
 
                 l1loss = F.l1_loss(colors, pixels[None])
                 ssimloss = 1.0 - self.runner_module.ssim(
@@ -781,7 +849,7 @@ class GSplat(Method):
         }
 
     def export_demo(self, path: str, *, options=None):
-        from ._gaussian_splatting_demo import export_demo
+        from nerfbaselines.methods._gaussian_splatting_demo import export_demo
         from nerfbaselines.utils import invert_transform
 
         options = options or {}
@@ -791,16 +859,23 @@ class GSplat(Method):
         if self.cfg.app_opt:
             from nerfbaselines.utils import apply_transform, invert_transform
 
-            if "viewer_transform" in dataset_metadata and "viewer_initial_pose" in dataset_metadata:
+            if (
+                "viewer_transform" in dataset_metadata
+                and "viewer_initial_pose" in dataset_metadata
+            ):
                 viewer_initial_pose_ws = apply_transform(
-                    invert_transform(dataset_metadata["viewer_transform"], has_scale=True),
+                    invert_transform(
+                        dataset_metadata["viewer_transform"], has_scale=True
+                    ),
                     dataset_metadata["viewer_initial_pose"],
                 )
                 camera_center = torch.tensor(
                     viewer_initial_pose_ws[:3, 3], dtype=torch.float32, device="cuda"
                 )
             else:
-                camera_center = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32, device="cuda")
+                camera_center = torch.tensor(
+                    [1.0, 0.0, 0.0], dtype=torch.float32, device="cuda"
+                )
             logging.warning(
                 "gsplat does not support view-dependent demo when appearance is enabled (app_opt=True). We will bake the appearance of a single appearance embedding and single viewing direction."
             )
@@ -828,7 +903,9 @@ class GSplat(Method):
                 C0 = 0.28209479177387814
                 spherical_harmonics = (colors - 0.5) / C0
         else:
-            spherical_harmonics = torch.cat((splats["sh0"], splats["shN"]), dim=1).transpose(1, 2)
+            spherical_harmonics = torch.cat(
+                (splats["sh0"], splats["shN"]), dim=1
+            ).transpose(1, 2)
 
         # Apply transform to viewer transform
         options = options or {}
@@ -836,7 +913,9 @@ class GSplat(Method):
             transform = self.runner_module.parser.transform.copy()
             inv_transform = invert_transform(transform, has_scale=True)
             options["dataset_metadata"] = options.get("dataset_metadata", {})
-            viewer_transform = options["dataset_metadata"].get("viewer_transform", np.eye(4))
+            viewer_transform = options["dataset_metadata"].get(
+                "viewer_transform", np.eye(4)
+            )
             _transform = viewer_transform @ inv_transform
             options["dataset_metadata"]["viewer_transform"] = _transform
 
@@ -847,7 +926,13 @@ class GSplat(Method):
             options=options,
             xyz=splats["means"].detach().cpu().numpy(),
             scales=splats["scales"].exp().detach().cpu().numpy(),
-            opacities=torch.nn.functional.sigmoid(splats["opacities"]).detach().cpu().numpy(),
-            quaternions=torch.nn.functional.normalize(splats["quats"]).detach().cpu().numpy(),
+            opacities=torch.nn.functional.sigmoid(splats["opacities"])
+            .detach()
+            .cpu()
+            .numpy(),
+            quaternions=torch.nn.functional.normalize(splats["quats"])
+            .detach()
+            .cpu()
+            .numpy(),
             spherical_harmonics=spherical_harmonics.detach().cpu().numpy(),
         )

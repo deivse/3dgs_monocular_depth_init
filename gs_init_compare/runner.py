@@ -25,22 +25,28 @@ from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMe
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from typing_extensions import assert_never
 
-from config import Config
-from datasets.colmap import Dataset, Parser
-from datasets.traj import (
+from gs_init_compare.config import Config
+from gs_init_compare.datasets.colmap import Dataset, Parser
+from gs_init_compare.datasets.traj import (
     generate_ellipse_path_z,
     generate_interpolated_path,
     generate_spiral_path,
 )
-from lib_bilagrid import (
+from gs_init_compare.lib_bilagrid import (
     BilateralGrid,
     color_correct,
     slice,
     total_variation_loss,
 )
-from monocular_depth_init import pts_and_rgb_from_monocular_depth
-from utils.runner_utils import AppearanceOptModule, CameraOptModule, knn, rgb_to_sh, set_random_seed
-from utils.cuda_memory import cuda_stats_msg, CudaMemStats
+from gs_init_compare.monocular_depth_init import pts_and_rgb_from_monocular_depth
+from gs_init_compare.utils.runner_utils import (
+    AppearanceOptModule,
+    CameraOptModule,
+    knn,
+    rgb_to_sh,
+    set_random_seed,
+)
+from gs_init_compare.utils.cuda_memory import cuda_stats_msg, CudaMemStats
 
 
 def create_splats_with_optimizers(
@@ -64,8 +70,7 @@ def create_splats_with_optimizers(
         points = torch.from_numpy(parser.points).float()
         rgbs = torch.from_numpy(parser.points_rgb / 255.0).float()
     elif init_type == "random":
-        points = init_extent * scene_scale * \
-            (torch.rand((init_num_pts, 3)) * 2 - 1)
+        points = init_extent * scene_scale * (torch.rand((init_num_pts, 3)) * 2 - 1)
         rgbs = torch.rand((init_num_pts, 3))
     elif init_type == "monocular_depth":
         points, rgbs = pts_and_rgb_from_monocular_depth(config, parser, device)
@@ -80,8 +85,7 @@ def create_splats_with_optimizers(
     # Initialize the GS size to be the average dist of the 3 nearest neighbors
     dist2_avg = (knn(points, 4)[:, 1:] ** 2).mean(dim=-1)  # [N,]
     dist_avg = torch.sqrt(dist2_avg)
-    scales = torch.log(
-        dist_avg * init_scale).unsqueeze(-1).repeat(1, 3)  # [N, 3]
+    scales = torch.log(dist_avg * init_scale).unsqueeze(-1).repeat(1, 3)  # [N, 3]
 
     # Distribute the GSs to different ranks (also works for single rank)
     points = points[world_rank::world_size]
@@ -105,8 +109,7 @@ def create_splats_with_optimizers(
         colors = torch.zeros((N, (sh_degree + 1) ** 2, 3))  # [N, K, 3]
         colors[:, 0, :] = rgb_to_sh(rgbs)
         params.append(("sh0", torch.nn.Parameter(colors[:, :1, :]), 2.5e-3))
-        params.append(("shN", torch.nn.Parameter(
-            colors[:, 1:, :]), 2.5e-3 / 20))
+        params.append(("shN", torch.nn.Parameter(colors[:, 1:, :]), 2.5e-3 / 20))
     else:
         # features will be used for appearance and view-dependent shading
         features = torch.rand(N, feature_dim)  # [N, feature_dim]
@@ -216,13 +219,11 @@ class Runner:
             if cfg.compression == "png":
                 self.compression_method = PngCompression()
             else:
-                raise ValueError(
-                    f"Unknown compression strategy: {cfg.compression}")
+                raise ValueError(f"Unknown compression strategy: {cfg.compression}")
 
         self.pose_optimizers = []
         if cfg.pose_opt:
-            self.pose_adjust = CameraOptModule(
-                len(self.trainset)).to(self.device)
+            self.pose_adjust = CameraOptModule(len(self.trainset)).to(self.device)
             self.pose_adjust.zero_init()
             self.pose_optimizers = [
                 torch.optim.Adam(
@@ -235,8 +236,7 @@ class Runner:
                 self.pose_adjust = DDP(self.pose_adjust)
 
         if cfg.pose_noise > 0.0:
-            self.pose_perturb = CameraOptModule(
-                len(self.trainset)).to(self.device)
+            self.pose_perturb = CameraOptModule(len(self.trainset)).to(self.device)
             self.pose_perturb.random_init(cfg.pose_noise)
             if world_size > 1:
                 self.pose_perturb = DDP(self.pose_perturb)
@@ -281,8 +281,7 @@ class Runner:
             ]
 
         # Losses & Metrics.
-        self.ssim = StructuralSimilarityIndexMeasure(
-            data_range=1.0).to(self.device)
+        self.ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device)
         self.psnr = PeakSignalNoiseRatio(data_range=1.0).to(self.device)
 
         if cfg.lpips_net == "alex":
@@ -333,8 +332,7 @@ class Runner:
             colors = colors + self.splats["colors"]
             colors = torch.sigmoid(colors)
         else:
-            colors = torch.cat(
-                [self.splats["sh0"], self.splats["shN"]], 1)  # [N, K, 3]
+            colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)  # [N, K, 3]
 
         rasterize_mode = "antialiased" if self.cfg.antialiased else "classic"
         render_colors, render_alphas, info = rasterization(
@@ -401,8 +399,7 @@ class Runner:
                             total_iters=1000,
                         ),
                         torch.optim.lr_scheduler.ExponentialLR(
-                            self.bil_grid_optimizers[0], gamma=0.01 ** (
-                                1.0 / max_steps)
+                            self.bil_grid_optimizers[0], gamma=0.01 ** (1.0 / max_steps)
                         ),
                     ]
                 )
@@ -447,8 +444,7 @@ class Runner:
                 pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
             )
             image_ids = data["image_id"].to(device)
-            masks = data["mask"].to(
-                device) if "mask" in data else None  # [1, H, W]
+            masks = data["mask"].to(device) if "mask" in data else None  # [1, H, W]
             if cfg.depth_loss:
                 points = data["points"].to(device)  # [1, M, 2]
                 depths_gt = data["depths"].to(device)  # [1, M]
@@ -462,8 +458,7 @@ class Runner:
                 cam_to_worlds = self.pose_adjust(cam_to_worlds, image_ids)
 
             # sh schedule
-            sh_degree_to_use = min(
-                step // cfg.sh_degree_interval, cfg.sh_degree)
+            sh_degree_to_use = min(step // cfg.sh_degree_interval, cfg.sh_degree)
 
             # forward
             renders, alphas, info = self.rasterize_splats(
@@ -490,8 +485,7 @@ class Runner:
                     indexing="ij",
                 )
                 grid_xy = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0)
-                colors = slice(self.bil_grids, grid_xy,
-                               colors, image_ids)["rgb"]
+                colors = slice(self.bil_grids, grid_xy, colors, image_ids)["rgb"]
 
             if cfg.random_background:
                 background = torch.rand(1, 3, device=device)
@@ -510,8 +504,7 @@ class Runner:
             ssimloss = 1.0 - fused_ssim(
                 colors.permute(0, 3, 1, 2), pixels.permute(0, 3, 1, 2), padding="valid"
             )
-            loss = l1loss * (1.0 - cfg.ssim_lambda) + \
-                ssimloss * cfg.ssim_lambda
+            loss = l1loss * (1.0 - cfg.ssim_lambda) + ssimloss * cfg.ssim_lambda
             if cfg.depth_loss:
                 # query depths from depth map
                 points = torch.stack(
@@ -527,8 +520,7 @@ class Runner:
                 )  # [1, 1, M, 1]
                 depths = depths.squeeze(3).squeeze(1)  # [1, M]
                 # calculate loss in disparity space
-                disp = torch.where(depths > 0.0, 1.0 / depths,
-                                   torch.zeros_like(depths))
+                disp = torch.where(depths > 0.0, 1.0 / depths, torch.zeros_like(depths))
                 disp_gt = 1.0 / depths_gt  # [1, M]
                 depthloss = F.l1_loss(disp, disp_gt) * self.scene_scale
                 loss += depthloss * cfg.depth_lambda
@@ -546,8 +538,7 @@ class Runner:
             if cfg.scale_reg > 0.0:
                 loss = (
                     loss
-                    + cfg.scale_reg *
-                    torch.abs(torch.exp(self.splats["scales"])).mean()
+                    + cfg.scale_reg * torch.abs(torch.exp(self.splats["scales"])).mean()
                 )
 
             loss.backward()
@@ -557,7 +548,10 @@ class Runner:
                 allocated_str = mem_stats.allocated_str()
             else:
                 allocated_str = "-"
-            desc = f"Loss: {loss.item():.3f} | " f"SH deg.: {sh_degree_to_use} | CUDA Alloc.: {allocated_str}"
+            desc = (
+                f"Loss: {loss.item():.3f} | "
+                f"SH deg.: {sh_degree_to_use} | CUDA Alloc.: {allocated_str}"
+            )
             if cfg.depth_loss:
                 desc += f"depth loss={depthloss.item():.6f}| "
             if cfg.pose_opt and cfg.pose_noise:
@@ -579,19 +573,15 @@ class Runner:
                 mem = torch.cuda.max_memory_allocated() / 1024**3
                 self.writer.add_scalar("train/loss", loss.item(), step)
                 self.writer.add_scalar("train/l1loss", l1loss.item(), step)
-                self.writer.add_scalar(
-                    "train/ssimloss", ssimloss.item(), step)
-                self.writer.add_scalar(
-                    "train/num_GS", len(self.splats["means"]), step)
+                self.writer.add_scalar("train/ssimloss", ssimloss.item(), step)
+                self.writer.add_scalar("train/num_GS", len(self.splats["means"]), step)
                 self.writer.add_scalar("train/mem", mem, step)
                 if cfg.depth_loss:
-                    self.writer.add_scalar(
-                        "train/depthloss", depthloss.item(), step)
+                    self.writer.add_scalar("train/depthloss", depthloss.item(), step)
                 if cfg.use_bilateral_grid:
                     self.writer.add_scalar("train/tvloss", tvloss.item(), step)
                 if cfg.tb_save_image:
-                    canvas = torch.cat(
-                        [pixels, colors], dim=2).detach().cpu().numpy()
+                    canvas = torch.cat([pixels, colors], dim=2).detach().cpu().numpy()
                     canvas = canvas.reshape(-1, *canvas.shape[2:])
                     self.writer.add_image("train/render", canvas, step)
                 self.writer.flush()
@@ -757,8 +747,7 @@ class Runner:
         if world_rank == 0:
             ellipse_time /= len(val_loader)
 
-            stats = {k: torch.stack(v).mean().item()
-                     for k, v in metrics.items()}
+            stats = {k: torch.stack(v).mean().item() for k, v in metrics.items()}
             stats.update(
                 {
                     "ellipse_time": ellipse_time,
@@ -816,10 +805,8 @@ class Runner:
             axis=1,
         )  # [N, 4, 4]
 
-        cam_to_worlds_all = torch.from_numpy(
-            cam_to_worlds_all).float().to(device)
-        K = torch.from_numpy(list(self.parser.Ks_dict.values())[
-                             0]).float().to(device)
+        cam_to_worlds_all = torch.from_numpy(cam_to_worlds_all).float().to(device)
+        K = torch.from_numpy(list(self.parser.Ks_dict.values())[0]).float().to(device)
         width, height = list(self.parser.imsize_dict.values())[0]
 
         # save to video
@@ -827,7 +814,7 @@ class Runner:
         os.makedirs(video_dir, exist_ok=True)
         writer = imageio.get_writer(f"{video_dir}/traj_{step}.mp4", fps=30)
         for i in tqdm.trange(len(cam_to_worlds_all), desc="Rendering trajectory"):
-            cam_to_worlds = cam_to_worlds_all[i: i + 1]
+            cam_to_worlds = cam_to_worlds_all[i : i + 1]
             Ks = K[None]
 
             renders, _, _ = self.rasterize_splats(
