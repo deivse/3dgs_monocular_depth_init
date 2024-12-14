@@ -13,14 +13,15 @@ register(
         "id": _name,
         "method_class": "gs_init_compare.nerfbaselines_integration.method:InitCompareGsplat",
         "conda": {
-            "environment_name": "gs_init_compare",
+            "environment_name": "gs_init_compare_nerbaselines",
             "python_version": "3.10",
             "install_script": r"""
 # TODO: Use https once the repo is public
 git clone git@github.com:deivse/gs_init_comparison.git
 cd gs_init_comparison
+git fetch && git switch nerfbaselines
 
-./install.sh
+./install.sh gs_init_compare_nerbaselines
 
 # Clear build dependencies
 if [ "$NERFBASELINES_DOCKER_BUILD" = "1" ]; then
