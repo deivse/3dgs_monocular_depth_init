@@ -9,3 +9,4 @@ combined_results/
 combined_results_*-*-*_*:*:*/
 __mono_depth_cache__/
 *.egg-info/
+/tmp_*/

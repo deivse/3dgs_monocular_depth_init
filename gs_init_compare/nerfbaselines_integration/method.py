@@ -540,7 +540,7 @@ schedulers=self.schedulers
     return argparse.Namespace(**module)
 
 
-class DepthInitGsplat(Method):
+class InitCompareGsplat(Method):
     def __init__(self, *, train_dataset=None, checkpoint=None, config_overrides=None):
         super().__init__()
 

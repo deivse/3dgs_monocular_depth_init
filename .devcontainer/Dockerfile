@@ -19,12 +19,14 @@ RUN curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/downloa
 RUN bash Miniforge3-$(uname)-$(uname -m).sh -b -f
 RUN rm Miniforge3-$(uname)-$(uname -m).sh
 
-ENV MAMBA_HOME="/root/miniforge3"
-ENV CONDA_HOME=$MAMBA_HOME
-RUN "$MAMBA_HOME/condabin/conda" init bash zsh
+ENV CONDA_HOME="/root/miniforge3"
+RUN "$CONDA_HOME/condabin/conda" init bash zsh
 
 # Install dependencies
 COPY ./environment.yml /tmp/environment.yml
-COPY requirements.txt /tmp/requirements.txt
 RUN conda update -n base -c conda-forge conda
 RUN conda env create --file /tmp/environment.yml
+
+# Install direnv
+RUN sudo apt-get -y install direnv
+RUN echo 'eval "$(direnv hook bash)"' >> ~/.bashrc

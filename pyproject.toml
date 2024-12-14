@@ -5,7 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gs_init_compare"
 version = "0.1.0"
-dynamic = ["dependencies"]                                             # due to adding depth_pro from local path
+# Dynamic dependencies used to facilitate using project-relative paths for some dependencies
+dynamic = ["dependencies"]
 requires-python = ">=3.10"
 authors = [{ name = "Ivan Desiatov", email = "desiaiva@cvut.cz" }]
 maintainers = [{ name = "Ivan Desiatov", email = "desiaiva@cvut.cz" }]
