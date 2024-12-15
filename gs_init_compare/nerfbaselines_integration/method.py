@@ -239,6 +239,11 @@ class gs_Parser:
             for i, indices in enumerate(dataset["images_points3D_indices"])
         }
 
+    @property
+    def dataset_name(self):
+        meta = self.dataset.metadata
+        return "_".join(meta["id"], meta["scene"])
+
     def export(self):
         return {
             "scene_scale": self.scene_scale,

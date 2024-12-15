@@ -19,7 +19,6 @@ from gs_init_compare.config import Config
 import gs_init_compare.trainer as trainer
 
 
-
 def append_timestamp_to_dir_name(dir: Path) -> Path:
     """
     Appends a timestamp to the directory name to avoid conflicts
@@ -231,6 +230,11 @@ def run_all_combinations(
                 shutil.rmtree(config.result_dir, ignore_errors=True)
             trainer.run_with_config(config)
             gc.collect()
+        except SystemExit as e:
+            if e.code != 0:
+                logging.error(f"Error running {name}: {e}")
+                shutil.rmtree(config.result_dir, ignore_errors=True)
+                logging.info(f"Deleted incomplete result dir {config.result_dir}")
         except KeyboardInterrupt:
             print("Interrupted, deleting incomplete result dir.")
             shutil.rmtree(config.result_dir, ignore_errors=True)
@@ -336,6 +340,19 @@ def create_argument_parser():
         default=False,
         help="Only evaluate SFM initialization.",
     )
+    add_argument(
+        "--export-pts-only",
+        action="store_true",
+        default=False,
+        help="Only export point clouds from monocular depth initialization.",
+    )
+    add_argument(
+        "--ply-export-dir",
+        type=Path,
+        required=False,
+        default="ply_exports",
+        help="Directory to save point clouds to.",
+    )
     return parser
 
 
@@ -344,6 +361,8 @@ def create_base_config(args: argparse.Namespace):
     cfg.non_blocking_viewer = True
     cfg.disable_viewer = not args.enable_viewer
     cfg.ignore_mono_depth_cache = args.invalidate_mono_depth_cache
+    cfg.mono_depth_pts_output_dir = args.ply_export_dir
+    cfg.mono_depth_pts_only = args.export_pts_only
 
     cfg.max_steps = args.max_steps
 
@@ -364,6 +383,7 @@ def configure_combinations(args: argparse.Namespace):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     args = create_argument_parser().parse_args()
 
     results_dir = Path(args.results_dir)
@@ -373,7 +393,7 @@ def main():
         configure_combinations(args)
         run_all_combinations(
             base_config,
-            [DataDir],
+            [] if args.export_pts_only else [DataDir],
             [DataDir, MonoDepthModel, DensePointDownsampleFactor],
             results_dir,
             args.sfm_only,

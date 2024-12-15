@@ -66,7 +66,8 @@ class Parser:
             im = imdata[k]
             rot = im.R()
             trans = im.tvec.reshape(3, 1)
-            w2c = np.concatenate([np.concatenate([rot, trans], 1), bottom], axis=0)
+            w2c = np.concatenate(
+                [np.concatenate([rot, trans], 1), bottom], axis=0)
             w2c_mats.append(w2c)
 
             # support different camera intrinsics
@@ -95,17 +96,20 @@ class Parser:
                 params = np.array([cam.k1, cam.k2, 0.0, 0.0], dtype=np.float32)
                 camtype = "perspective"
             elif type_ == 4 or type_ == "OPENCV":
-                params = np.array([cam.k1, cam.k2, cam.p1, cam.p2], dtype=np.float32)
+                params = np.array(
+                    [cam.k1, cam.k2, cam.p1, cam.p2], dtype=np.float32)
                 camtype = "perspective"
             elif type_ == 5 or type_ == "OPENCV_FISHEYE":
-                params = np.array([cam.k1, cam.k2, cam.k3, cam.k4], dtype=np.float32)
+                params = np.array(
+                    [cam.k1, cam.k2, cam.k3, cam.k4], dtype=np.float32)
                 camtype = "fisheye"
             assert (
                 camtype == "perspective" or camtype == "fisheye"
             ), f"Only perspective and fisheye cameras are supported, got {type_}"
 
             params_dict[camera_id] = params
-            imsize_dict[camera_id] = (cam.width // factor, cam.height // factor)
+            imsize_dict[camera_id] = (
+                cam.width // factor, cam.height // factor)
             mask_dict[camera_id] = None
         print(
             f"[Parser] {len(imdata)} images, taken by {len(set(camera_ids))} cameras."
@@ -164,7 +168,8 @@ class Parser:
         colmap_files = sorted(_get_rel_paths(colmap_image_dir))
         image_files = sorted(_get_rel_paths(image_dir))
         colmap_to_image = dict(zip(colmap_files, image_files))
-        image_paths = [os.path.join(image_dir, colmap_to_image[f]) for f in image_names]
+        image_paths = [os.path.join(image_dir, colmap_to_image[f])
+                       for f in image_names]
 
         # 3D points and {image_name -> [point_idx]}
         points = manager.points3D.astype(np.float32)
@@ -207,7 +212,8 @@ class Parser:
         self.points = points  # np.ndarray, (num_points, 3)
         self.points_err = points_err  # np.ndarray, (num_points,)
         self.points_rgb = points_rgb  # np.ndarray, (num_points, 3)
-        self.point_indices = point_indices  # Dict[str, np.ndarray], image_name -> [M,]
+        # Dict[str, np.ndarray], image_name -> [M,]
+        self.point_indices = point_indices
         self.transform = transform  # np.ndarray, (4, 4)
 
         # load one image to check the size. In the case of tanksandtemples dataset, the
@@ -221,7 +227,8 @@ class Parser:
             K[1, :] *= s_height
             self.Ks_dict[camera_id] = K
             width, height = self.imsize_dict[camera_id]
-            self.imsize_dict[camera_id] = (int(width * s_width), int(height * s_height))
+            self.imsize_dict[camera_id] = (
+                int(width * s_width), int(height * s_height))
 
         # undistortion
         self.mapx_dict = dict()
@@ -298,6 +305,10 @@ class Parser:
         dists = np.linalg.norm(camera_locations - scene_center, axis=1)
         self.scene_scale = np.max(dists)
 
+    @property
+    def dataset_name(self):
+        return self.data_dir.removeprefix("data/").replace("/", "_")
+
 
 class Dataset:
     """A simple dataset class."""
@@ -339,14 +350,14 @@ class Dataset:
             )
             image = cv2.remap(image, mapx, mapy, cv2.INTER_LINEAR)
             x, y, w, h = self.parser.roi_undist_dict[camera_id]
-            image = image[y : y + h, x : x + w]
+            image = image[y: y + h, x: x + w]
 
         if self.patch_size is not None:
             # Random crop.
             h, w = image.shape[:2]
             x = np.random.randint(0, max(w - self.patch_size, 1))
             y = np.random.randint(0, max(h - self.patch_size, 1))
-            image = image[y : y + self.patch_size, x : x + self.patch_size]
+            image = image[y: y + self.patch_size, x: x + self.patch_size]
             K[0, 2] -= x
             K[1, 2] -= y
 
@@ -365,7 +376,8 @@ class Dataset:
             image_name = self.parser.image_names[index]
             point_indices = self.parser.point_indices[image_name]
             points_world = self.parser.points[point_indices]
-            points_cam = (worldtocams[:3, :3] @ points_world.T + worldtocams[:3, 3:4]).T
+            points_cam = (worldtocams[:3, :3] @
+                          points_world.T + worldtocams[:3, 3:4]).T
             points_proj = (K @ points_cam.T).T
             points = points_proj[:, :2] / points_proj[:, 2:3]  # (M, 2)
             depths = points_cam[:, 2]  # (M,)

@@ -23,6 +23,7 @@ setup(
         "ruff",
         "pillow",
         "nerfbaselines @ git+https://github.com/deivse/nerfbaselines.git@0b23fe2c65e1346e11d4a0eb62cf5afbb042bda4",
+        "open3d~=0.18.0",
         # Moge requirements
         "click",
         "opencv-python",

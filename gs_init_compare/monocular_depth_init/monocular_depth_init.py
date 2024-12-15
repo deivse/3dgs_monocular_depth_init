@@ -1,10 +1,12 @@
 import logging
 from pathlib import Path
+import sys
 from typing import List, Type
 
 from PIL import Image
 import numpy as np
 import torch
+import open3d
 from tqdm import tqdm
 
 from gs_init_compare.config import Config
@@ -43,6 +45,19 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
         raise ValueError(f"Unsupported monodepth model: {config.mono_depth_model}")
 
 
+def save_pts_and_rgbs(
+    pts: np.ndarray, rgbs: np.ndarray, output_dir: Path, depth_pts_filename: str
+):
+    """Saves point cloud to a .ply file."""
+    pcd = open3d.geometry.PointCloud()
+    pcd.points = open3d.utility.Vector3dVector(pts)
+    pcd.colors = open3d.utility.Vector3dVector(rgbs)
+    open3d.io.write_point_cloud(
+        str(output_dir / f"{depth_pts_filename}.ply"), pcd, write_ascii=False
+    )
+    logging.info(f"Saved point cloud to {output_dir / depth_pts_filename}.ply")
+
+
 def predict_depth_or_get_cached_depth(
     model: DepthPredictor,
     image: torch.Tensor,
@@ -50,8 +65,8 @@ def predict_depth_or_get_cached_depth(
     fy: float,
     image_id,
     config: Config,
+    dataset_name: str,
 ):
-    dataset_name = config.data_dir.removeprefix("data/360_v2").replace("/", "_")
     cache_dir = Path(config.mono_depth_cache_dir) / model.name / dataset_name
 
     cache_dir.mkdir(exist_ok=True, parents=True)
@@ -81,6 +96,7 @@ def pts_and_rgb_from_monocular_depth(
 ):
     print(cuda_stats_msg(device, "Before loading model"))
     model = pick_model(config)(config, device)
+    dataset_name = parser.dataset_name
 
     print(cuda_stats_msg(device, "After loading model"))
 
@@ -106,7 +122,7 @@ def pts_and_rgb_from_monocular_depth(
 
         with torch.no_grad():
             depth, mask = predict_depth_or_get_cached_depth(
-                model, image, fx, fy, image_id, config
+                model, image, fx, fy, image_id, config, dataset_name
             )
 
         points, valid_point_indices, inlier_ratio = get_pts_from_depth(
@@ -137,4 +153,15 @@ def pts_and_rgb_from_monocular_depth(
         rgbs_list.append(rgbs.float() / 255.0)
     print(cuda_stats_msg(device, "After processing points"))
 
-    return torch.cat(points_list, dim=0).float(), torch.cat(rgbs_list, dim=0).float()
+    pts = torch.cat(points_list, dim=0).float()
+    rgbs = torch.cat(rgbs_list, dim=0).float()
+
+    if config.mono_depth_pts_output_dir is not None:
+        output_dir = Path(config.mono_depth_pts_output_dir) / dataset_name
+        output_dir.mkdir(exist_ok=True, parents=True)
+        save_pts_and_rgbs(pts.cpu().numpy(), rgbs.cpu().numpy(), output_dir, model.name)
+        save_pts_and_rgbs(parser.points, parser.points_rgb / 255.0, output_dir, "sfm")
+        if config.mono_depth_pts_only:
+            sys.exit(0)
+
+    return pts, rgbs

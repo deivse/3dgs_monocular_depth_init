@@ -41,9 +41,11 @@ def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
             # Set invalid points to 0 so we can index the mask with them
             # Will be filtered out later anyways
             sfm_points_camera[:, ~valid_sfm_pt_indices] = torch.zeros_like(
-                sfm_points_camera[:, ~valid_sfm_pt_indices])
+                sfm_points_camera[:, ~valid_sfm_pt_indices]
+            )
             valid_sfm_pt_indices = torch.logical_and(
-                valid_sfm_pt_indices, mask[sfm_points_camera[1], sfm_points_camera[0]])
+                valid_sfm_pt_indices, mask[sfm_points_camera[1], sfm_points_camera[0]]
+            )
 
         return sfm_points_camera[:, valid_sfm_pt_indices], sfm_points_depth[
             valid_sfm_pt_indices
@@ -53,8 +55,7 @@ def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
     sfm_points_camera, sfm_points_depth = get_valid_sfm_pts(
         sfm_points_camera, sfm_points_depth
     )
-    predicted_depth: torch.Tensor = depth[sfm_points_camera[1],
-                                          sfm_points_camera[0]]
+    predicted_depth: torch.Tensor = depth[sfm_points_camera[1], sfm_points_camera[0]]
     d = torch.vstack(
         [
             predicted_depth.reshape(-1),
@@ -84,15 +85,13 @@ class DebugPlotConfig:
         depth,
         transform_camera_to_world_space,
     ):
-
         camera_plane_xyz = transform_camera_to_world_space(
             torch.dstack(
                 [
-                    torch.from_numpy(np.mgrid[0: imsize[0], 0: imsize[1]].T).to(
+                    torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(
                         depth.device
                     ),
-                    depth_scalar *
-                    torch.ones(depth.shape, device=depth.device),
+                    depth_scalar * torch.ones(depth.shape, device=depth.device),
                 ]
             )[
                 :: self.camera_plane_downsample_factor,
@@ -104,8 +103,7 @@ class DebugPlotConfig:
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")
         if self.show_sfm_points:
-            plot3d(
-                sfm_points[:: self.sfm_pts_downsample_factor, :].cpu(), "g", ax)
+            plot3d(sfm_points[:: self.sfm_pts_downsample_factor, :].cpu(), "g", ax)
         if self.show_camera_plane:
             plot3d(camera_plane_xyz.cpu(), "b", ax)
         plot3d(pts_world.cpu(), "k", ax)
@@ -151,8 +149,7 @@ def get_pts_from_depth(
         dense_world = (
             cam2world
             @ torch.vstack(
-                [dense_world, torch.ones(
-                    dense_world.shape[1], device=cam2world.device)]
+                [dense_world, torch.ones(dense_world.shape[1], device=cam2world.device)]
             )
         )[:3].T
         return dense_world
@@ -167,7 +164,7 @@ def get_pts_from_depth(
     pts_camera: torch.Tensor = (
         torch.dstack(
             [
-                torch.from_numpy(np.mgrid[0: imsize[0], 0: imsize[1]].T).to(
+                torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(
                     depth.device
                 ),
                 depth_scalar * depth + depth_shift,
@@ -178,10 +175,10 @@ def get_pts_from_depth(
     )
 
     valid_indices = torch.ones(
-        pts_camera.shape[0], dtype=bool, device=pts_camera.device)
+        pts_camera.shape[0], dtype=bool, device=pts_camera.device
+    )
     if mask is not None:
-        downsampled_mask = mask[::downsample_factor,
-                                ::downsample_factor].reshape(-1)
+        downsampled_mask = mask[::downsample_factor, ::downsample_factor].reshape(-1)
         valid_indices[~downsampled_mask] = 0
 
     inlier_indices = torch.abs(
@@ -191,8 +188,9 @@ def get_pts_from_depth(
     # Only keep inliers that are not masked out
     inlier_indices = torch.logical_and(valid_indices, inlier_indices)
 
-    inlier_ratio = float(torch.sum(inlier_indices).to(float) /
-                         torch.sum(valid_indices).to(float))
+    inlier_ratio = float(
+        torch.sum(inlier_indices).to(float) / torch.sum(valid_indices).to(float)
+    )
 
     # Now valid indices filters out both masked out values and outliers
     valid_indices = inlier_indices

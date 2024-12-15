@@ -6,6 +6,7 @@ from pathlib import Path
 import depth_pro
 import numpy as np
 from PIL import Image
+import torch
 
 from gs_init_compare.config import Config
 from gs_init_compare.monocular_depth_init.utils.download_with_tqdm import download_with_pbar
@@ -90,7 +91,7 @@ class AppleDepthPro(DepthPredictor):
     def name(self) -> str:
         return "AppleDepthPro"
 
-    def predict_depth(self, img: Image.Image, *_) -> PredictedDepth:
+    def predict_depth(self, img: torch.Tensor, *_) -> PredictedDepth:
         raise NotImplementedError(
             "AppleDepthPro needs exif data that is not available via the Dataset right now."
         )

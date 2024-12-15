@@ -11,7 +11,7 @@
             "program": "${workspaceFolder}/test_edit_ast.py",
             "console": "integratedTerminal",
             "args": [],
-            "cwd": "${workspaceFolder}/src/",
+            "cwd": "${workspaceFolder}/gs_init_compare/",
         },
         {
             "name": "nerfbaselines install",
@@ -20,7 +20,7 @@
             "module": "nerfbaselines",
             "args": [
                 "install",
-                "--spec=${workspaceFolder}/src/nerfbaselines_integration/method_spec.py",
+                "--spec=${workspaceFolder}/gs_init_compare/nerfbaselines_integration/method_spec.py",
             ],
             "justMyCode": false
         },
@@ -45,10 +45,11 @@
             "module": "nerfbaselines",
             "args": [
                 "train",
-                "--method=depthinit_gsplat",
                 "--backend=python",
-                "--data=external://seathru-nerf/iui3",
-                "--presets=metric3d_vit_large"
+                "--method=gs-init-compare",
+                "--output=tmp_nerfbaselines_debug",
+                "--presets=metric3d_depth_downsample_10",
+                "--data=external://mipnerf360/kitchen",
             ],
             "env": {
                 "NERFBASELINES_REGISTER": "${workspaceFolder}/gs_init_compare/nerfbaselines_integration/method_spec.py"
@@ -59,7 +60,7 @@
             "name": "evaluator",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/evaluator.py",
+            "program": "${workspaceFolder}/gs_init_compare/evaluator.py",
             "console": "integratedTerminal",
             "args": [
                 "--output-dir",
@@ -68,13 +69,13 @@
                 "results/",
                 "--overwrite"
             ],
-            "cwd": "${workspaceFolder}/src/",
+            "cwd": "${workspaceFolder}/gs_init_compare/",
         },
         {
             "name": "gsplat trainer MoGe",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/trainer.py",
+            "program": "${workspaceFolder}/gs_init_compare/trainer.py",
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0"
             },
@@ -82,9 +83,9 @@
                 "default",
                 "--init-type=monocular_depth",
                 "--mono-depth-model=moge",
-                "--invalidate-mono-depth-cache"
+                // "--invalidate-mono-depth-cache"
             ],
-            "cwd": "${workspaceFolder}/src/",
+            "cwd": "${workspaceFolder}/gs_init_compare/",
             "console": "integratedTerminal",
             "justMyCode": false
         },
@@ -92,7 +93,7 @@
             "name": "gsplat trainer depth pro",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/trainer.py",
+            "program": "${workspaceFolder}/gs_init_compare/trainer.py",
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0"
             },
@@ -100,9 +101,9 @@
                 "default",
                 "--init-type=monocular_depth",
                 "--mono-depth-model=depth_pro",
-                "--depth-pro-checkpoint=${workspaceFolder}/src/third_party/apple_depth_pro/checkpoints/depth_pro.pt",
+                "--depth-pro-checkpoint=${workspaceFolder}/gs_init_compare/third_party/apple_depth_pro/checkpoints/depth_pro.pt",
             ],
-            "cwd": "${workspaceFolder}/src/",
+            "cwd": "${workspaceFolder}/gs_init_compare/",
             "console": "integratedTerminal",
             "justMyCode": false
         },
@@ -110,7 +111,7 @@
             "name": "gsplat trainer metric3d vit large",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/trainer.py",
+            "program": "${workspaceFolder}/gs_init_compare/trainer.py",
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0"
             },
@@ -120,8 +121,9 @@
                 "--mono_depth_model=metric3d",
                 "--metric3d-config=${workspaceFolder}/metric3d_configs/vit.raft5.large.py",
                 "--metric3d-weights=${workspaceFolder}/metric3d_configs/metric_depth_vit_large_800k.pth",
+                "--mono-depth-pts-output-dir=mono_depth_init_ply"
             ],
-            "cwd": "${workspaceFolder}/src/",
+            "cwd": "${workspaceFolder}/gs_init_compare/",
             "console": "integratedTerminal",
             "justMyCode": false
         },
@@ -129,7 +131,7 @@
             "name": "gsplat trainer metric3d vit small",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/trainer.py",
+            "program": "${workspaceFolder}/gs_init_compare/trainer.py",
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0"
             },
@@ -141,7 +143,7 @@
                 "--metric3d-weights=${workspaceFolder}/metric3d_configs/metric_depth_vit_small_800k.pth",
                 // "--no-normalize-world-space"
             ],
-            "cwd": "${workspaceFolder}/src/",
+            "cwd": "${workspaceFolder}/gs_init_compare/",
             "console": "integratedTerminal",
             "justMyCode": false
         },
@@ -149,8 +151,8 @@
             "name": "metric3d interactive",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/metric_3d/app.py",
-            "cwd": "${workspaceFolder}/src/metric_3d",
+            "program": "${workspaceFolder}/gs_init_compare/metric_3d/app.py",
+            "cwd": "${workspaceFolder}/gs_init_compare/metric_3d",
             "console": "integratedTerminal"
         },
     ]

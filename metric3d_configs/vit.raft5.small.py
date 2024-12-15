@@ -1,10 +1,10 @@
+import numpy as np
 _base_ = [
-    "../src/third_party/metric3d/mono/configs/_base_/models/encoder_decoder/dino_vit_small_reg.dpt_raft.py",
-    "../src/third_party/metric3d/mono/configs/_base_/datasets/_data_base_.py",
-    "../src/third_party/metric3d/mono/configs/_base_/default_runtime.py",
+    "../gs_init_compare/third_party/metric3d/mono/configs/_base_/models/encoder_decoder/dino_vit_small_reg.dpt_raft.py",
+    "../gs_init_compare/third_party/metric3d/mono/configs/_base_/datasets/_data_base_.py",
+    "../gs_init_compare/third_party/metric3d/mono/configs/_base_/default_runtime.py",
 ]
 
-import numpy as np
 
 model = dict(
     decode_head=dict(

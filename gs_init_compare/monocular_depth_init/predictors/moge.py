@@ -30,7 +30,7 @@ class MoGe(DepthPredictor):
 
     def __preprocess(self, img: torch.Tensor):
         assert img.ndim == 3
-        return img.permute(2, 1, 0).to(self.__device)
+        return img.permute(2, 0, 1).to(self.__device)
 
     def predict_depth(self, img: torch.Tensor, *_):
         result = self.__model.infer(self.__preprocess(img))
