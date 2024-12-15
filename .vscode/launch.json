@@ -25,6 +25,20 @@
             "justMyCode": false
         },
         {
+            "name": "nerfbaselines viewer",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "nerfbaselines",
+            "args": [
+                "viewer",
+                "--checkpoint=checkpoint-3000",
+                "--data=external://mipnerf360/garden",
+                "--backend=python",
+            ],
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}/tmp_nerfbaselines_output",
+        },
+        {
             "name": "nerfbaselines train",
             "type": "debugpy",
             "request": "launch",

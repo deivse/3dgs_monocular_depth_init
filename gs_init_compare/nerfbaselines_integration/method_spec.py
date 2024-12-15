@@ -1,4 +1,3 @@
-import os
 from nerfbaselines import register
 from pathlib import Path
 
@@ -21,6 +20,7 @@ git clone git@github.com:deivse/gs_init_comparison.git
 cd gs_init_comparison
 git fetch && git switch nerfbaselines
 
+# TODO: pip install fails because ssl module is not available
 ./install.sh gs_init_compare_nerbaselines
 
 # Clear build dependencies

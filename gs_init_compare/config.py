@@ -69,7 +69,7 @@ class Config:
     # in each dimension. Ignored if not using "monocular_depth" init_type.
     dense_depth_downsample_factor: int = 10
 
-    # Initial number of GSs. Ignored if using sfm
+    # Initial number of GSs. Ignored if using sfm or monocular_depth
     init_num_pts: int = 100_000
     # Initial extent of GSs as a multiple of the camera extent. Ignored if using sfm
     init_extent: float = 3.0
