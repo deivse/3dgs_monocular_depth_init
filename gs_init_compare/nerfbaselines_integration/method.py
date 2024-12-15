@@ -241,8 +241,8 @@ class gs_Parser:
 
     @property
     def dataset_name(self):
-        meta = self.dataset.metadata
-        return "_".join(meta["id"], meta["scene"])
+        meta = self.dataset["metadata"]
+        return "_".join([meta["id"], meta["scene"]])
 
     def export(self):
         return {

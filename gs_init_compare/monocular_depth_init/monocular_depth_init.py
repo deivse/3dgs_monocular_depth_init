@@ -16,6 +16,7 @@ from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface i
 )
 from gs_init_compare.monocular_depth_init.utils.points_from_depth import (
     DebugPlotConfig,
+    LowDepthAlignmentConfidenceError,
     get_pts_from_depth,
 )
 from gs_init_compare.utils.cuda_memory import cuda_stats_msg
@@ -118,24 +119,35 @@ def pts_and_rgb_from_monocular_depth(
         fx = K[0, 0]
         fy = K[1, 1]
 
-        image: torch.Tensor = data["image"]
+        # Check that the image is actually 0-255
+        assert data["image"].max() > 1
+        image: torch.Tensor = data["image"] / 255.0
 
         with torch.no_grad():
             depth, mask = predict_depth_or_get_cached_depth(
                 model, image, fx, fy, image_id, config, dataset_name
             )
+            cpu_depth = depth.cpu().numpy()
+            if mask is not None:
+                cpu_depth[mask.cpu().numpy() == 0] = 0
 
-        points, valid_point_indices, inlier_ratio = get_pts_from_depth(
-            depth,
-            mask,
-            image_id,
-            parser,
-            cam2world,
-            K,
-            downsample_factor=downsample_factor,
-            debug_plot_conf=None,
-            # debug_plot_conf=DebugPlotConfig(),
-        )
+        try:
+            points, valid_point_indices, inlier_ratio = get_pts_from_depth(
+                depth,
+                mask,
+                image_id,
+                parser,
+                cam2world,
+                K,
+                downsample_factor=downsample_factor,
+                debug_plot_conf=None,
+                # debug_plot_conf=DebugPlotConfig(),
+            )
+        except LowDepthAlignmentConfidenceError as e:
+            _LOGGER.warning(
+                f"Low depth alignment confidence for image {image_name}: {e}"
+            )
+            continue
         progress_bar.set_description(
             f"Last processed '{image_name}',"
             f" (inlier depth ratio {inlier_ratio:.2f})",
@@ -150,7 +162,7 @@ def pts_and_rgb_from_monocular_depth(
         # inlier indices are for a downsampled and flattened array
         rgbs = rgbs[valid_point_indices]
         points_list.append(points)
-        rgbs_list.append(rgbs.float() / 255.0)
+        rgbs_list.append(rgbs.float())
     print(cuda_stats_msg(device, "After processing points"))
 
     pts = torch.cat(points_list, dim=0).float()

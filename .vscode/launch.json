@@ -83,7 +83,7 @@
                 "default",
                 "--init-type=monocular_depth",
                 "--mono-depth-model=moge",
-                // "--invalidate-mono-depth-cache"
+                "--ignore-mono-depth-cache"
             ],
             "cwd": "${workspaceFolder}/gs_init_compare/",
             "console": "integratedTerminal",

@@ -11,6 +11,10 @@ from gs_init_compare.monocular_depth_init.utils.plot3d import plot3d
 _LOGGER = logging.getLogger(__name__)
 
 
+class LowDepthAlignmentConfidenceError(Exception):
+    pass
+
+
 def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
     device = sfm_points.device
 
@@ -28,7 +32,11 @@ def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
         valid_sfm_pt_indices = torch.logical_and(
             valid_sfm_pt_indices, pts_camera_depth >= 0
         )
-        if torch.sum(valid_sfm_pt_indices) < pts_camera.shape[1] * 3.0 / 4.0:
+        if torch.sum(valid_sfm_pt_indices) < 100:
+            raise LowDepthAlignmentConfidenceError(
+                f"Less than 100 SFM points ({torch.sum(valid_sfm_pt_indices).item()}) reprojected into image bounds for image {image_name} ({image_idx})"
+            )
+        elif torch.sum(valid_sfm_pt_indices) < pts_camera.shape[1] * 3.0 / 4.0:
             _LOGGER.warning(
                 "Only %s/%s SFM points reprojected into image bounds for image %s (%s)",
                 torch.sum(valid_sfm_pt_indices).item(),

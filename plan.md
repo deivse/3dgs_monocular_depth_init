@@ -20,3 +20,9 @@ Try to understand what's happening there. Would be sufficient for report.
 - Try to add noise to depths (gaussian noise), see how much it impacts things
 - Try running things with less downsamling -> Does the raw number of points help or number of points that are close to surfaces? 
 - Try running things at higher resolution (are my images downsampled in current runs?) (Motivation similar to previous one)
+
+
+# Questions for Monday
+
+- Suggestions where to look for error with low number of sfm points reprojected into image bounds
+- Show pointclouds - very bad alignment between predicted depths from different images in scenes other than garden
