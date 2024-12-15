@@ -1,12 +1,15 @@
-from copy import deepcopy
 import logging
+import urllib.request
+from copy import deepcopy
+from pathlib import Path
 
 import depth_pro
 import numpy as np
-
 from PIL import Image
 
 from gs_init_compare.config import Config
+from gs_init_compare.monocular_depth_init.utils.download_with_tqdm import download_with_pbar
+
 from .depth_predictor_interface import DepthPredictor, PredictedDepth
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,18 +64,23 @@ def _load_rgb(pil_img: Image.Image, auto_rotate: bool, remove_alpha: bool):
 class AppleDepthPro(DepthPredictor):
     def __init__(self, config: Config, device: str):
         # Load model and preprocessing transform
-        depth_pro_config = deepcopy(depth_pro.depth_pro.DEFAULT_MONODEPTH_CONFIG_DICT)
+        depth_pro_config = deepcopy(
+            depth_pro.depth_pro.DEFAULT_MONODEPTH_CONFIG_DICT)
         depth_pro_config.checkpoint_uri = config.depth_pro_checkpoint
 
-        try:
-            self.__model, self.__transform = depth_pro.create_model_and_transforms(
-                depth_pro_config, device
-            )
-        except FileNotFoundError as e:
-            raise FileNotFoundError(
-                f"Could not find the DepthPro checkpoint at {config.depth_pro_checkpoint}."
-                " You can download the checkpoint with src/third_party/apple_depth_pro/get_pretrained_models.sh"
-            ) from e
+        checkpoint_path = Path(config.depth_pro_checkpoint)
+        if not checkpoint_path.exists():
+            # Download the checkpoint if it doesn't exist
+            url = "https://ml-site.cdn-apple.com/models/depth-pro/depth_pro.pt"
+            checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+            _LOGGER.info(
+                f"Downloading DepthPro checkpoint from {url} to {str(checkpoint_path)}")
+            download_with_pbar(url, checkpoint_path)
+
+        self.__model, self.__transform = depth_pro.create_model_and_transforms(
+            depth_pro_config, device
+        )
+
         self.__model.eval()
 
     def can_predict_points_directly(self) -> bool:
