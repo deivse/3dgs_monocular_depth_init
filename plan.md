@@ -1,13 +1,12 @@
 # TODO
 
 - [x] Fix GPU memory not being freed when running via evaluator.py and after depth inference
-- [ ] Add my impl as nerfbaselines method and use nerfbaselines for evaluation.
+- [x] Add my impl as nerfbaselines method and use nerfbaselines for evaluation.
+- [ ] Export init pts to PLY using Open3d
+- [ ] Outlier removal from final point cloud [using open3d](https://www.open3d.org/docs/release/tutorial/geometry/pointcloud_outlier_removal.html)? 
 - [ ] Test on other datasets -> Tanks and Temples pry dobry
-- [ ] Export init pts as some format to be able to visualize in Meshlab (or other software but Meshlab is good.)
 - [ ] Analyze results, write report, make presentation, get zapocet.
 - [ ] ? Merging step
-
-# Suggestions
 
 ## Overall direction
 Focus on doing evaluations, focus on why some methods predict better than others.
