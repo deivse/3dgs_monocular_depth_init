@@ -1,11 +1,10 @@
 from nerfbaselines import register
 from pathlib import Path
 
+from gs_init_compare.nerfbaselines_integration.make_presets import make_presets
+
 
 _name = "gs-init-compare"
-
-
-PROJECT_ROOT = Path(__file__).parent.parent.absolute()
 
 register(
     {
@@ -36,17 +35,7 @@ fi
             "description": """TODO""",
         },
         "presets": {
-            "sfm": {},
-            "metric3d_vit_large": {
-                "init_type": "monocular_depth",
-                "mono_depth_model": "metric3d",
-                "metric3d_config": str(
-                    PROJECT_ROOT
-                    / "third_party/metric3d/mono/configs/HourglassDecoder/vit.raft5.large.py"
-                ),
-                # TODO: mechanism to download weights if missing... then don't use hardcoded path
-                "metric3d_weights": "/workspaces/gs_init_comparison/metric3d_configs/metric_depth_vit_large_800k.pth",
-            },
+            **make_presets(),
             "blender": {
                 "@apply": [{"dataset": "blender"}],
                 "init_type": "random",

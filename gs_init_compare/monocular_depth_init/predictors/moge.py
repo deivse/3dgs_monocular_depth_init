@@ -18,7 +18,8 @@ class MoGe(DepthPredictor):
     def __init__(self, config: Config, device: str):
         # Load the model from huggingface
         self.__device = device
-        self.__model = MoGeModel.from_pretrained("Ruicheng/moge-vitl").to(device)
+        self.__model = MoGeModel.from_pretrained(
+            "Ruicheng/moge-vitl").to(device)
 
     def can_predict_points_directly(self) -> bool:
         return True
@@ -27,10 +28,14 @@ class MoGe(DepthPredictor):
     def name(self) -> str:
         return "MoGe"
 
-    def predict_depth(self, img: Image.Image, *_):
-        result = self.__model.infer(img)
+    def __preprocess(self, img: torch.Tensor):
+        assert img.ndim == 3
+        return img.permute(2, 1, 0).to(self.__device)
+
+    def predict_depth(self, img: torch.Tensor, *_):
+        result = self.__model.infer(self.__preprocess(img))
         return PredictedDepth(result["depth"], result["mask"])
 
-    def predict_points(self, img: Image.Image, *_):
-        result = self.__model.infer(img)
+    def predict_points(self, img: torch.Tensor, *_):
+        result = self.__model.infer(self.__preprocess(img))
         return PredictedPoints(result["points"], result["mask"])

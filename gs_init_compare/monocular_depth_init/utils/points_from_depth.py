@@ -31,7 +31,7 @@ def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
         if torch.sum(valid_sfm_pt_indices) < pts_camera.shape[1] * 3.0 / 4.0:
             _LOGGER.warning(
                 "Only %s/%s SFM points reprojected into image bounds for image %s (%s)",
-                torch.sum(valid_sfm_pt_indices),
+                torch.sum(valid_sfm_pt_indices).item(),
                 sfm_points_camera.shape[1],
                 image_name,
                 image_idx,
