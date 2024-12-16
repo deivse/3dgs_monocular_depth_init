@@ -3,10 +3,7 @@ from pathlib import Path
 import sys
 from typing import List, Type
 
-from PIL import Image
-import numpy as np
 import torch
-import open3d
 from tqdm import tqdm
 
 from gs_init_compare.config import Config
@@ -14,6 +11,7 @@ from gs_init_compare.datasets.colmap import Parser
 from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
     DepthPredictor,
 )
+from gs_init_compare.monocular_depth_init.utils.point_cloud_export import export_point_cloud_to_ply
 from gs_init_compare.monocular_depth_init.utils.points_from_depth import (
     DebugPlotConfig,
     LowDepthAlignmentConfidenceError,
@@ -44,19 +42,6 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
         return MoGe
     else:
         raise ValueError(f"Unsupported monodepth model: {config.mono_depth_model}")
-
-
-def save_pts_and_rgbs(
-    pts: np.ndarray, rgbs: np.ndarray, output_dir: Path, depth_pts_filename: str
-):
-    """Saves point cloud to a .ply file."""
-    pcd = open3d.geometry.PointCloud()
-    pcd.points = open3d.utility.Vector3dVector(pts)
-    pcd.colors = open3d.utility.Vector3dVector(rgbs)
-    open3d.io.write_point_cloud(
-        str(output_dir / f"{depth_pts_filename}.ply"), pcd, write_ascii=False
-    )
-    logging.info(f"Saved point cloud to {output_dir / depth_pts_filename}.ply")
 
 
 def predict_depth_or_get_cached_depth(
@@ -171,8 +156,8 @@ def pts_and_rgb_from_monocular_depth(
     if config.mono_depth_pts_output_dir is not None:
         output_dir = Path(config.mono_depth_pts_output_dir) / dataset_name
         output_dir.mkdir(exist_ok=True, parents=True)
-        save_pts_and_rgbs(pts.cpu().numpy(), rgbs.cpu().numpy(), output_dir, model.name)
-        save_pts_and_rgbs(parser.points, parser.points_rgb / 255.0, output_dir, "sfm")
+        export_point_cloud_to_ply(pts.cpu().numpy(), rgbs.cpu().numpy(), output_dir, model.name)
+        export_point_cloud_to_ply(parser.points, parser.points_rgb / 255.0, output_dir, "sfm")
         if config.mono_depth_pts_only:
             sys.exit(0)
 
