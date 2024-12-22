@@ -11,9 +11,10 @@ from gs_init_compare.datasets.colmap import Parser
 from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
     DepthPredictor,
 )
-from gs_init_compare.monocular_depth_init.utils.point_cloud_export import export_point_cloud_to_ply
+from gs_init_compare.monocular_depth_init.utils.point_cloud_export import (
+    export_point_cloud_to_ply,
+)
 from gs_init_compare.monocular_depth_init.utils.points_from_depth import (
-    DebugPlotConfig,
     LowDepthAlignmentConfidenceError,
     get_pts_from_depth,
 )
@@ -125,8 +126,17 @@ def pts_and_rgb_from_monocular_depth(
                 cam2world,
                 K,
                 downsample_factor=downsample_factor,
-                debug_plot_conf=None,
-                # debug_plot_conf=DebugPlotConfig(),
+                outlier_factor=2.5,
+                debug_point_cloud_export_dir=(
+                    Path(config.mono_depth_pts_output_dir)
+                    / dataset_name
+                    / model.name
+                    / image_name
+                    if config.mono_depth_pts_output_dir
+                    and config.mono_depth_pts_output_per_image
+                    else None
+                ),
+                img_for_point_cloud_rgb=image,
             )
         except LowDepthAlignmentConfidenceError as e:
             _LOGGER.warning(
@@ -156,8 +166,12 @@ def pts_and_rgb_from_monocular_depth(
     if config.mono_depth_pts_output_dir is not None:
         output_dir = Path(config.mono_depth_pts_output_dir) / dataset_name
         output_dir.mkdir(exist_ok=True, parents=True)
-        export_point_cloud_to_ply(pts.cpu().numpy(), rgbs.cpu().numpy(), output_dir, model.name)
-        export_point_cloud_to_ply(parser.points, parser.points_rgb / 255.0, output_dir, "sfm")
+        export_point_cloud_to_ply(
+            pts.cpu().numpy(), rgbs.cpu().numpy(), output_dir, model.name
+        )
+        export_point_cloud_to_ply(
+            parser.points, parser.points_rgb / 255.0, output_dir, "sfm"
+        )
         if config.mono_depth_pts_only:
             sys.exit(0)
 

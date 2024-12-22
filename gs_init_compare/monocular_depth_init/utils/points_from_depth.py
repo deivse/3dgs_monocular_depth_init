@@ -1,18 +1,95 @@
-from dataclasses import dataclass
 import logging
+from pathlib import Path
 from typing import Optional
-from matplotlib import pyplot as plt
 import numpy as np
 import torch
 
 from gs_init_compare.nerfbaselines_integration.method import gs_Parser as Parser
-from gs_init_compare.monocular_depth_init.utils.plot3d import plot3d
+from gs_init_compare.monocular_depth_init.utils.point_cloud_export import (
+    export_point_cloud_to_ply,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class LowDepthAlignmentConfidenceError(Exception):
     pass
+
+
+def debug_export_point_clouds(
+    imsize,
+    cam2world,
+    P,
+    transform_c2w,
+    sfm_points,
+    pts_world,
+    outliers_world,
+    valid_indices,
+    parser,
+    image_name,
+    downsample_factor,
+    img,
+    dir=Path("ply_export_debug"),
+):
+    camera_plane = torch.dstack(
+        [
+            torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(
+                cam2world.device
+            ),
+            torch.ones(imsize, device=cam2world.device).T,
+        ]
+    ).reshape(-1, 3)
+
+    dir = Path(dir)
+    dir.mkdir(exist_ok=True, parents=True)
+
+    export_point_cloud_to_ply(
+        transform_c2w(camera_plane).reshape(-1, 3).cpu().numpy(),
+        img.reshape(-1, 3).cpu().numpy() if img is not None else None,
+        dir,
+        "camera_plane",
+    )
+    sfm_points_repro_world = P @ torch.vstack(
+        [sfm_points.T, torch.ones(sfm_points.shape[0], device=cam2world.device)]
+    )
+    sfm_points_repro_world = sfm_points_repro_world / sfm_points_repro_world[2]
+    sfm_pt_rgbs = parser.points_rgb[parser.point_indices[image_name]] / 255.0
+
+    export_point_cloud_to_ply(
+        transform_c2w(sfm_points_repro_world.T).reshape(-1, 3).cpu().numpy(),
+        sfm_pt_rgbs,
+        dir,
+        "sfm_points_plane_proj",
+    )
+    export_point_cloud_to_ply(
+        sfm_points.reshape(-1, 3).cpu().numpy(),
+        sfm_pt_rgbs,
+        dir,
+        "sfm_points_world",
+    )
+    rgbs = None
+    if img is not None:
+        rgbs = img[::downsample_factor, ::downsample_factor]
+        rgbs = rgbs.reshape(-1, 3).cpu().numpy()
+        rgbs = rgbs[valid_indices.cpu().numpy()]
+
+    export_point_cloud_to_ply(
+        pts_world.reshape(-1, 3).cpu().numpy(),
+        rgbs,
+        dir,
+        "my_points_world",
+    )
+
+    if outliers_world.shape[0] == 0:
+        return
+
+    red = np.array([1, 0, 0])
+    export_point_cloud_to_ply(
+        outliers_world.cpu().numpy(),
+        np.tile(red, (outliers_world.shape[0], 1)),
+        dir,
+        "my_outliers_world",
+    )
 
 
 def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
@@ -32,17 +109,11 @@ def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
         valid_sfm_pt_indices = torch.logical_and(
             valid_sfm_pt_indices, pts_camera_depth >= 0
         )
-        if torch.sum(valid_sfm_pt_indices) < 100:
+        if torch.sum(valid_sfm_pt_indices) < pts_camera.shape[1] / 4:
             raise LowDepthAlignmentConfidenceError(
-                f"Less than 100 SFM points ({torch.sum(valid_sfm_pt_indices).item()}) reprojected into image bounds for image {image_name} ({image_idx})"
-            )
-        elif torch.sum(valid_sfm_pt_indices) < pts_camera.shape[1] * 3.0 / 4.0:
-            _LOGGER.warning(
-                "Only %s/%s SFM points reprojected into image bounds for image %s (%s)",
-                torch.sum(valid_sfm_pt_indices).item(),
-                sfm_points_camera.shape[1],
-                image_name,
-                image_idx,
+                "Less than 1/4 of SFM points",
+                f" ({torch.sum(valid_sfm_pt_indices).item()} / {sfm_points_camera.shape[1]})"
+                f" reprojected into image bounds for image {image_name} ({image_idx})",
             )
 
         if mask is not None:
@@ -77,47 +148,6 @@ def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
     return h[0], h[1], sfm_points_camera
 
 
-@dataclass
-class DebugPlotConfig:
-    show_sfm_points: bool = True
-    show_camera_plane: bool = True
-    sfm_pts_downsample_factor: int = 10
-    camera_plane_downsample_factor: int = 40
-
-    def plot(
-        self,
-        sfm_points,
-        pts_world,
-        imsize,
-        depth_scalar,
-        depth,
-        transform_camera_to_world_space,
-    ):
-        camera_plane_xyz = transform_camera_to_world_space(
-            torch.dstack(
-                [
-                    torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(
-                        depth.device
-                    ),
-                    depth_scalar * torch.ones(depth.shape, device=depth.device),
-                ]
-            )[
-                :: self.camera_plane_downsample_factor,
-                :: self.camera_plane_downsample_factor,
-                :,
-            ],
-        )
-
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection="3d")
-        if self.show_sfm_points:
-            plot3d(sfm_points[:: self.sfm_pts_downsample_factor, :].cpu(), "g", ax)
-        if self.show_camera_plane:
-            plot3d(camera_plane_xyz.cpu(), "b", ax)
-        plot3d(pts_world.cpu(), "k", ax)
-        plt.show(block=True)
-
-
 def get_pts_from_depth(
     depth: torch.Tensor,
     mask: Optional[torch.Tensor],
@@ -127,7 +157,8 @@ def get_pts_from_depth(
     K: torch.Tensor,
     downsample_factor=10,
     outlier_factor=2.5,
-    debug_plot_conf: Optional[DebugPlotConfig] = None,
+    debug_point_cloud_export_dir: Optional[Path] = None,
+    img_for_point_cloud_rgb=None,
 ):
     """
     Returns:
@@ -192,9 +223,11 @@ def get_pts_from_depth(
     inlier_indices = torch.abs(
         pts_camera[:, 2] - torch.mean(pts_camera[valid_indices, 2])
     ) < outlier_factor * torch.std(pts_camera[valid_indices, 2])
+    outlier_indices = torch.logical_not(inlier_indices)
 
     # Only keep inliers that are not masked out
     inlier_indices = torch.logical_and(valid_indices, inlier_indices)
+    outlier_indices = torch.logical_and(valid_indices, outlier_indices)
 
     inlier_ratio = float(
         torch.sum(inlier_indices).to(float) / torch.sum(valid_indices).to(float)
@@ -202,21 +235,29 @@ def get_pts_from_depth(
 
     # Now valid indices filters out both masked out values and outliers
     valid_indices = inlier_indices
-    pts_camera = pts_camera[valid_indices]
 
     pts_camera[:, 0] = (pts_camera[:, 0] + 0.5) * pts_camera[:, 2]
     pts_camera[:, 1] = (pts_camera[:, 1] + 0.5) * pts_camera[:, 2]
 
-    pts_world = transform_camera_to_world_space(pts_camera)
+    pts_world_unfiltered = transform_camera_to_world_space(pts_camera)
+    pts_world = pts_world_unfiltered[valid_indices]
 
-    if debug_plot_conf is not None:
-        debug_plot_conf.plot(
+    if debug_point_cloud_export_dir is not None:
+        outliers_world = pts_world_unfiltered[outlier_indices]
+        debug_export_point_clouds(
+            imsize,
+            cam2world,
+            P,
+            transform_camera_to_world_space,
             sfm_points,
             pts_world,
-            imsize,
-            depth_scalar,
-            depth,
-            transform_camera_to_world_space,
+            outliers_world,
+            valid_indices,
+            parser,
+            image_name,
+            downsample_factor,
+            img_for_point_cloud_rgb,
+            debug_point_cloud_export_dir,
         )
 
     return pts_world.reshape([-1, 3]).float(), valid_indices.cpu(), inlier_ratio

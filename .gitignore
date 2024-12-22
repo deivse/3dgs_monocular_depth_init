@@ -1,6 +1,7 @@
 .venv/
 __pycache__
 recon_cache/
+ply_exports_*
 gs_init_compare/third_party/metric3d/weight/*.pth
 gs_init_compare/data/
 results/

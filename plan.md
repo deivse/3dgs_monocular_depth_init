@@ -2,9 +2,11 @@
 
 - [x] Fix GPU memory not being freed when running via evaluator.py and after depth inference
 - [x] Add my impl as nerfbaselines method and use nerfbaselines for evaluation.
-- [ ] Export init pts to PLY using Open3d
+- [x] Export init pts to PLY using Open3d
+- [ ] What makes it work so well on "room" and so bad on "kitchen"?
+- [ ] Add option to add sfm points to generated points.
+- [ ] Test!!
 - [ ] Outlier removal from final point cloud [using open3d](https://www.open3d.org/docs/release/tutorial/geometry/pointcloud_outlier_removal.html)? 
-- [ ] Test on other datasets -> Tanks and Temples pry dobry
 - [ ] Analyze results, write report, make presentation, get zapocet.
 - [ ] ? Merging step
 
@@ -25,4 +27,4 @@ Try to understand what's happening there. Would be sufficient for report.
 # Questions for Monday
 
 - Suggestions where to look for error with low number of sfm points reprojected into image bounds
-- Show pointclouds - very bad alignment between predicted depths from different images in scenes other than garden
+- Show pointclouds - very bad alignment between predicted depths from different images in some scenes
