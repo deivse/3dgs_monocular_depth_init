@@ -2,35 +2,25 @@
 Runs training and evaluation for multiple scenes and initialization strategies, reports results.
 """
 
-from abc import abstractmethod
-import abc
-from copy import deepcopy
 from datetime import datetime
-import gc
-import logging
 from pathlib import Path
-import shutil
 import subprocess
-from typing import Any, Iterable, Type
 
 import argparse
-from gsplat.strategy import DefaultStrategy
 
-from gs_init_compare.config import Config
 from itertools import product
 from gs_init_compare.nerfbaselines_integration.make_presets import all_preset_names
-import gs_init_compare.trainer as trainer
 
 
 class ANSIEscapes:
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    END_SEQUENCE = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+    BLUE = "\033[94m"
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    END_SEQUENCE = "\033[0m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
 
     @staticmethod
     def by_name(name: str):
@@ -119,7 +109,7 @@ def create_argument_parser():
     return parser
 
 
-def make_method_config_overrides(args: argparse.Namespace) -> list[str]:
+def make_method_config_overrides(args: argparse.Namespace) -> dict[str, str]:
     return {
         "max_steps": str(args.max_steps),
         "ignore_mono_depth_cache": str(args.invalidate_mono_depth_cache),
@@ -131,8 +121,11 @@ def main():
 
     for preset, dataset in product(args.presets, args.datasets):
         output_dir = args.output_dir / dataset / preset
-        print(ANSIEscapes.color(
-            f"Training {preset} on {dataset}. (Outputting to: {output_dir})", "blue"))
+        print(
+            ANSIEscapes.color(
+                f"Training {preset} on {dataset}. (Outputting to: {output_dir})", "blue"
+            )
+        )
 
         overrides_cli = []
         for kv_pair in make_method_config_overrides(args).items():
@@ -147,7 +140,8 @@ def main():
                 f"--output={output_dir}",
                 f"--presets={preset}",
                 f"--data=external://{dataset}",
-            ] + overrides_cli
+            ]
+            + overrides_cli
         )
 
 
