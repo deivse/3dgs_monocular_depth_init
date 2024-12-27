@@ -59,7 +59,7 @@ class Config:
     mono_depth_cache_dir: str = "__mono_depth_cache__"
     # If set, point clouds from monocular depth initialization are saved to this directory.
     mono_depth_pts_output_dir: Optional[str] = None
-    mono_depth_pts_output_per_image = False
+    mono_depth_pts_output_per_image: bool = False
     mono_depth_pts_only: bool = False
     ignore_mono_depth_cache: bool = False
 
