@@ -1,13 +1,13 @@
 import os
 import json
 from typing import Any, Dict, List, Optional
+import pycolmap
 from typing_extensions import assert_never
 
 import cv2
 import imageio.v2 as imageio
 import numpy as np
 import torch
-from pycolmap import SceneManager
 
 from .normalize import (
     align_principle_axes,
@@ -48,86 +48,92 @@ class Parser:
             colmap_dir
         ), f"COLMAP directory {colmap_dir} does not exist."
 
-        manager = SceneManager(colmap_dir)
-        manager.load_cameras()
-        manager.load_images()
-        manager.load_points3D()
+        reconstruction = pycolmap.Reconstruction(colmap_dir)
 
         # Extract extrinsic matrices in world-to-camera format.
-        imdata = manager.images
         w2c_mats = []
         camera_ids = []
         Ks_dict = dict()
         params_dict = dict()
         imsize_dict = dict()  # width, height
         mask_dict = dict()
+
+        if reconstruction.num_images() == 0:
+            raise ValueError("No images found in COLMAP.")
+
         bottom = np.array([0, 0, 0, 1]).reshape(1, 4)
-        for k in imdata:
-            im = imdata[k]
-            rot = im.R()
-            trans = im.tvec.reshape(3, 1)
-            w2c = np.concatenate(
-                [np.concatenate([rot, trans], 1), bottom], axis=0)
-            w2c_mats.append(w2c)
+        image: pycolmap.Image
+        for image in reconstruction.images.values():
+            w2c_mats.append(np.vstack([image.cam_from_world.matrix(), bottom]))
 
             # support different camera intrinsics
-            camera_id = im.camera_id
+            camera_id = image.camera_id
             camera_ids.append(camera_id)
 
             # camera intrinsics
-            cam = manager.cameras[camera_id]
-            fx, fy, cx, cy = cam.fx, cam.fy, cam.cx, cam.cy
-            K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+            cam = image.camera
+            if cam is None:
+                raise ValueError(f"Camera {camera_id} not found in COLMAP.")
+
+            K = cam.calibration_matrix()
             K[:2, :] /= factor
             Ks_dict[camera_id] = K
 
+            def cam_params(cam: pycolmap.Camera, wanted):
+                out = np.zeros(len(wanted), dtype=np.float32)
+                all_param_names = [s.strip() for s in cam.params_info.split(",")]
+                for i, param_name in enumerate(wanted):
+                    if param_name == "0":
+                        continue
+                    param_arr_i = all_param_names.index(param_name)
+                    out[i] = cam.params[param_arr_i]
+                return out
+
             # Get distortion parameters.
-            type_ = cam.camera_type
-            if type_ == 0 or type_ == "SIMPLE_PINHOLE":
+            if cam.model == pycolmap.CameraModelId.SIMPLE_PINHOLE:
                 params = np.empty(0, dtype=np.float32)
                 camtype = "perspective"
-            elif type_ == 1 or type_ == "PINHOLE":
+            elif cam.model == pycolmap.CameraModelId.PINHOLE:
                 params = np.empty(0, dtype=np.float32)
                 camtype = "perspective"
-            if type_ == 2 or type_ == "SIMPLE_RADIAL":
-                params = np.array([cam.k1, 0.0, 0.0, 0.0], dtype=np.float32)
+            elif cam.model == pycolmap.CameraModelId.SIMPLE_RADIAL:
+                params = cam_params(cam, ["k1", "0", "0", "0"])
                 camtype = "perspective"
-            elif type_ == 3 or type_ == "RADIAL":
-                params = np.array([cam.k1, cam.k2, 0.0, 0.0], dtype=np.float32)
+            elif cam.model == pycolmap.CameraModelId.RADIAL:
+                params = cam_params(cam, ["k1", "k2", "0", "0"])
                 camtype = "perspective"
-            elif type_ == 4 or type_ == "OPENCV":
-                params = np.array(
-                    [cam.k1, cam.k2, cam.p1, cam.p2], dtype=np.float32)
+            elif cam.model == pycolmap.CameraModelId.OPENCV:
+                params = cam_params(cam, ["k1", "k2", "p1", "p2"])
                 camtype = "perspective"
-            elif type_ == 5 or type_ == "OPENCV_FISHEYE":
-                params = np.array(
-                    [cam.k1, cam.k2, cam.k3, cam.k4], dtype=np.float32)
+            elif cam.model == pycolmap.CameraModelId.OPENCV_FISHEYE:
+                params = cam_params(cam, ["k1", "k2", "k3", "k4"])
                 camtype = "fisheye"
-            assert (
-                camtype == "perspective" or camtype == "fisheye"
-            ), f"Only perspective and fisheye cameras are supported, got {type_}"
+            else:
+                raise ValueError(f"Unsupported camera model: {cam.model}")
+
+            if cam.model not in [
+                pycolmap.CameraModelId.SIMPLE_PINHOLE,
+                pycolmap.CameraModelId.PINHOLE,
+            ]:
+                print(
+                    f"Warning: COLMAP Camera {camera_id} is not PINHOLE. Images have distortion."
+                )
 
             params_dict[camera_id] = params
-            imsize_dict[camera_id] = (
-                cam.width // factor, cam.height // factor)
+            # Imsize dict will have float values for now
+            imsize_dict[camera_id] = (cam.width / factor, cam.height / factor)
             mask_dict[camera_id] = None
         print(
-            f"[Parser] {len(imdata)} images, taken by {len(set(camera_ids))} cameras."
+            f"[Parser] {reconstruction.num_images()} images, taken by {len(set(camera_ids))} cameras."
         )
 
-        if len(imdata) == 0:
-            raise ValueError("No images found in COLMAP.")
-        if not (type_ == 0 or type_ == 1):
-            print("Warning: COLMAP Camera is not PINHOLE. Images have distortion.")
-
         w2c_mats = np.stack(w2c_mats, axis=0)
-
-        # Convert extrinsics to camera-to-world.
+        # Convert extrinsic params to camera-to-world.
         camtoworlds = np.linalg.inv(w2c_mats)
 
         # Image names from COLMAP. No need for permuting the poses according to
         # image names anymore.
-        image_names = [imdata[k].name for k in imdata]
+        image_names = [image.name for image in reconstruction.images.values()]
 
         # Previous Nerf results were generated with images sorted by filename,
         # ensure metrics are reported on the same test set.
@@ -168,23 +174,35 @@ class Parser:
         colmap_files = sorted(_get_rel_paths(colmap_image_dir))
         image_files = sorted(_get_rel_paths(image_dir))
         colmap_to_image = dict(zip(colmap_files, image_files))
-        image_paths = [os.path.join(image_dir, colmap_to_image[f])
-                       for f in image_names]
+        image_paths = [os.path.join(image_dir, colmap_to_image[f]) for f in image_names]
 
         # 3D points and {image_name -> [point_idx]}
-        points = manager.points3D.astype(np.float32)
-        points_err = manager.point3D_errors.astype(np.float32)
-        points_rgb = manager.point3D_colors.astype(np.uint8)
+        points = np.empty([reconstruction.num_points3D(), 3], dtype=np.float32)
+        points_err = np.empty(reconstruction.num_points3D(), dtype=np.float32)
+        points_rgb = np.empty([reconstruction.num_points3D(), 3], dtype=np.uint8)
+        point3D: pycolmap.Point3D
+
+        point3d_id_to_idx = {
+            id: i for i, id in enumerate(reconstruction.points3D.keys())
+        }
+
+        for point3d_id, point3D in reconstruction.points3D.items():
+            i = point3d_id_to_idx[point3d_id]
+            points[i] = point3D.xyz
+            points_err[i] = point3D.error
+            points_rgb[i] = point3D.color
+
         point_indices = dict()
 
-        image_id_to_name = {v: k for k, v in manager.name_to_image_id.items()}
-        for point_id, data in manager.point3D_id_to_images.items():
-            for image_id, _ in data:
-                image_name = image_id_to_name[image_id]
-                point_idx = manager.point3D_id_to_point3D_idx[point_id]
-                point_indices.setdefault(image_name, []).append(point_idx)
         point_indices = {
-            k: np.array(v).astype(np.int32) for k, v in point_indices.items()
+            image.name: np.array(
+                [
+                    point3d_id_to_idx[point2d.point3D_id]
+                    for point2d in image.points2D
+                    if point2d.has_point3D()
+                ]
+            ).astype(np.int32)
+            for image in reconstruction.images.values()
         }
 
         # Normalize the world space.
@@ -227,8 +245,7 @@ class Parser:
             K[1, :] *= s_height
             self.Ks_dict[camera_id] = K
             width, height = self.imsize_dict[camera_id]
-            self.imsize_dict[camera_id] = (
-                int(width * s_width), int(height * s_height))
+            self.imsize_dict[camera_id] = (int(width * s_width), int(height * s_height))
 
         # undistortion
         self.mapx_dict = dict()
@@ -350,14 +367,14 @@ class Dataset:
             )
             image = cv2.remap(image, mapx, mapy, cv2.INTER_LINEAR)
             x, y, w, h = self.parser.roi_undist_dict[camera_id]
-            image = image[y: y + h, x: x + w]
+            image = image[y : y + h, x : x + w]
 
         if self.patch_size is not None:
             # Random crop.
             h, w = image.shape[:2]
             x = np.random.randint(0, max(w - self.patch_size, 1))
             y = np.random.randint(0, max(h - self.patch_size, 1))
-            image = image[y: y + self.patch_size, x: x + self.patch_size]
+            image = image[y : y + self.patch_size, x : x + self.patch_size]
             K[0, 2] -= x
             K[1, 2] -= y
 
@@ -376,8 +393,7 @@ class Dataset:
             image_name = self.parser.image_names[index]
             point_indices = self.parser.point_indices[image_name]
             points_world = self.parser.points[point_indices]
-            points_cam = (worldtocams[:3, :3] @
-                          points_world.T + worldtocams[:3, 3:4]).T
+            points_cam = (worldtocams[:3, :3] @ points_world.T + worldtocams[:3, 3:4]).T
             points_proj = (K @ points_cam.T).T
             points = points_proj[:, :2] / points_proj[:, 2:3]  # (M, 2)
             depths = points_cam[:, 2]  # (M,)

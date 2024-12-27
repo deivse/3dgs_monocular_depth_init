@@ -18,7 +18,7 @@ setup(
         "nerfview~=0.0.3",
         "html4vision~=0.4.3",
         "imageio[ffmpeg]~=2.35.1",
-        "pycolmap @ git+https://github.com/rmbrualla/pycolmap@cc7ea4b7301720ac29287dbe450952511b32125e",
+        "pycolmap~=3.11",
         "microsoft-python-type-stubs @ git+https://github.com/microsoft/python-type-stubs.git",
         "ruff",
         "pillow",
