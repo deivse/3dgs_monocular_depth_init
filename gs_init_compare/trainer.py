@@ -1,3 +1,4 @@
+import logging
 import sys
 import time
 
@@ -95,5 +96,6 @@ if __name__ == "__main__":
             ),
         ),
     }
+    logging.basicConfig(level=logging.INFO)
     cfg = tyro.extras.overridable_config_cli(configs)
     run_with_config(cfg)
