@@ -172,12 +172,6 @@ def get_pts_from_depth(
     C = -R.T @ w2c[:3, 3]
     P = K @ R @ torch.hstack([torch.eye(3), -C[:, None]])
 
-    print(
-        f"!!!!! image {image_name} has {parser.point_indices[image_name].shape[0]} points"
-    )
-    print(f"K matrix: \n{K}")
-    print(f"cam2world matrix: \n{cam2world}")
-
     sfm_points = (
         torch.from_numpy(parser.points[parser.point_indices[image_name]])
         .to(depth.device)
