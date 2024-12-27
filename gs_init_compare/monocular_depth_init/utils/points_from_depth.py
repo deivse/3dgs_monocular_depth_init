@@ -92,7 +92,7 @@ def debug_export_point_clouds(
     )
 
 
-def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
+def get_depth_scalar(sfm_points, P, image_name, imsize, depth, mask):
     device = sfm_points.device
 
     sfm_points_camera = P @ torch.vstack(
@@ -113,7 +113,7 @@ def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
             raise LowDepthAlignmentConfidenceError(
                 "Less than 1/4 of SFM points",
                 f" ({torch.sum(valid_sfm_pt_indices).item()} / {sfm_points_camera.shape[1]})"
-                f" reprojected into image bounds for image {image_name} ({image_idx})",
+                f" reprojected into image bounds for image {image_name}",
             )
 
         if mask is not None:
@@ -151,7 +151,7 @@ def get_depth_scalar(sfm_points, P, image_name, image_idx, imsize, depth, mask):
 def get_pts_from_depth(
     depth: torch.Tensor,
     mask: Optional[torch.Tensor],
-    image_id: int,
+    image_name: str,
     parser: Parser,
     cam2world: torch.Tensor,
     K: torch.Tensor,
@@ -167,11 +167,16 @@ def get_pts_from_depth(
     """
     depth = depth.float()
     imsize = depth.T.shape
-    image_name = parser.image_names[image_id]
     w2c = torch.linalg.inv(cam2world)
     R = w2c[:3, :3]
     C = -R.T @ w2c[:3, 3]
     P = K @ R @ torch.hstack([torch.eye(3), -C[:, None]])
+
+    print(
+        f"!!!!! image {image_name} has {parser.point_indices[image_name].shape[0]} points"
+    )
+    print(f"K matrix: \n{K}")
+    print(f"cam2world matrix: \n{cam2world}")
 
     sfm_points = (
         torch.from_numpy(parser.points[parser.point_indices[image_name]])
@@ -194,7 +199,7 @@ def get_pts_from_depth(
         return dense_world
 
     depth_scalar, depth_shift, sfm_points_camera_homo = get_depth_scalar(
-        sfm_points, P, image_name, image_id, imsize, depth, mask
+        sfm_points, P, image_name, imsize, depth, mask
     )
 
     if depth_scalar is None:

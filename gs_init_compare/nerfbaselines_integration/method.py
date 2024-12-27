@@ -178,10 +178,8 @@ class gs_Parser:
             self.scene_scale = state["scene_scale"]
             self.points = self.points_rgb = None
             if state["num_points"] is not None:
-                self.points = np.zeros(
-                    (state["num_points"], 3), dtype=np.float32)
-                self.points_rgb = np.zeros(
-                    (state["num_points"], 3), dtype=np.uint8)
+                self.points = np.zeros((state["num_points"], 3), dtype=np.float32)
+                self.points_rgb = np.zeros((state["num_points"], 3), dtype=np.uint8)
             self.num_train_images = state["num_train_images"]
             self.dataset = None
             return
@@ -232,8 +230,7 @@ class gs_Parser:
         self.dataset = dataset
 
         # Compatibility with original parser
-        self.image_names = [os.path.basename(p)
-                            for p in dataset["image_paths"]]
+        self.image_names = [os.path.basename(p) for p in dataset["image_paths"]]
         self.point_indices = {
             self.image_names[i]: indices
             for i, indices in enumerate(dataset["images_points3D_indices"])
@@ -278,8 +275,7 @@ class gs_Dataset:
         background_color = dataset["metadata"].get("background_color", None)
         dataset = dataset.copy()
         dataset["images"] = [
-            image_to_srgb(
-                image, background_color=background_color, dtype=np.uint8)
+            image_to_srgb(image, background_color=background_color, dtype=np.uint8)
             for image in dataset["images"]
         ]
         return dataset
@@ -299,10 +295,10 @@ class gs_Dataset:
             h, w = image.shape[:2]
             x = np.random.randint(0, max(w - self.patch_size, 1))
             y = np.random.randint(0, max(h - self.patch_size, 1))
-            image = image[y: y + self.patch_size, x: x + self.patch_size]
+            image = image[y : y + self.patch_size, x : x + self.patch_size]
             if sampling_mask is not None:
                 sampling_mask = sampling_mask[
-                    y: y + self.patch_size, x: x + self.patch_size
+                    y : y + self.patch_size, x : x + self.patch_size
                 ]
             K[0, 2] -= x
             K[1, 2] -= y
@@ -311,6 +307,7 @@ class gs_Dataset:
             "K": torch.from_numpy(K).float(),
             "camtoworld": torch.from_numpy(camtoworlds).float(),
             "image": torch.from_numpy(image).float(),
+            "image_name": self.parser.image_names[idx],
             "image_id": idx,  # the index of the image in the dataset
         }
         if sampling_mask is not None:
@@ -324,8 +321,7 @@ class gs_Dataset:
             points_world = dataset["points3D_xyz"][
                 dataset["images_points3D_indides"][idx]
             ]
-            points_cam = (worldtocams[:3, :3] @
-                          points_world.T + worldtocams[:3, 3:4]).T
+            points_cam = (worldtocams[:3, :3] @ points_world.T + worldtocams[:3, 3:4]).T
             points_proj = (K @ points_cam.T).T
             points = points_proj[:, :2] / points_proj[:, 2:3]  # (M, 2)
             depths = points_cam[:, 2]  # (M,)
@@ -363,8 +359,7 @@ def _build_runner_module():
                 isinstance(node, ast.Call)
                 and ast.unparse(node.func) == "torch.utils.data.DataLoader"
             ):
-                num_workers = next(
-                    x for x in node.keywords if x.arg == "num_workers")
+                num_workers = next(x for x in node.keywords if x.arg == "num_workers")
                 num_workers.value = ast.Constant(
                     value=0, kind=None, lineno=0, col_offset=0
                 )
@@ -482,10 +477,8 @@ schedulers=self.schedulers
             name="train_iteration",
             args=ast.arguments(  # type: ignore
                 args=[
-                    ast.arg(arg="self", annotation=None,
-                            lineno=0, col_offset=0),
-                    ast.arg(arg="step", annotation=None,
-                            lineno=0, col_offset=0),
+                    ast.arg(arg="self", annotation=None, lineno=0, col_offset=0),
+                    ast.arg(arg="step", annotation=None, lineno=0, col_offset=0),
                 ],
                 posonlyargs=[],
                 kwonlyargs=[],
@@ -515,12 +508,9 @@ schedulers=self.schedulers
             name="save",
             args=ast.arguments(  # type: ignore
                 args=[
-                    ast.arg(arg="self", annotation=None,
-                            lineno=0, col_offset=0),
-                    ast.arg(arg="step", annotation=None,
-                            lineno=0, col_offset=0),
-                    ast.arg(arg="path", annotation=None,
-                            lineno=0, col_offset=0),
+                    ast.arg(arg="self", annotation=None, lineno=0, col_offset=0),
+                    ast.arg(arg="step", annotation=None, lineno=0, col_offset=0),
+                    ast.arg(arg="path", annotation=None, lineno=0, col_offset=0),
                 ],
                 posonlyargs=[],
                 kwonlyargs=[],
@@ -581,8 +571,7 @@ class InitCompareGsplat(Method):
             world_size,
             self.cfg,
             Dataset=gs_Dataset,
-            Parser=partial(gs_Parser, dataset=train_dataset,
-                           state=parser_state),
+            Parser=partial(gs_Parser, dataset=train_dataset, state=parser_state),
         )
         self.step = 0
         self._loaded_step = None
@@ -594,8 +583,7 @@ class InitCompareGsplat(Method):
                 for x in os.listdir(checkpoint)
                 if x.startswith("ckpt_") and x.endswith(".pt")
             ]
-            ckpt_files.sort(key=lambda x: int(
-                x.split("_rank")[-1].split(".")[0]))
+            ckpt_files.sort(key=lambda x: int(x.split("_rank")[-1].split(".")[0]))
             ckpts = [
                 torch.load(
                     file, map_location=self.runner_module.device, weights_only=True
@@ -610,11 +598,9 @@ class InitCompareGsplat(Method):
                 )
                 self.runner_module.splats[k].data = feat
             if self.cfg.pose_opt:
-                self.runner_module.pose_adjust.load_state_dict(
-                    ckpts[0]["pose_adjust"])
+                self.runner_module.pose_adjust.load_state_dict(ckpts[0]["pose_adjust"])
             if self.cfg.app_opt:
-                self.runner_module.app_module.load_state_dict(
-                    ckpts[0]["app_module"])
+                self.runner_module.app_module.load_state_dict(ckpts[0]["app_module"])
             self.step = self._loaded_step = ckpts[0]["step"]
 
         # Setup dataloaders if training mode
@@ -642,14 +628,13 @@ class InitCompareGsplat(Method):
             import gsplat.strategy as strategies  # type: ignore
 
             cfg.strategy = getattr(strategies, config_overrides["strategy"])()
-        strat_types = {
-            k.name: k.type for k in dataclasses.fields(cfg.strategy)}
+        strat_types = {k.name: k.type for k in dataclasses.fields(cfg.strategy)}
         for k, v in (config_overrides or {}).items():
             if k == "strategy":
                 continue
             if k.startswith("strategy."):
                 v = cast_value(strat_types[k], v)
-                setattr(cfg.strategy, k[len("strategy."):], v)
+                setattr(cfg.strategy, k[len("strategy.") :], v)
                 continue
             v = cast_value(field_types[k], v)
             setattr(cfg, k, v)
@@ -811,8 +796,7 @@ class InitCompareGsplat(Method):
         )
         width, height = camera.image_sizes
         dataset = gs_Dataset.preprocess_images(dataset)
-        pixels = torch.from_numpy(
-            dataset["images"][0]).float().to(device).div(255.0)
+        pixels = torch.from_numpy(dataset["images"][0]).float().to(device).div(255.0)
         # Extend gsplat, handle sampling masks
         sampling_masks = None
         _dataset_sampling_masks = dataset.get("sampling_masks")
@@ -823,15 +807,13 @@ class InitCompareGsplat(Method):
 
         # Patch appearance
         if embedding is not None:
-            embedding_th = torch.from_numpy(
-                embedding).to(self.runner_module.device)
+            embedding_th = torch.from_numpy(embedding).to(self.runner_module.device)
         else:
             embedding_th = torch.zeros_like(
                 self.runner_module.app_module.embeds.weight[0]
             )
         embedding_th = torch.nn.Parameter(embedding_th.requires_grad_())
-        optimizer = torch.optim.Adam(
-            [embedding_th], lr=self.cfg.app_test_opt_lr)
+        optimizer = torch.optim.Adam([embedding_th], lr=self.cfg.app_test_opt_lr)
         l1losses: List[float] = []
         ssimlosses: List[float] = []
         losses: List[float] = []
@@ -857,11 +839,9 @@ class InitCompareGsplat(Method):
 
                 l1loss = F.l1_loss(colors, pixels[None])
                 ssimloss = 1.0 - self.runner_module.ssim(
-                    pixels[None].permute(
-                        0, 3, 1, 2), colors.permute(0, 3, 1, 2)
+                    pixels[None].permute(0, 3, 1, 2), colors.permute(0, 3, 1, 2)
                 )
-                loss = l1loss * (1.0 - cfg.ssim_lambda) + \
-                    ssimloss * cfg.ssim_lambda
+                loss = l1loss * (1.0 - cfg.ssim_lambda) + ssimloss * cfg.ssim_lambda
                 l1losses.append(l1loss.item())
                 ssimlosses.append(ssimloss.item())
                 losses.append(loss.item())
@@ -899,8 +879,7 @@ class InitCompareGsplat(Method):
                     dataset_metadata["viewer_initial_pose"],
                 )
                 camera_center = torch.tensor(
-                    viewer_initial_pose_ws[:3,
-                                           3], dtype=torch.float32, device="cuda"
+                    viewer_initial_pose_ws[:3, 3], dtype=torch.float32, device="cuda"
                 )
             else:
                 camera_center = torch.tensor(
@@ -919,10 +898,8 @@ class InitCompareGsplat(Method):
                 # Get the embedding
                 colors = self.runner_module.app_module(
                     features=splats["features"],
-                    embed_ids=torch.zeros(
-                        (1,), dtype=torch.long, device="cuda"),
-                    dirs=splats["means"][None, :, :] -
-                    camera_center[None, None, :],
+                    embed_ids=torch.zeros((1,), dtype=torch.long, device="cuda"),
+                    dirs=splats["means"][None, :, :] - camera_center[None, None, :],
                     sh_degree=self.cfg.sh_degree,
                 )
                 colors = colors + splats["colors"]

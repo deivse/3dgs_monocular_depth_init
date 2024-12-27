@@ -100,7 +100,7 @@ def pts_and_rgb_from_monocular_depth(
     for data in progress_bar:
         image_id = data["image_id"]
         cam2world = data["camtoworld"]
-        image_name = parser.image_names[image_id]
+        image_name = data["image_name"]
         K = data["K"]
         fx = K[0, 0]
         fy = K[1, 1]
@@ -121,7 +121,7 @@ def pts_and_rgb_from_monocular_depth(
             points, valid_point_indices, inlier_ratio = get_pts_from_depth(
                 depth,
                 mask,
-                image_id,
+                image_name,
                 parser,
                 cam2world,
                 K,
