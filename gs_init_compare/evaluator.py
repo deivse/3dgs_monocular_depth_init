@@ -362,6 +362,7 @@ def create_base_config(args: argparse.Namespace):
     cfg.disable_viewer = not args.enable_viewer
     cfg.ignore_mono_depth_cache = args.invalidate_mono_depth_cache
     cfg.mono_depth_pts_output_dir = args.ply_export_dir
+    cfg.mono_depth_pts_output_per_image = False
     cfg.mono_depth_pts_only = args.export_pts_only
 
     cfg.max_steps = args.max_steps

@@ -49,7 +49,7 @@
                 "--method=gs-init-compare",
                 "--output=tmp_nerfbaselines_debug",
                 "--presets=metric3d_depth_downsample_10",
-                "--data=external://mipnerf360/kitchen",
+                "--data=external://mipnerf360/garden",
             ],
             "env": {
                 "NERFBASELINES_REGISTER": "${workspaceFolder}/gs_init_compare/nerfbaselines_integration/method_spec.py"
@@ -72,7 +72,7 @@
             "cwd": "${workspaceFolder}/gs_init_compare/",
         },
         {
-            "name": "gsplat trainer MoGe",
+            "name": "gsplat trainer MoGe export points",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/gs_init_compare/trainer.py",
@@ -83,7 +83,10 @@
                 "default",
                 "--init-type=monocular_depth",
                 "--mono-depth-model=moge",
-                "--ignore-mono-depth-cache"
+                "--ignore-mono-depth-cache",
+                "--mono-depth-pts-output-dir=${workspaceFolder}/launchjson_debug_ply",
+                "--mono-depth-pts-output-per-image",
+                // "--data-dir=data/nerfbaselines_garden"
             ],
             "cwd": "${workspaceFolder}/gs_init_compare/",
             "console": "integratedTerminal",

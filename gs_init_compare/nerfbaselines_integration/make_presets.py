@@ -1,9 +1,8 @@
 from pathlib import Path
-from typing import Iterable
 
 
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
-DEPTH_DOWN_SAMPLE_FACTORS = [10, 20]
+PRESETS_DEPTH_DOWN_SAMPLE_FACTORS = [10, 20]
 
 
 def _make_depth_init_preset_base(model, downsample_factor):
@@ -11,6 +10,9 @@ def _make_depth_init_preset_base(model, downsample_factor):
         "init_type": "monocular_depth",
         "mono_depth_model": model,
         "dense_depth_downsample_factor": downsample_factor,
+        "mono_depth_pts_output_dir": "ply_export",
+        # "mono_depth_pts_output_per_image": True,
+        # "mono_depth_pts_only": True,
     }
 
 
@@ -26,11 +28,14 @@ def _make_metric3d_preset(downsample_factor):
     }
 
 
-def _make_depth_pro_preset(downsample_factor):
-    return {
-        **_make_depth_init_preset_base("depth_pro", downsample_factor),
-        "depth_pro_checkpoint": str(PROJECT_ROOT / "third_party/apple_depth_pro/checkpoints/depth_pro.pt"),
-    }
+# Not used for now since it requires EXIF data.
+# def _make_depth_pro_preset(downsample_factor):
+#     return {
+#         **_make_depth_init_preset_base("depth_pro", downsample_factor),
+#         "depth_pro_checkpoint": str(
+#             PROJECT_ROOT / "third_party/apple_depth_pro/checkpoints/depth_pro.pt"
+#         ),
+#     }
 
 
 def _make_moge_preset(downsample_factor):
@@ -38,16 +43,17 @@ def _make_moge_preset(downsample_factor):
 
 
 def make_presets() -> dict[str, dict]:
-    retval: dict[str, dict] = {
-        "sfm": {}
-    }
-    for downsample_factor in DEPTH_DOWN_SAMPLE_FACTORS:
-        retval[f"metric3d_depth_downsample_{downsample_factor}"] = _make_metric3d_preset(
-            downsample_factor)
-        retval[f"depth_pro_depth_downsample_{downsample_factor}"] = _make_depth_pro_preset(
-            downsample_factor)
+    retval: dict[str, dict] = {"sfm": {}}
+    for downsample_factor in PRESETS_DEPTH_DOWN_SAMPLE_FACTORS:
+        retval[f"metric3d_depth_downsample_{downsample_factor}"] = (
+            _make_metric3d_preset(downsample_factor)
+        )
         retval[f"moge_depth_downsample_{downsample_factor}"] = _make_moge_preset(
-            downsample_factor)
+            downsample_factor
+        )
+        # retval[f"depth_pro_depth_downsample_{downsample_factor}"] = (
+        #     _make_depth_pro_preset(downsample_factor)
+        # )
     return retval
 
 

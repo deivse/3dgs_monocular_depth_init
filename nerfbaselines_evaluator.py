@@ -9,7 +9,12 @@ import subprocess
 import argparse
 
 from itertools import product
-from gs_init_compare.nerfbaselines_integration.make_presets import all_preset_names
+from gs_init_compare.nerfbaselines_integration.make_presets import (
+    PRESETS_DEPTH_DOWN_SAMPLE_FACTORS,
+    all_preset_names,
+)
+
+from nerfbaselines import get_dataset_spec
 
 
 class ANSIEscapes:
@@ -57,6 +62,17 @@ def directory_exists_and_has_files(dir: Path) -> bool:
     return False
 
 
+def get_dataset_scenes(dataset_id: str) -> list[str]:
+    scenes = get_dataset_spec(dataset_id)["metadata"]["scenes"]
+    return [f"{dataset_id}/{scene['id']}" for scene in scenes]
+
+
+ALL_SCENES = [
+    *get_dataset_scenes("mipnerf360"),
+    *get_dataset_scenes("tanksandtemples"),
+]
+
+
 def create_argument_parser():
     parser = argparse.ArgumentParser()
 
@@ -85,13 +101,10 @@ def create_argument_parser():
         help="Maximum number of steps to run training for.",
     )
     add_argument(
-        "--datasets",
+        "--scenes",
         nargs="+",
-        default=[
-            "mipnerf360/garden",
-            # TODO: Add more datasets
-        ],
-        help="Datasets to train and evaluate on. Dataset names passed to nerfbaselines with 'external://' prefix.",
+        default=ALL_SCENES,
+        help="Scenes to train and evaluate on. Scene names passed to nerfbaselines with 'external://' prefix.",
     )
     add_argument(
         "--invalidate-mono-depth-cache",
@@ -100,11 +113,10 @@ def create_argument_parser():
         help="Invalidate the cache for monocular depth predictors",
     )
     add_argument(
-        "--downsample-factors",
-        nargs="+",
-        default=[10, 20],
+        "--eval-frequency",
         type=int,
-        help="Dense points downsample factor for monocular depth initialization.",
+        default=1000,
+        help="Evaluate all images every N steps.",
     )
     return parser
 
@@ -119,11 +131,16 @@ def make_method_config_overrides(args: argparse.Namespace) -> dict[str, str]:
 def main():
     args = create_argument_parser().parse_args()
 
-    for preset, dataset in product(args.presets, args.datasets):
-        output_dir = args.output_dir / dataset / preset
+    eval_all_iters = list(range(0, args.max_steps + 1, args.eval_frequency))
+    if eval_all_iters[-1] != args.max_steps:
+        eval_all_iters.append(args.max_steps)
+    eval_all_iters = ",".join(map(str, eval_all_iters))
+
+    for scene, preset in product(args.scenes, args.presets):
+        output_dir = args.output_dir / scene / preset
         print(
             ANSIEscapes.color(
-                f"Training {preset} on {dataset}. (Outputting to: {output_dir})", "blue"
+                f"Training {preset} on {scene}. (Outputting to: {output_dir})", "blue"
             )
         )
 
@@ -139,7 +156,8 @@ def main():
                 "--method=gs-init-compare",
                 f"--output={output_dir}",
                 f"--presets={preset}",
-                f"--data=external://{dataset}",
+                f"--data=external://{scene}",
+                f"--eval-all-iters={eval_all_iters}",
             ]
             + overrides_cli
         )
