@@ -4,6 +4,7 @@ Runs training and evaluation for multiple scenes and initialization strategies, 
 
 from datetime import datetime
 from pathlib import Path
+import shutil
 import subprocess
 
 import argparse
@@ -36,7 +37,7 @@ class ANSIEscapes:
         return f"{ANSIEscapes.by_name(color)}{text}{ANSIEscapes.END_SEQUENCE}"
 
 
-def rename_old_dir_with_timestamp(dir: Path) -> Path:
+def rename_old_dir_with_timestamp(dir: Path, results_dir: Path) -> Path:
     """
     Appends a timestamp to the directory name to avoid conflicts
     when the directory already exists.
@@ -48,9 +49,18 @@ def rename_old_dir_with_timestamp(dir: Path) -> Path:
         "_%d-%m-%Y_%H:%M:%S"
     )
     new_old_dir_name = dir.name + last_edit_time_str
-    # This doesn't point combined_tb_dir to the new location
+
+    backup_results_dir_path = results_dir.parent / f"{results_dir.name}_backup"
+
+    new_relative_path = dir.relative_to(results_dir)
+    new_relative_path = new_relative_path.parent / new_old_dir_name
+
+    new_path = backup_results_dir_path / new_relative_path
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # This doesn't point dir to the new location
     # (Which is what we want)
-    return dir.rename(dir.parent / new_old_dir_name)
+    return dir.rename(backup_results_dir_path / new_relative_path)
 
 
 def directory_exists_and_has_files(dir: Path) -> bool:
@@ -125,7 +135,54 @@ def make_method_config_overrides(args: argparse.Namespace) -> dict[str, str]:
     return {
         "max_steps": str(args.max_steps),
         "ignore_mono_depth_cache": str(args.invalidate_mono_depth_cache),
+        "mono_depth_cache_dir": str(
+            Path(args.output_dir, "__mono_depth_cache__").absolute()
+        ),
     }
+
+
+def get_args_hash(args: argparse.Namespace):
+    args_copy = argparse.Namespace()
+    args_copy.__dict__ = args.__dict__.copy()
+
+    unhashed_params = ["output_dir", "scenes", "presets", "invalidate_mono_depth_cache"]
+    for param in unhashed_params:
+        delattr(args_copy, param)
+
+    return str(args_copy)
+
+
+ARGS_HASH_FILENAME = ".nerfbaselines_evaluator_args_hash"
+
+
+def output_dir_needs_overwrite(
+    output_dir: Path,
+    args: argparse.Namespace,
+    args_hash: str,
+    eval_all_iters: list[int],
+) -> bool:
+    if not directory_exists_and_has_files(output_dir):
+        return False
+
+    try:
+        with open(output_dir / ARGS_HASH_FILENAME, "r") as f:
+            old_args_hash = f.read().strip()
+    except FileNotFoundError:
+        return True
+
+    for iter in eval_all_iters:
+        if iter == 0:
+            continue  # nerfbaselines never evals at 0
+
+        if not (output_dir / f"predictions-{str(iter)}.tar.gz").exists():
+            return True
+        if not (output_dir / f"results-{str(iter)}.json").exists():
+            return True
+
+    if not (output_dir / f"checkpoint-{str(args.max_steps)}").exists():
+        return True
+
+    return old_args_hash != args_hash
 
 
 def main():
@@ -134,15 +191,45 @@ def main():
     eval_all_iters = list(range(0, args.max_steps + 1, args.eval_frequency))
     if eval_all_iters[-1] != args.max_steps:
         eval_all_iters.append(args.max_steps)
-    eval_all_iters = ",".join(map(str, eval_all_iters))
+
+    args_hash = get_args_hash(args)
 
     for scene, preset in product(args.scenes, args.presets):
-        output_dir = args.output_dir / scene / preset
+        curr_output_dir = Path(args.output_dir / scene / preset)
+
+        if curr_output_dir.exists():
+            if not curr_output_dir.is_dir():
+                raise ValueError(f"Output path is not a directory: {curr_output_dir}")
+
+            if not output_dir_needs_overwrite(
+                curr_output_dir, args, args_hash, eval_all_iters
+            ):
+                print(
+                    ANSIEscapes.color(
+                        f"Skipping {preset} on {scene}. (Output exists and is up-to-date)",
+                        "green",
+                    )
+                )
+                continue
+
+            new_path = rename_old_dir_with_timestamp(curr_output_dir, args.output_dir)
+            print(
+                ANSIEscapes.color(
+                    f"Detected results mismatch. Old output directory moved to: {new_path}",
+                    "yellow",
+                )
+            )
+            assert not curr_output_dir.exists()
+
         print(
             ANSIEscapes.color(
-                f"Training {preset} on {scene}. (Outputting to: {output_dir})", "blue"
+                f"Training {preset} on {scene}. (Outputting to: {curr_output_dir})",
+                "blue",
             )
         )
+        curr_output_dir.mkdir(parents=True, exist_ok=True)
+        with open(curr_output_dir / ARGS_HASH_FILENAME, "w") as f:
+            f.write(args_hash)
 
         overrides_cli = []
         for kv_pair in make_method_config_overrides(args).items():
@@ -154,10 +241,10 @@ def main():
                 "train",
                 "--backend=python",
                 "--method=gs-init-compare",
-                f"--output={output_dir}",
+                f"--output={curr_output_dir}",
                 f"--presets={preset}",
                 f"--data=external://{scene}",
-                f"--eval-all-iters={eval_all_iters}",
+                f"--eval-all-iters={','.join(map(str, eval_all_iters))}",
             ]
             + overrides_cli
         )
