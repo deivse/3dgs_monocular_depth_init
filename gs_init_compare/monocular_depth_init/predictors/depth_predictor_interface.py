@@ -20,6 +20,26 @@ class PredictedPoints(NamedTuple):
     """
 
 
+class CameraIntrinsics(NamedTuple):
+    K: torch.Tensor
+
+    @property
+    def fx(self):
+        return self.K[0, 0]
+
+    @property
+    def fy(self):
+        return self.K[1, 1]
+
+    @property
+    def cx(self):
+        return self.K[0, 2]
+
+    @property
+    def cy(self):
+        return self.K[1, 2]
+
+
 if torch.__version__ >= "2.4.0":
     torch.serialization.add_safe_globals([PredictedDepth, PredictedPoints])
 
@@ -43,28 +63,28 @@ class DepthPredictor(metaclass=ABCMeta):
         Returns the name of the predictor.
         """
 
-    def predict_depth(self, img: torch.Tensor, fx: float, fy: float) -> PredictedDepth:
+    def predict_depth(
+        self, img: torch.Tensor, intrinsics: CameraIntrinsics
+    ) -> PredictedDepth:
         """
         Predict depth from a single image.
 
         Args:
             img: tensor of shape (H, W, 3).
-            fx: Focal length in x direction.
-            fy: Focal length in y direction.
+            intrinsics: Camera intrinsics from sparse reconstruction.
 
         Returns:
             Depth map.
         """
         raise NotImplementedError
 
-    def predict_points(self, img, fx, fy) -> PredictedPoints:
+    def predict_points(self, img, intrinsics: CameraIntrinsics) -> PredictedPoints:
         """
         Predict 3D point cloud from a single image.
 
         Args:
             img: Image.
-            fx: Focal length in x direction.
-            fy: Focal length in y direction.
+            intrinsics: Camera intrinsics from sparse reconstruction.
 
         Returns:
             points: 3D points in the camera coordinate system.

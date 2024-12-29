@@ -54,8 +54,9 @@ class Config:
     # Initialization strategy
     init_type: Literal["sfm", "random", "monocular_depth"] = "sfm"
 
-    mono_depth_model: Optional[Literal["metric3d",
-                                       "depth_pro", "moge"]] = "metric3d"
+    mono_depth_model: Optional[Literal["metric3d", "depth_pro", "moge", "unidepth"]] = (
+        "metric3d"
+    )
     mono_depth_cache_dir: str = "__mono_depth_cache__"
     # If set, point clouds from monocular depth initialization are saved to this directory.
     mono_depth_pts_output_dir: Optional[str] = None
@@ -63,12 +64,14 @@ class Config:
     mono_depth_pts_only: bool = False
     ignore_mono_depth_cache: bool = False
 
-    # Optional path to Metric3d config file if using "metric3d" init_type.
+    # Optional path to Metric3d config file if using "metric3d" mono_depth_model.
     metric3d_config: Optional[str] = None
-    # Optional path to Metric3d model weights if using "metric3d" init_type.
+    # Optional path to Metric3d model weights if using "metric3d" mono_depth_model.
     metric3d_weights: Optional[str] = None
-    # Optional path to DepthPro model checkpoint if using "depth_pro" init_type.
+    # Optional path to DepthPro model checkpoint if using "depth_pro" mono_depth_model.
     depth_pro_checkpoint: Optional[str] = None
+    # Select backbone for UniDepth model if using "mono_depth_model" mono_depth_model.
+    unidepth_backbone: Literal["vitl14", "cnvnxtl"] = "vitl14"
     # Factor by which the number of points unprojected from dense depth is reduced
     # in each dimension. Ignored if not using "monocular_depth" init_type.
     dense_depth_downsample_factor: int = 10
@@ -165,14 +168,12 @@ class Config:
 
         strategy = self.strategy
         if isinstance(strategy, DefaultStrategy):
-            strategy.refine_start_iter = int(
-                strategy.refine_start_iter * factor)
+            strategy.refine_start_iter = int(strategy.refine_start_iter * factor)
             strategy.refine_stop_iter = int(strategy.refine_stop_iter * factor)
             strategy.reset_every = int(strategy.reset_every * factor)
             strategy.refine_every = int(strategy.refine_every * factor)
         elif isinstance(strategy, MCMCStrategy):
-            strategy.refine_start_iter = int(
-                strategy.refine_start_iter * factor)
+            strategy.refine_start_iter = int(strategy.refine_start_iter * factor)
             strategy.refine_stop_iter = int(strategy.refine_stop_iter * factor)
             strategy.refine_every = int(strategy.refine_every * factor)
         else:
@@ -191,8 +192,7 @@ class Config:
             )
 
             if self.mono_depth_model is None:
-                raise ValueError(
-                    " is not provided for monocular_depth initialization.")
+                raise ValueError(" is not provided for monocular_depth initialization.")
             if self.mono_depth_model not in supported_models:
                 raise ValueError(
                     f"Unsupported monodepth model: {self.mono_depth_model}"

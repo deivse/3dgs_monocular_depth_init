@@ -15,6 +15,7 @@ from gs_init_compare.third_party.metric3d.mono.utils.do_test import (
 )
 from gs_init_compare.third_party.metric3d.mono.utils.running import load_ckpt
 from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
+    CameraIntrinsics,
     DepthPredictor,
     PredictedDepth,
 )
@@ -53,9 +54,11 @@ class Metric3d(DepthPredictor):
     def can_predict_points_directly(self) -> bool:
         return False
 
-    def predict_depth(self, img: torch.Tensor, fx: float, fy: float) -> PredictedDepth:
+    def predict_depth(
+        self, img: torch.Tensor, intrinsics: CameraIntrinsics
+    ) -> PredictedDepth:
         img = img.cpu().numpy() * 255.0
-        intrinsic = [fx, fy, img.shape[1] / 2, img.shape[0] / 2]
+        intrinsic = [intrinsics.fx, intrinsics.fy, intrinsics.cx, intrinsics.cy]
         rgb_input, cam_models_stacks, pad, label_scale_factor = (
             transform_test_data_scalecano(img, intrinsic, self.__cfg.data_basic)
         )

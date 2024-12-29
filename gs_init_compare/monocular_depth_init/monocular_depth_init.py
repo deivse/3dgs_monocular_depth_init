@@ -9,6 +9,7 @@ from tqdm import tqdm
 from gs_init_compare.config import Config
 from gs_init_compare.datasets.colmap import Parser
 from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
+    CameraIntrinsics,
     DepthPredictor,
 )
 from gs_init_compare.monocular_depth_init.utils.point_cloud_export import (
@@ -41,6 +42,10 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
         from .predictors.moge import MoGe
 
         return MoGe
+    elif config.mono_depth_model == "unidepth":
+        from .predictors.unidepth import UniDepth
+
+        return UniDepth
     else:
         raise ValueError(f"Unsupported monodepth model: {config.mono_depth_model}")
 
@@ -48,8 +53,7 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
 def predict_depth_or_get_cached_depth(
     model: DepthPredictor,
     image: torch.Tensor,
-    fx: float,
-    fy: float,
+    intrinsics: CameraIntrinsics,
     image_id,
     config: Config,
     dataset_name: str,
@@ -69,7 +73,7 @@ def predict_depth_or_get_cached_depth(
 
     # TODO: support for models that can predict points directly
     if depth is None:
-        depth = model.predict_depth(image, fx, fy)
+        depth = model.predict_depth(image, intrinsics)
         try:
             torch.save(depth, cache_path)
         except KeyboardInterrupt:
@@ -102,8 +106,7 @@ def pts_and_rgb_from_monocular_depth(
         cam2world = data["camtoworld"]
         image_name = data["image_name"]
         K = data["K"]
-        fx = K[0, 0]
-        fy = K[1, 1]
+        intrinsics = CameraIntrinsics(K)
 
         # Check that the image is actually 0-255
         assert data["image"].max() > 1
@@ -111,7 +114,7 @@ def pts_and_rgb_from_monocular_depth(
 
         with torch.no_grad():
             depth, mask = predict_depth_or_get_cached_depth(
-                model, image, fx, fy, image_id, config, dataset_name
+                model, image, intrinsics, image_id, config, dataset_name
             )
             cpu_depth = depth.cpu().numpy()
             if mask is not None:
@@ -126,7 +129,7 @@ def pts_and_rgb_from_monocular_depth(
                 cam2world,
                 K,
                 downsample_factor=downsample_factor,
-                outlier_factor=2.5,
+                outlier_factor=2.5 ,
                 debug_point_cloud_export_dir=(
                     Path(config.mono_depth_pts_output_dir)
                     / dataset_name
