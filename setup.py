@@ -7,10 +7,11 @@ THIRD_PARTY_PATH = Path(__file__).parent / "gs_init_compare/third_party"
 setup(
     install_requires=[
         f"depth_pro @ {(THIRD_PARTY_PATH / 'apple_depth_pro').as_uri()}",
+        "unidepth @git+https://github.com/lpiccinelli-eth/UniDepth.git",
         "mmcv@https://download.openmmlab.com/mmcv/dist/cu121/torch2.4.0/mmcv-2.2.0-cp310-cp310-manylinux1_x86_64.whl",
         "fused_ssim@git+https://github.com/rahul-goel/fused-ssim",
-        "gsplat @ https://github.com/nerfstudio-project/gsplat/releases/download/v1.4.0/gsplat-1.4.0%2Bpt24cu124-cp310-cp310-linux_x86_64.whl",
-        "xformers~=0.0.28.post1",
+        "gsplat @ https://github.com/nerfstudio-project/gsplat/releases/download/v1.4.0/gsplat-1.4.0%2Bpt22cu121-cp310-cp310-linux_x86_64.whl",
+        "xformers~=0.0.24",
         "datetime~=5.5.0",
         "imagecorruptions~=1.1.2",
         "gradio-imageslider~=0.0.20",

@@ -1,8 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from typing import Optional, NamedTuple
 
-from PIL import Image
-
 import torch
 
 
@@ -22,7 +20,8 @@ class PredictedPoints(NamedTuple):
     """
 
 
-torch.serialization.add_safe_globals([PredictedDepth, PredictedPoints])
+if torch.__version__ >= "2.4.0":
+    torch.serialization.add_safe_globals([PredictedDepth, PredictedPoints])
 
 
 class DepthPredictor(metaclass=ABCMeta):

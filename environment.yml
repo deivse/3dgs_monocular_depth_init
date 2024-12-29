@@ -7,7 +7,7 @@ channels:
 dependencies:
   - python=3.10
   - pip
-  - pytorch::pytorch=2.4
+  - pytorch::pytorch=2.2
   - pytorch::torchvision
   - pytorch::pytorch-cuda=12.1
   - pillow=10.4.0
