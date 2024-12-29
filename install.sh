@@ -8,7 +8,7 @@ ENV_NAME="${1:-gs_init_compare}"
 
 echo "Using environment name '$ENV_NAME'"
 
-if conda env list | grep -q $ENV_NAME; then
+if conda env list | grep -E "^\s*$ENV_NAME\s" > /dev/null; then
     echo "Environment '$ENV_NAME' already exists, updating..."
     conda env update --file ./environment.yml --prune --name $ENV_NAME
 else
