@@ -116,15 +116,14 @@ def get_depth_scalar(sfm_points, P, image_name, imsize, depth, mask):
                 f" reprojected into image bounds for image {image_name}",
             )
 
-        if mask is not None:
-            # Set invalid points to 0 so we can index the mask with them
-            # Will be filtered out later anyways
-            sfm_points_camera[:, ~valid_sfm_pt_indices] = torch.zeros_like(
-                sfm_points_camera[:, ~valid_sfm_pt_indices]
-            )
-            valid_sfm_pt_indices = torch.logical_and(
-                valid_sfm_pt_indices, mask[sfm_points_camera[1], sfm_points_camera[0]]
-            )
+        # Set invalid points to 0 so we can index the mask with them
+        # Will be filtered out later anyways
+        sfm_points_camera[:, ~valid_sfm_pt_indices] = torch.zeros_like(
+            sfm_points_camera[:, ~valid_sfm_pt_indices]
+        )
+        valid_sfm_pt_indices = torch.logical_and(
+            valid_sfm_pt_indices, mask[sfm_points_camera[1], sfm_points_camera[0]]
+        )
 
         return sfm_points_camera[:, valid_sfm_pt_indices], sfm_points_depth[
             valid_sfm_pt_indices
@@ -165,6 +164,9 @@ def get_pts_from_depth(
         pts_world: torch.Tensor on depth.device of shape [N, 3] where N is the number of points in the world space
         inlier_indices: torch.Tensor on CPU of shape [depth.shape[0] * depth.shape[1]] with True for inliers
     """
+    if mask is None:
+        mask = torch.ones_like(depth, dtype=bool)
+
     depth = depth.float()
     imsize = depth.T.shape
     w2c = torch.linalg.inv(cam2world)
@@ -192,6 +194,9 @@ def get_pts_from_depth(
         )[:3].T
         return dense_world
 
+    if torch.any(torch.isinf(depth)):
+        _LOGGER.warning("Encountered infinite depths in predicted depth map.")
+
     depth_scalar, depth_shift, sfm_points_camera_homo = get_depth_scalar(
         sfm_points, P, image_name, imsize, depth, mask
     )
@@ -215,9 +220,8 @@ def get_pts_from_depth(
     valid_indices = torch.ones(
         pts_camera.shape[0], dtype=bool, device=pts_camera.device
     )
-    if mask is not None:
-        downsampled_mask = mask[::downsample_factor, ::downsample_factor].reshape(-1)
-        valid_indices[~downsampled_mask] = 0
+    downsampled_mask = mask[::downsample_factor, ::downsample_factor].reshape(-1)
+    valid_indices[~downsampled_mask] = 0
 
     inlier_indices = torch.abs(
         pts_camera[:, 2] - torch.mean(pts_camera[valid_indices, 2])
