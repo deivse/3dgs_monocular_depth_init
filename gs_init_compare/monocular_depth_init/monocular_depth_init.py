@@ -26,7 +26,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def pick_model(config: Config) -> Type[DepthPredictor]:
-    _LOGGER.info(f"Using depth predictor model: {config.mono_depth_model}")
     if config.mono_depth_model is None:
         raise ValueError("No depth predictor model specified in config.")
 
@@ -46,6 +45,10 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
         from .predictors.unidepth import UniDepth
 
         return UniDepth
+    elif config.mono_depth_model == "depth_anything_v2":
+        from .predictors.depth_anything_v2 import DepthAnythingV2
+
+        return DepthAnythingV2
     else:
         raise ValueError(f"Unsupported monodepth model: {config.mono_depth_model}")
 
@@ -87,6 +90,8 @@ def pts_and_rgb_from_monocular_depth(
 ):
     print(cuda_stats_msg(device, "Before loading model"))
     model = pick_model(config)(config, device)
+    _LOGGER.info(f"Using depth predictor model: {model.name}")
+
     dataset_name = parser.dataset_name
 
     print(cuda_stats_msg(device, "After loading model"))
@@ -116,7 +121,9 @@ def pts_and_rgb_from_monocular_depth(
             depth, mask = predict_depth_or_get_cached_depth(
                 model, image, intrinsics, image_id, config, dataset_name
             )
-            cpu_depth = depth.cpu().numpy()
+            cpu_depth = depth.clone()
+            cpu_depth[torch.isinf(cpu_depth)] = 0
+            cpu_depth = cpu_depth.cpu().numpy()
             if mask is not None:
                 cpu_depth[mask.cpu().numpy() == 0] = 0
 
@@ -129,7 +136,7 @@ def pts_and_rgb_from_monocular_depth(
                 cam2world,
                 K,
                 downsample_factor=downsample_factor,
-                outlier_factor=2.5 ,
+                outlier_factor=2.5,
                 debug_point_cloud_export_dir=(
                     Path(config.mono_depth_pts_output_dir)
                     / dataset_name

@@ -86,6 +86,29 @@
             "cwd": "${workspaceFolder}/gs_init_compare/",
         },
         {
+            "name": "gsplat trainer depthanything export points",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/gs_init_compare/trainer.py",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "default",
+                "--init-type=monocular_depth",
+                "--mono-depth-model=depth_anything_v2",
+                "--depth-anything-backbone=vitl",
+                "--depth-anything-model-type=indoor",
+                "--ignore-mono-depth-cache",
+                "--mono-depth-pts-output-dir=${workspaceFolder}/depthanything_debug_ply",
+                // "--mono-depth-pts-output-per-image",
+                // "--data-dir=data/nerfbaselines_garden"
+            ],
+            "cwd": "${workspaceFolder}/gs_init_compare/",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "gsplat trainer unidepth export points",
             "type": "debugpy",
             "request": "launch",
@@ -97,7 +120,7 @@
                 "default",
                 "--init-type=monocular_depth",
                 "--mono-depth-model=unidepth",
-                "--unidepth-backbone=vitl14", 
+                "--unidepth-backbone=vitl14",
                 "--ignore-mono-depth-cache",
                 "--mono-depth-pts-output-dir=${workspaceFolder}/unidepth_debug_ply",
                 // "--mono-depth-pts-output-per-image",

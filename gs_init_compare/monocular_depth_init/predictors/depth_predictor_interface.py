@@ -25,19 +25,19 @@ class CameraIntrinsics(NamedTuple):
 
     @property
     def fx(self):
-        return self.K[0, 0]
+        return self.K[0, 0].item()
 
     @property
     def fy(self):
-        return self.K[1, 1]
+        return self.K[1, 1].item()
 
     @property
     def cx(self):
-        return self.K[0, 2]
+        return self.K[0, 2].item()
 
     @property
     def cy(self):
-        return self.K[1, 2]
+        return self.K[1, 2].item()
 
 
 if torch.__version__ >= "2.4.0":

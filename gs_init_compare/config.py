@@ -54,9 +54,9 @@ class Config:
     # Initialization strategy
     init_type: Literal["sfm", "random", "monocular_depth"] = "sfm"
 
-    mono_depth_model: Optional[Literal["metric3d", "depth_pro", "moge", "unidepth"]] = (
-        "metric3d"
-    )
+    mono_depth_model: Optional[
+        Literal["metric3d", "depth_pro", "moge", "unidepth", "depth_anything_v2"]
+    ] = "metric3d"
     mono_depth_cache_dir: str = "__mono_depth_cache__"
     # If set, point clouds from monocular depth initialization are saved to this directory.
     mono_depth_pts_output_dir: Optional[str] = None
@@ -68,10 +68,11 @@ class Config:
     metric3d_config: Optional[str] = None
     # Optional path to Metric3d model weights if using "metric3d" mono_depth_model.
     metric3d_weights: Optional[str] = None
-    # Optional path to DepthPro model checkpoint if using "depth_pro" mono_depth_model.
-    depth_pro_checkpoint: Optional[str] = None
-    # Select backbone for UniDepth model if using "mono_depth_model" mono_depth_model.
+    # Select backbone for UniDepth model if using "unidepth" mono_depth_model.
     unidepth_backbone: Literal["vitl14", "cnvnxtl"] = "vitl14"
+    # Select backbone for Depth Anything V2 model if using "depth_anything_v2" mono_depth_model.
+    depth_anything_backbone: Literal["vits", "vitb", "vitl"] = "vitl"
+    depth_anything_model_type: Literal["indoor", "outdoor"] = "indoor"
     # Factor by which the number of points unprojected from dense depth is reduced
     # in each dimension. Ignored if not using "monocular_depth" init_type.
     dense_depth_downsample_factor: int = 10
@@ -206,9 +207,4 @@ class Config:
                 if self.metric3d_weights is None:
                     raise ValueError(
                         "--metric3d_weights is required for monocular_depth initialization using Metric3d."
-                    )
-            elif self.mono_depth_model == "depth_pro":
-                if self.depth_pro_checkpoint is None:
-                    raise ValueError(
-                        "--depth_pro_checkpoint is required for monocular_depth initialization using DepthPro."
                     )
