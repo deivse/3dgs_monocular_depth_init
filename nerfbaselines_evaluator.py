@@ -194,7 +194,26 @@ def main():
 
     args_hash = get_args_hash(args)
 
-    for scene, preset in product(args.scenes, args.presets):
+    combinations = list(product(args.scenes, args.presets))
+    print(
+        ANSIEscapes.color("_" * 80, "bold"),
+        ANSIEscapes.color(f"Will train {len(combinations)} combinations.", "bold"),
+        ANSIEscapes.color("Settings:", "bold"),
+        f"\tOutput directory: {ANSIEscapes.color(args.output_dir, 'cyan')}",
+        f"\tMax steps: {ANSIEscapes.color(args.max_steps, 'cyan')}",
+        f"\tEvaluation frequency: {ANSIEscapes.color(args.eval_frequency, 'cyan')}",
+        f"\tPresets: {ANSIEscapes.color(args.presets, 'cyan')}",
+        f"\tScenes: {ANSIEscapes.color(args.scenes, 'cyan')}",
+        f"\tEval all iters: {ANSIEscapes.color(eval_all_iters, 'cyan')}",
+        sep="\n",
+    )
+
+    for scene, preset in combinations:
+        print(
+            ANSIEscapes.color("_" * 80, "bold"),
+            ANSIEscapes.color("=" * 80 + "\n", "blue"),
+            sep="\n",
+        )
         curr_output_dir = Path(args.output_dir / scene / preset)
 
         if curr_output_dir.exists():
