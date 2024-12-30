@@ -194,7 +194,7 @@ def get_pts_from_depth(
         )[:3].T
         return dense_world
 
-    if torch.any(torch.isinf(depth)):
+    if torch.any(torch.isinf(depth[mask])):
         _LOGGER.warning("Encountered infinite depths in predicted depth map.")
 
     depth_scalar, depth_shift, sfm_points_camera_homo = get_depth_scalar(
