@@ -144,8 +144,8 @@
                 "--mono-depth-model=moge",
                 "--ignore-mono-depth-cache",
                 "--mono-depth-pts-output-dir=${workspaceFolder}/launchjson_debug_ply",
-                "--mono-depth-pts-output-per-image",
-                // "--data-dir=data/nerfbaselines_garden"
+                // "--mono-depth-pts-output-per-image",
+                "--data-dir=data/360_v2/stump"
             ],
             "cwd": "${workspaceFolder}/gs_init_compare/",
             "console": "integratedTerminal",

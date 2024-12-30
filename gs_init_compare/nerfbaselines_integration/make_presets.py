@@ -28,6 +28,21 @@ def _make_metric3d_preset(downsample_factor):
     }
 
 
+def _make_unidepth_preset(downsample_factor):
+    return {
+        **_make_depth_init_preset_base("unidepth", downsample_factor),
+        "unidepth_backbone": "vitl14",
+    }
+
+
+def _make_depthanythingv2_preset(downsample_factor, model_type):
+    return {
+        **_make_depth_init_preset_base("depth_anything_v2", downsample_factor),
+        "depth_anything_backbone": "vitl",
+        "depth_anything_model_type": model_type,
+    }
+
+
 # Not used for now since it requires EXIF data.
 # def _make_depth_pro_preset(downsample_factor):
 #     return {
@@ -51,6 +66,14 @@ def make_presets() -> dict[str, dict]:
         retval[f"moge_depth_downsample_{downsample_factor}"] = _make_moge_preset(
             downsample_factor
         )
+        retval[f"unidepth_depth_downsample_{downsample_factor}"] = (
+            _make_unidepth_preset(downsample_factor)
+        )
+        for model_type in ["indoor", "outdoor"]:
+            retval[
+                f"depth_anything_v2_{model_type}_depth_downsample_{downsample_factor}"
+            ] = _make_depthanythingv2_preset(downsample_factor, model_type)
+
         # retval[f"depth_pro_depth_downsample_{downsample_factor}"] = (
         #     _make_depth_pro_preset(downsample_factor)
         # )
