@@ -70,7 +70,7 @@ def predict_depth_or_get_cached_depth(
     depth = None
     if not config.ignore_mono_depth_cache and cache_path.exists():
         try:
-            depth = torch.load(cache_path, weights_only=True)
+            depth = torch.load(cache_path)
         except Exception as e:
             _LOGGER.warning(f"Failed to load cached depth for image {image_name}: {e}")
 
