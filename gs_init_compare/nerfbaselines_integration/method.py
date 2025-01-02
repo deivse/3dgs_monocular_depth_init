@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 import pprint
 import dataclasses
 import json
@@ -418,7 +419,7 @@ schedulers=self.schedulers
     iter_step_body.extend((runner_train_ast.body[-1].body)[1:-1])
     iter_step_body.pop(-11)  # Remove write to tensorboard step
     save_step = iter_step_body.pop(-10)  # Remove save() step
-    iter_step_body.pop(-3)  # Remove eval() step
+    iter_step_body.pop(-2)  # Remove eval() step
     # Remove pbar.set_description
     iter_step_body.pop(
         next(
@@ -539,6 +540,9 @@ schedulers=self.schedulers
     init_method.args.args.append(
         ast.arg(arg="Dataset", annotation=None, lineno=0, col_offset=0)
     )
+
+    # with Path("runner_edited.py").open("w") as f:
+    #     f.write(ast.unparse(runner_module_ast))
 
     # Execute code to build module
     module = {}
