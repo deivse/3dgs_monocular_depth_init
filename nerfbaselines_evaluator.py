@@ -4,14 +4,13 @@ Runs training and evaluation for multiple scenes and initialization strategies, 
 
 from datetime import datetime
 from pathlib import Path
-import shutil
 import subprocess
 
 import argparse
 
 from itertools import product
+import sys
 from gs_init_compare.nerfbaselines_integration.make_presets import (
-    PRESETS_DEPTH_DOWN_SAMPLE_FACTORS,
     all_preset_names,
 )
 
@@ -186,6 +185,7 @@ def output_dir_needs_overwrite(
 
 
 def main():
+    sys.stdout.reconfigure(line_buffering=True) 
     args = create_argument_parser().parse_args()
 
     eval_all_iters = list(range(0, args.max_steps + 1, args.eval_frequency))
