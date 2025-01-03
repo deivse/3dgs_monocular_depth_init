@@ -4,6 +4,7 @@ Runs training and evaluation for multiple scenes and initialization strategies, 
 
 from datetime import datetime
 from pathlib import Path
+import shutil
 import subprocess
 
 import argparse
@@ -71,14 +72,44 @@ def directory_exists_and_has_files(dir: Path) -> bool:
     return False
 
 
-def get_dataset_scenes(dataset_id: str) -> list[str]:
+def get_dataset_scenes(dataset_id: str, exclude_list) -> list[str]:
     scenes = get_dataset_spec(dataset_id)["metadata"]["scenes"]
-    return [f"{dataset_id}/{scene['id']}" for scene in scenes]
 
+    def excluded(scene_id):
+        for block in exclude_list:
+            if block in scene_id:
+                return True
+        return False
+
+    return [
+        f"{dataset_id}/{scene['id']}" for scene in scenes if not excluded(scene["id"])
+    ]
+
+
+# ALL_SCENES = [
+#     *get_dataset_scenes("mipnerf360", []),
+#     *get_dataset_scenes("tanksandtemples", []),
+# ]
+
+# print(ALL_SCENES)
 
 ALL_SCENES = [
-    *get_dataset_scenes("mipnerf360"),
-    *get_dataset_scenes("tanksandtemples"),
+    "mipnerf360/garden",
+    "mipnerf360/bonsai",
+    "mipnerf360/bicycle",
+    "mipnerf360/kitchen",
+    "mipnerf360/stump",
+    "mipnerf360/room",
+    "tanksandtemples/lighthouse",
+    "tanksandtemples/m60",
+    "tanksandtemples/panther",
+    "tanksandtemples/train",
+    "tanksandtemples/caterpillar",
+    "tanksandtemples/courthouse",
+    "tanksandtemples/meetingroom",
+    "tanksandtemples/truck",
+    "tanksandtemples/playground",
+    "tanksandtemples/barn",
 ]
 
 
@@ -173,8 +204,6 @@ def output_dir_needs_overwrite(
         if iter == 0:
             continue  # nerfbaselines never evals at 0
 
-        if not (output_dir / f"predictions-{str(iter)}.tar.gz").exists():
-            return True
         if not (output_dir / f"results-{str(iter)}.json").exists():
             return True
 
@@ -185,7 +214,7 @@ def output_dir_needs_overwrite(
 
 
 def main():
-    sys.stdout.reconfigure(line_buffering=True) 
+    sys.stdout.reconfigure(line_buffering=True)
     args = create_argument_parser().parse_args()
 
     eval_all_iters = list(range(0, args.max_steps + 1, args.eval_frequency))
@@ -267,6 +296,16 @@ def main():
             ]
             + overrides_cli
         )
+
+        try:
+            # Remove checkpoint-30000 and output.zip cuz I would run out of disk space...
+            shutil.rmtree(curr_output_dir / "checkpoint-30000")
+            Path(curr_output_dir / "output.zip").unlink()
+
+            for prediction in curr_output_dir.glob("predictions-*.tar.gz"):
+                prediction.unlink()
+        except FileNotFoundError as e:
+            print(ANSIEscapes.color(f"Error: Training output not found:\n {e}", "red"))
 
 
 if __name__ == "__main__":
