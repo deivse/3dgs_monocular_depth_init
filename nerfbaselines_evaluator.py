@@ -347,7 +347,7 @@ def main():
 
             # Delete predictions except last step and middle step:
             for iter in eval_all_iters:
-                if iter not in [7000, args.max_steps // 2, args.max_steps]:
+                if iter not in [0, 8000, 14000, args.max_steps]:
                     Path(curr_output_dir / f"predictions-{str(iter)}.tar.gz").unlink()
         except FileNotFoundError as e:
             print(ANSIEscapes.color(f"Error: Training output not found:\n {e}", "red"))

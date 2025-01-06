@@ -11,10 +11,10 @@
             "program": "${workspaceFolder}/nerfbaselines_evaluator.py",
             "console": "integratedTerminal",
             "args": [
-                "--presets=moge_depth_downsample_10",
-                "--max-steps=100",
-                "--eval-frequency=50",
-                "--scenes=mipnerf360/kitchen",
+                // "--presets=moge_depth_downsample_10",
+                // "--max-steps=100",
+                // "--eval-frequency=50",
+                // "--scenes=mipnerf360/kitchen",
             ],
             "cwd": "${workspaceFolder}"
         },
