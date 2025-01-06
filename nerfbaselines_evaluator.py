@@ -4,7 +4,6 @@ Runs training and evaluation for multiple scenes and initialization strategies, 
 
 from datetime import datetime
 from pathlib import Path
-import shutil
 import subprocess
 
 import argparse
@@ -16,6 +15,7 @@ from gs_init_compare.nerfbaselines_integration.make_presets import (
 )
 
 from nerfbaselines import get_dataset_spec
+from tensorboard.backend.event_processing import event_accumulator
 
 
 class ANSIEscapes:
@@ -96,20 +96,19 @@ def get_dataset_scenes(dataset_id: str, exclude_list) -> list[str]:
 ALL_SCENES = [
     "mipnerf360/garden",
     "mipnerf360/bonsai",
-    "mipnerf360/bicycle",
-    "mipnerf360/kitchen",
-    "mipnerf360/stump",
-    "mipnerf360/room",
-    "tanksandtemples/lighthouse",
     "tanksandtemples/m60",
-    "tanksandtemples/panther",
-    "tanksandtemples/train",
-    "tanksandtemples/caterpillar",
-    "tanksandtemples/courthouse",
-    "tanksandtemples/meetingroom",
-    "tanksandtemples/truck",
-    "tanksandtemples/playground",
-    "tanksandtemples/barn",
+    "mipnerf360/stump",
+    "mipnerf360/kitchen",
+    # "tanksandtemples/lighthouse",
+    # "mipnerf360/bicycle",
+    # "mipnerf360/room",
+    # "tanksandtemples/train",
+    # "tanksandtemples/caterpillar",
+    # "tanksandtemples/courthouse",
+    # "tanksandtemples/meetingroom",
+    # "tanksandtemples/truck",
+    # "tanksandtemples/playground",
+    # "tanksandtemples/barn",
 ]
 
 
@@ -155,7 +154,7 @@ def create_argument_parser():
     add_argument(
         "--eval-frequency",
         type=int,
-        default=1000,
+        default=2000,
         help="Evaluate all images every N steps.",
     )
     return parser
@@ -175,7 +174,13 @@ def get_args_hash(args: argparse.Namespace):
     args_copy = argparse.Namespace()
     args_copy.__dict__ = args.__dict__.copy()
 
-    unhashed_params = ["output_dir", "scenes", "presets", "invalidate_mono_depth_cache"]
+    unhashed_params = [
+        "eval_frequency",
+        "output_dir",
+        "scenes",
+        "presets",
+        "invalidate_mono_depth_cache",
+    ]
     for param in unhashed_params:
         delattr(args_copy, param)
 
@@ -207,10 +212,39 @@ def output_dir_needs_overwrite(
         if not (output_dir / f"results-{str(iter)}.json").exists():
             return True
 
-    if not (output_dir / f"checkpoint-{str(args.max_steps)}").exists():
-        return True
-
     return old_args_hash != args_hash
+
+
+def read_param_from_last_tensorboard_step(file, param_name):
+    ea = event_accumulator.EventAccumulator(
+        str(file),
+        size_guidance={
+            event_accumulator.COMPRESSED_HISTOGRAMS: 1,
+            event_accumulator.IMAGES: 1,
+            event_accumulator.AUDIO: 1,
+            event_accumulator.SCALARS: 1,
+            event_accumulator.HISTOGRAMS: 1,
+            event_accumulator.TENSORS: 1,
+        },
+    )
+    ea.Reload()
+    if param_name not in ea.Tags().get("scalars", []):
+        raise ValueError(f"Parameter {param_name} not found in TensorBoard logs.")
+
+    scalars = ea.Scalars(param_name)
+    if not scalars:
+        raise ValueError(f"No scalar data found for parameter {param_name}.")
+
+    return scalars[-1].value
+
+
+def get_final_num_gaussians(output_dir: Path) -> int:
+    tensorboard_file = next((output_dir / "tensorboard").glob("events.out.tfevents.*"))
+    value = read_param_from_last_tensorboard_step(
+        tensorboard_file, "train/num-gaussians"
+    )
+    print(f"Final number of gaussians for sfm: {value}")
+    return int(value)
 
 
 def main():
@@ -283,6 +317,14 @@ def main():
         for kv_pair in make_method_config_overrides(args).items():
             overrides_cli.extend(["--set", "=".join(kv_pair)])
 
+        if "mcmc" in preset:
+            overrides_cli.extend(
+                [
+                    "--set",
+                    f"strategy.cap_max={get_final_num_gaussians(curr_output_dir.parent / 'sfm')}",
+                ]
+            )
+
         subprocess.run(
             [
                 "nerfbaselines",
@@ -298,12 +340,15 @@ def main():
         )
 
         try:
-            # Remove checkpoint-30000 and output.zip cuz I would run out of disk space...
-            shutil.rmtree(curr_output_dir / "checkpoint-30000")
+            # shutil.rmtree(curr_output_dir / "checkpoint-30000")
+
+            # Remove unnecessary outputs cuz I would run out of disk space...
             Path(curr_output_dir / "output.zip").unlink()
 
-            for prediction in curr_output_dir.glob("predictions-*.tar.gz"):
-                prediction.unlink()
+            # Delete predictions except last step and middle step:
+            for iter in eval_all_iters:
+                if iter not in [7000, args.max_steps // 2, args.max_steps]:
+                    Path(curr_output_dir / f"predictions-{str(iter)}.tar.gz").unlink()
         except FileNotFoundError as e:
             print(ANSIEscapes.color(f"Error: Training output not found:\n {e}", "red"))
 
