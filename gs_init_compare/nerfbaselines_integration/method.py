@@ -637,8 +637,9 @@ class InitCompareGsplat(Method):
             if k == "strategy":
                 continue
             if k.startswith("strategy."):
-                v = cast_value(strat_types[k], v)
-                setattr(cfg.strategy, k[len("strategy.") :], v)
+                strat_k = k[len("strategy.") :]
+                v = cast_value(strat_types[strat_k], v)
+                setattr(cfg.strategy, strat_k, v)
                 continue
             v = cast_value(field_types[k], v)
             setattr(cfg, k, v)
