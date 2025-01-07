@@ -7,6 +7,8 @@ gs_init_compare/data/
 results/
 results_*-*-*_*:*:*/
 combined_results/
+nerfbaselines_results/
+nerfbaselines_results_backup/
 ply_exports/
 combined_results_*-*-*_*:*:*/
 __mono_depth_cache__/
