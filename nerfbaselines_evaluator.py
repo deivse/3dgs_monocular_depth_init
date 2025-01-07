@@ -96,19 +96,15 @@ def get_dataset_scenes(dataset_id: str, exclude_list) -> list[str]:
 ALL_SCENES = [
     "mipnerf360/garden",
     "mipnerf360/bonsai",
-    "tanksandtemples/m60",
     "mipnerf360/stump",
+    "mipnerf360/flowers",
+    "mipnerf360/bicycle",
     "mipnerf360/kitchen",
-    # "tanksandtemples/lighthouse",
-    # "mipnerf360/bicycle",
-    # "mipnerf360/room",
-    # "tanksandtemples/train",
-    # "tanksandtemples/caterpillar",
-    # "tanksandtemples/courthouse",
-    # "tanksandtemples/meetingroom",
-    # "tanksandtemples/truck",
-    # "tanksandtemples/playground",
-    # "tanksandtemples/barn",
+    "mipnerf360/treehill",
+    "mipnerf360/room",
+    "mipnerf360/counter",
+    "tanksandtemples/truck",
+    "tanksandtemples/train",
 ]
 
 
