@@ -62,6 +62,9 @@ class Config:
     mono_depth_pts_output_dir: Optional[str] = None
     mono_depth_pts_output_per_image: bool = False
     mono_depth_pts_only: bool = False
+    # If set, normally distributed noise is added to the point cloud produced
+    # by monocular depth initialization, with standard deviation equal to this fraction of the scene scale.
+    mono_depth_noise_std_scene_frac: Optional[float] = None
     ignore_mono_depth_cache: bool = False
 
     # Optional path to Metric3d config file if using "metric3d" mono_depth_model.

@@ -11,7 +11,8 @@ import argparse
 from itertools import product
 import sys
 from gs_init_compare.nerfbaselines_integration.make_presets import (
-    all_preset_names,
+    ALL_NOISE_STD_SCENE_FRACTIONS,
+    get_preset_names,
 )
 
 from nerfbaselines import get_dataset_spec
@@ -94,17 +95,17 @@ def get_dataset_scenes(dataset_id: str, exclude_list) -> list[str]:
 # print(ALL_SCENES)
 
 ALL_SCENES = [
-    "mipnerf360/garden",
-    "mipnerf360/bonsai",
-    "mipnerf360/stump",
-    "mipnerf360/flowers",
-    "mipnerf360/bicycle",
-    "mipnerf360/kitchen",
-    "mipnerf360/treehill",
-    "mipnerf360/room",
-    "mipnerf360/counter",
-    "tanksandtemples/truck",
-    "tanksandtemples/train",
+    "mipnerf360/garden",  # PSNR worse, others better
+    "mipnerf360/bonsai",  # everything worse
+    "mipnerf360/stump",  # everything better
+    "mipnerf360/flowers",  # PSNR worse, others better
+    "mipnerf360/bicycle",  # everything better
+    "mipnerf360/kitchen",  # everything worse
+    "mipnerf360/treehill",  # PSNR worse, others better
+    "mipnerf360/room",  # everything better (but significantly more gaussians)
+    "mipnerf360/counter",  # PSNR worse, others better
+    "tanksandtemples/truck",  # PSNR worse, others better (only lpips) more gaussians
+    "tanksandtemples/train",  # PSNR worse, others better (only lpips) less gaussians
 ]
 
 
@@ -119,7 +120,7 @@ def create_argument_parser():
     add_argument(
         "--presets",
         nargs="+",
-        default=all_preset_names(),
+        default=get_preset_names([None]),
         help="Presets to pass to the method.",
     )
     add_argument(
@@ -166,7 +167,7 @@ def make_method_config_overrides(args: argparse.Namespace) -> dict[str, str]:
     }
 
 
-def get_args_hash(args: argparse.Namespace):
+def get_args_str(args: argparse.Namespace):
     args_copy = argparse.Namespace()
     args_copy.__dict__ = args.__dict__.copy()
 
@@ -183,21 +184,21 @@ def get_args_hash(args: argparse.Namespace):
     return str(args_copy)
 
 
-ARGS_HASH_FILENAME = ".nerfbaselines_evaluator_args_hash"
+ARGS_STR_FILENAME = ".nerfbaselines_evaluator_args_hash"
 
 
 def output_dir_needs_overwrite(
     output_dir: Path,
     args: argparse.Namespace,
-    args_hash: str,
+    args_str: str,
     eval_all_iters: list[int],
 ) -> bool:
     if not directory_exists_and_has_files(output_dir):
         return False
 
     try:
-        with open(output_dir / ARGS_HASH_FILENAME, "r") as f:
-            old_args_hash = f.read().strip()
+        with open(output_dir / ARGS_STR_FILENAME, "r") as f:
+            old_args_str = f.read().strip()
     except FileNotFoundError:
         return True
 
@@ -208,7 +209,7 @@ def output_dir_needs_overwrite(
         if not (output_dir / f"results-{str(iter)}.json").exists():
             return True
 
-    return old_args_hash != args_hash
+    return old_args_str != args_str
 
 
 def read_param_from_last_tensorboard_step(file, param_name):
@@ -243,6 +244,103 @@ def get_final_num_gaussians(output_dir: Path) -> int:
     return int(value)
 
 
+def run_combination(scene, preset, args, args_str, eval_all_iters):
+    print(
+        ANSIEscapes.color("_" * 80, "bold"),
+        ANSIEscapes.color("=" * 80 + "\n", "blue"),
+        sep="\n",
+    )
+    curr_output_dir = Path(args.output_dir / scene / preset)
+
+    if curr_output_dir.exists():
+        if not curr_output_dir.is_dir():
+            raise ValueError(f"Output path is not a directory: {curr_output_dir}")
+
+        if not output_dir_needs_overwrite(
+            curr_output_dir, args, args_str, eval_all_iters
+        ):
+            print(
+                ANSIEscapes.color(
+                    f"Skipping {preset} on {scene}. (Output exists and is up-to-date)",
+                    "green",
+                )
+            )
+            return
+
+        new_path = rename_old_dir_with_timestamp(curr_output_dir, args.output_dir)
+        print(
+            ANSIEscapes.color(
+                f"Detected results mismatch. Old output directory moved to: {new_path}",
+                "yellow",
+            )
+        )
+        assert not curr_output_dir.exists()
+
+    print(
+        ANSIEscapes.color(
+            f"Training {preset} on {scene}. (Outputting to: {curr_output_dir})",
+            "blue",
+        )
+    )
+    curr_output_dir.mkdir(parents=True, exist_ok=True)
+    with open(curr_output_dir / ARGS_STR_FILENAME, "w") as f:
+        f.write(args_str)
+
+    overrides_cli = []
+    for kv_pair in make_method_config_overrides(args).items():
+        overrides_cli.extend(["--set", "=".join(kv_pair)])
+
+    if "mcmc" in preset:
+        overrides_cli.extend(
+            [
+                "--set",
+                f"strategy.cap_max={get_final_num_gaussians(curr_output_dir.parent / 'sfm')}",
+            ]
+        )
+
+    subprocess.run(
+        [
+            "nerfbaselines",
+            "train",
+            "--backend=python",
+            "--method=gs-init-compare",
+            f"--output={curr_output_dir}",
+            f"--presets={preset}",
+            f"--data=external://{scene}",
+            f"--eval-all-iters={','.join(map(str, eval_all_iters))}",
+        ]
+        + overrides_cli
+    )
+
+    try:
+        # shutil.rmtree(curr_output_dir / "checkpoint-30000")
+
+        # Remove unnecessary outputs cuz I would run out of disk space...
+        Path(curr_output_dir / "output.zip").unlink()
+
+        # Delete predictions except last step and middle step:
+        for iter in eval_all_iters:
+            if iter not in [0, 8000, 14000, args.max_steps]:
+                Path(curr_output_dir / f"predictions-{str(iter)}.tar.gz").unlink()
+    except FileNotFoundError as e:
+        print(ANSIEscapes.color(f"Error: Training output not found:\n {e}", "red"))
+
+
+BESTISH_PRESET_PER_SCENE = {
+    "mipnerf360/garden": "metric3d_depth_downsample_10",
+    "mipnerf360/bonsai": "metric3d_depth_downsample_30",
+    "mipnerf360/stump": "metric3d_depth_downsample_10",
+    "mipnerf360/flowers": "unidepth_depth_downsample_10",
+    "mipnerf360/bicycle": "unidepth_depth_downsample_10",
+    "mipnerf360/kitchen": "depth_anything_v2_outdoor_depth_downsample_10",
+    "mipnerf360/treehill": "metric3d_depth_downsample_10",
+    "mipnerf360/room": "metric3d_depth_downsample_10",
+    "mipnerf360/counter": "metric3d_depth_downsample_10",
+    "tanksandtemples/truck": "metric3d_depth_downsample_10",
+    "tanksandtemples/train": "depth_anything_v2_outdoor_depth_downsample_20",
+}
+
+
 def main():
     sys.stdout.reconfigure(line_buffering=True)
     args = create_argument_parser().parse_args()
@@ -251,7 +349,7 @@ def main():
     if eval_all_iters[-1] != args.max_steps:
         eval_all_iters.append(args.max_steps)
 
-    args_hash = get_args_hash(args)
+    args_str = get_args_str(args)
 
     combinations = list(product(args.scenes, args.presets))
     print(
@@ -268,85 +366,20 @@ def main():
     )
 
     for scene, preset in combinations:
-        print(
-            ANSIEscapes.color("_" * 80, "bold"),
-            ANSIEscapes.color("=" * 80 + "\n", "blue"),
-            sep="\n",
-        )
-        curr_output_dir = Path(args.output_dir / scene / preset)
+        run_combination(scene, preset, args, args_str, eval_all_iters)
 
-        if curr_output_dir.exists():
-            if not curr_output_dir.is_dir():
-                raise ValueError(f"Output path is not a directory: {curr_output_dir}")
-
-            if not output_dir_needs_overwrite(
-                curr_output_dir, args, args_hash, eval_all_iters
-            ):
-                print(
-                    ANSIEscapes.color(
-                        f"Skipping {preset} on {scene}. (Output exists and is up-to-date)",
-                        "green",
-                    )
-                )
+    for scene in args.scenes:
+        preset = BESTISH_PRESET_PER_SCENE[scene]
+        for noise_std_frac in ALL_NOISE_STD_SCENE_FRACTIONS:
+            if noise_std_frac is None:
                 continue
-
-            new_path = rename_old_dir_with_timestamp(curr_output_dir, args.output_dir)
-            print(
-                ANSIEscapes.color(
-                    f"Detected results mismatch. Old output directory moved to: {new_path}",
-                    "yellow",
-                )
+            run_combination(
+                scene,
+                f"{preset}_noise_{noise_std_frac}",
+                args,
+                args_str,
+                eval_all_iters,
             )
-            assert not curr_output_dir.exists()
-
-        print(
-            ANSIEscapes.color(
-                f"Training {preset} on {scene}. (Outputting to: {curr_output_dir})",
-                "blue",
-            )
-        )
-        curr_output_dir.mkdir(parents=True, exist_ok=True)
-        with open(curr_output_dir / ARGS_HASH_FILENAME, "w") as f:
-            f.write(args_hash)
-
-        overrides_cli = []
-        for kv_pair in make_method_config_overrides(args).items():
-            overrides_cli.extend(["--set", "=".join(kv_pair)])
-
-        if "mcmc" in preset:
-            overrides_cli.extend(
-                [
-                    "--set",
-                    f"strategy.cap_max={get_final_num_gaussians(curr_output_dir.parent / 'sfm')}",
-                ]
-            )
-
-        subprocess.run(
-            [
-                "nerfbaselines",
-                "train",
-                "--backend=python",
-                "--method=gs-init-compare",
-                f"--output={curr_output_dir}",
-                f"--presets={preset}",
-                f"--data=external://{scene}",
-                f"--eval-all-iters={','.join(map(str, eval_all_iters))}",
-            ]
-            + overrides_cli
-        )
-
-        try:
-            # shutil.rmtree(curr_output_dir / "checkpoint-30000")
-
-            # Remove unnecessary outputs cuz I would run out of disk space...
-            Path(curr_output_dir / "output.zip").unlink()
-
-            # Delete predictions except last step and middle step:
-            for iter in eval_all_iters:
-                if iter not in [0, 8000, 14000, args.max_steps]:
-                    Path(curr_output_dir / f"predictions-{str(iter)}.tar.gz").unlink()
-        except FileNotFoundError as e:
-            print(ANSIEscapes.color(f"Error: Training output not found:\n {e}", "red"))
 
 
 if __name__ == "__main__":

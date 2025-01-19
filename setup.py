@@ -23,7 +23,7 @@ setup(
         "microsoft-python-type-stubs @ git+https://github.com/microsoft/python-type-stubs.git",
         "ruff",
         "pillow",
-        "nerfbaselines @ git+https://github.com/deivse/nerfbaselines.git@84818b901b8886b30065b7813c77e15fdd32f5c0",
+        "nerfbaselines @ git+https://github.com/nerfbaselines/nerfbaselines.git",
         "open3d~=0.18.0",
         # Moge requirements
         "click",

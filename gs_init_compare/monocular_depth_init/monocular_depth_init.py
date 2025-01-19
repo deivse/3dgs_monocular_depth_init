@@ -85,6 +85,11 @@ def predict_depth_or_get_cached_depth(
     return depth
 
 
+def add_noise_to_point_cloud(pts: torch.Tensor, noise_std: float):
+    noise = torch.randn_like(pts) * noise_std
+    return pts + noise
+
+
 def pts_and_rgb_from_monocular_depth(
     config: Config, parser: Parser, device: str = "cuda"
 ):
@@ -148,6 +153,12 @@ def pts_and_rgb_from_monocular_depth(
                 ),
                 img_for_point_cloud_rgb=image,
             )
+
+            if config.mono_depth_noise_std_scene_frac is not None:
+                points = add_noise_to_point_cloud(
+                    points, parser.scene_scale * config.mono_depth_noise_std_scene_frac
+                )
+
         except LowDepthAlignmentConfidenceError as e:
             _LOGGER.warning(
                 f"Low depth alignment confidence for image {image_name}: {e}"
