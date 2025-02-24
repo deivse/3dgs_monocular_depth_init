@@ -1,11 +1,14 @@
 {
     "cSpell.words": [
         "absgrad",
+        "BESTISH",
         "bilagrid",
         "camtoworld",
         "ckpts",
         "colmap",
         "densification",
+        "depthanything",
+        "depthanythingv",
         "downsample",
         "downsampled",
         "dstack",

@@ -68,14 +68,8 @@ def cast_value(tp, value):
             try:
                 return cast_value(t, value)
             except ValueError:
-                import traceback
-
-                traceback.print_exc()
                 pass
             except TypeError:
-                import traceback
-
-                traceback.print_exc()
                 pass
         raise TypeError(f"Value {value} is not in {tp}")
     if tp is type(None):

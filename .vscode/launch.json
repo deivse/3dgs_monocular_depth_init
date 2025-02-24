@@ -5,6 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "make_results_table",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/make_results_table.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--dataset=mipnerf360",
+                "--step=30000",
+                "--param=PSNR"
+            ],
+            "cwd": "${workspaceFolder}/",
+        },
+        {
             "name": "nerfbaselines_evaluator",
             "type": "debugpy",
             "request": "launch",
@@ -62,7 +75,7 @@
                 "--backend=python",
                 "--method=gs-init-compare",
                 "--output=tmp_nerfbaselines_debug",
-                "--presets=metric3d_depth_downsample_10",
+                "--presets=metric3d_depth_downsample_10_noise_0.05",
                 "--data=external://mipnerf360/garden",
             ],
             "env": {
