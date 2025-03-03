@@ -8,6 +8,7 @@ results/
 results_*-*-*_*:*:*/
 combined_results/
 nerfbaselines_results/
+nerfbaselines_results_prev/
 nerfbaselines_results_backup/
 ply_exports/
 combined_results_*-*-*_*:*:*/

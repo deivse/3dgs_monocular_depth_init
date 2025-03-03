@@ -1,9 +1,6 @@
 import logging
 
-import cv2
-import numpy as np
 import torch
-from PIL import Image
 
 from gs_init_compare.config import Config
 from gs_init_compare.third_party.metric3d.mono.model.monodepth_model import (

@@ -1,17 +1,8 @@
-import logging
-
-import numpy as np
 import torch
-from PIL import Image
-import torchvision
 
 from gs_init_compare.third_party.MoGe.moge.model import MoGeModel
-
 from gs_init_compare.config import Config
-
 from .depth_predictor_interface import DepthPredictor, PredictedDepth, PredictedPoints
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class MoGe(DepthPredictor):

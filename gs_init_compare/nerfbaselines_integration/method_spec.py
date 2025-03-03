@@ -1,5 +1,4 @@
 from nerfbaselines import register
-from pathlib import Path
 
 from gs_init_compare.nerfbaselines_integration.make_presets import make_presets
 

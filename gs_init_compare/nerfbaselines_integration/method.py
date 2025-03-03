@@ -14,7 +14,7 @@ import argparse
 import os
 import ast
 import importlib.util
-from typing import cast, Optional, List
+from typing import cast, Optional, List, Union
 from nerfbaselines import (
     Method,
     MethodInfo,
@@ -23,7 +23,6 @@ from nerfbaselines import (
     OptimizeEmbeddingOutput,
 )
 from nerfbaselines.utils import pad_poses, image_to_srgb, convert_image_dtype
-from typing import Optional, Union
 from typing_extensions import Literal, get_origin, get_args
 
 import torch  # type: ignore

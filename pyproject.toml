@@ -15,3 +15,18 @@ classifiers = ["Programming Language :: Python"]
 
 [tool.setuptools]
 packages = ["gs_init_compare"]
+
+[[tool.mypy.overrides]]
+module = [
+    'depth_pro',
+    'unidepth.*',
+    'gsplat.*',
+    'open3d',
+    'mmengine',
+    'nerfbaselines.*',
+    'mmcv.*',
+    'tensorly.*',
+    'nerfview',
+    'fused_ssim',
+]
+ignore_missing_imports = true
