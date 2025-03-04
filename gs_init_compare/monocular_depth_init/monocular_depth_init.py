@@ -50,7 +50,8 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
 
         return DepthAnythingV2
     else:
-        raise ValueError(f"Unsupported monodepth model: {config.mono_depth_model}")
+        raise ValueError(
+            f"Unsupported monodepth model: {config.mono_depth_model}")
 
 
 def predict_depth_or_get_cached_depth(
@@ -72,7 +73,8 @@ def predict_depth_or_get_cached_depth(
         try:
             depth = torch.load(cache_path)
         except Exception as e:
-            _LOGGER.warning(f"Failed to load cached depth for image {image_name}: {e}")
+            _LOGGER.warning(
+                f"Failed to load cached depth for image {image_name}: {e}")
 
     # TODO: support for models that can predict points directly
     if depth is None:
@@ -123,25 +125,19 @@ def pts_and_rgb_from_monocular_depth(
         image: torch.Tensor = data["image"] / 255.0
 
         with torch.no_grad():
-            depth, mask = predict_depth_or_get_cached_depth(
+            predicted_depth = predict_depth_or_get_cached_depth(
                 model, image, intrinsics, image_id, config, dataset_name
             )
-            cpu_depth = depth.clone()
-            cpu_depth[torch.isinf(cpu_depth)] = 0
-            cpu_depth = cpu_depth.cpu().numpy()
-            if mask is not None:
-                cpu_depth[mask.cpu().numpy() == 0] = 0
 
         try:
-            points, valid_point_indices, inlier_ratio = get_pts_from_depth(
-                depth,
-                mask,
+            points, valid_point_indices = get_pts_from_depth(
+                predicted_depth,
                 image_name,
                 parser,
                 cam2world,
                 K,
+                config.depth_align_ransac,
                 downsample_factor=downsample_factor,
-                outlier_factor=2.5,
                 debug_point_cloud_export_dir=(
                     Path(config.mono_depth_pts_output_dir)
                     / dataset_name
@@ -165,8 +161,7 @@ def pts_and_rgb_from_monocular_depth(
             )
             continue
         progress_bar.set_description(
-            f"Last processed '{image_name}',"
-            f" (inlier depth ratio {inlier_ratio:.2f})",
+            f"Last processed '{image_name}'",
             refresh=True,
         )
 
@@ -174,8 +169,9 @@ def pts_and_rgb_from_monocular_depth(
             _LOGGER.warning(f"Failed to get points for image {image_name}")
             continue
 
-        rgbs = image[::downsample_factor, ::downsample_factor, :].reshape([-1, 3])
-        # inlier indices are for a downsampled and flattened array
+        rgbs = image[::downsample_factor,
+                     ::downsample_factor, :].reshape([-1, 3])
+        # valid point indices are for a downsampled and flattened array
         rgbs = rgbs[valid_point_indices]
         points_list.append(points)
         rgbs_list.append(rgbs.float())
@@ -188,7 +184,7 @@ def pts_and_rgb_from_monocular_depth(
         output_dir = Path(config.mono_depth_pts_output_dir) / dataset_name
         output_dir.mkdir(exist_ok=True, parents=True)
         export_point_cloud_to_ply(
-            pts.cpu().numpy(), rgbs.cpu().numpy(), output_dir, model.name
+            pts.cpu().numpy(), rgbs.cpu().numpy(), output_dir, model.name, outlier_std_dev=5
         )
         export_point_cloud_to_ply(
             parser.points, parser.points_rgb / 255.0, output_dir, "sfm"

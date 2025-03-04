@@ -57,6 +57,7 @@ class Config:
     mono_depth_model: Optional[
         Literal["metric3d", "depth_pro", "moge", "unidepth", "depth_anything_v2"]
     ] = "metric3d"
+    depth_align_ransac: bool = True
     mono_depth_cache_dir: str = "__mono_depth_cache__"
     # If set, point clouds from monocular depth initialization are saved to this directory.
     mono_depth_pts_output_dir: Optional[str] = None

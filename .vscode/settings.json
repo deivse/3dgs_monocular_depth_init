@@ -21,6 +21,7 @@
         "linalg",
         "lpip",
         "lpips",
+        "lstsqrs",
         "MCMC",
         "meshgrid",
         "mgrid",
