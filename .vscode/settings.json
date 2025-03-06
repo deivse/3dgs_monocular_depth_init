@@ -29,6 +29,7 @@
         "mmengine",
         "moge",
         "monodepth",
+        "msac",
         "ndarray",
         "nerfbaselines",
         "nerfview",

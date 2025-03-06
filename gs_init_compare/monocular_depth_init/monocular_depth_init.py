@@ -136,7 +136,7 @@ def pts_and_rgb_from_monocular_depth(
                 parser,
                 cam2world,
                 K,
-                config.depth_align_ransac,
+                config.depth_alignment_strategy,
                 downsample_factor=downsample_factor,
                 debug_point_cloud_export_dir=(
                     Path(config.mono_depth_pts_output_dir)
@@ -175,7 +175,6 @@ def pts_and_rgb_from_monocular_depth(
         rgbs = rgbs[valid_point_indices]
         points_list.append(points)
         rgbs_list.append(rgbs.float())
-    print(cuda_stats_msg(device, "After processing points"))
 
     pts = torch.cat(points_list, dim=0).float()
     rgbs = torch.cat(rgbs_list, dim=0).float()

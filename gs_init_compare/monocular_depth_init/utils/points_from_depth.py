@@ -5,15 +5,13 @@ import numpy as np
 import torch
 
 from gs_init_compare.datasets.colmap import Parser
+from gs_init_compare.depth_alignment import (
+    DepthAlignmentStrategyEnum, DepthAlignmentStrategy, DepthAlignmentParams
+)
 from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
 from gs_init_compare.nerfbaselines_integration.method import gs_Parser as NerfbaselinesParser
-
-from gs_init_compare.monocular_depth_init.utils.depth_alignment_ransac import (
-    align_depth_ransac,
-    align_depth_least_squares,
-)
 from gs_init_compare.monocular_depth_init.utils.point_cloud_export import (
     export_point_cloud_to_ply,
 )
@@ -137,7 +135,7 @@ def get_valid_sfm_pts(sfm_pts_camera, sfm_pts_camera_depth, mask, imsize):
     ]
 
 
-def get_depth_scalar(sfm_points, P, imsize, depth, mask, use_ransac):
+def get_depth_scalar(sfm_points, P, imsize, depth, mask, strategy: DepthAlignmentStrategy) -> DepthAlignmentParams:
     device = sfm_points.device
 
     sfm_points_camera = P @ torch.vstack(
@@ -153,21 +151,7 @@ def get_depth_scalar(sfm_points, P, imsize, depth, mask, use_ransac):
     predicted_depth: torch.Tensor = depth[
         sfm_points_camera[1], sfm_points_camera[0]
     ]
-    if use_ransac:
-        alignment, inlier_ratio = align_depth_ransac(
-            predicted_depth, sfm_points_depth, 0.001, 2500, 0.99
-        )
-    else:
-        alignment = align_depth_least_squares(
-            torch.vstack(
-                [
-                    predicted_depth.flatten(),
-                    torch.ones(predicted_depth.numel(), device=device),
-                ]
-            ), sfm_points_depth
-        )
-
-    return alignment, sfm_points_camera
+    return strategy.estimate_alignment(predicted_depth, sfm_points_depth)
 
 
 def get_pts_from_depth(
@@ -176,7 +160,7 @@ def get_pts_from_depth(
     parser: Parser | NerfbaselinesParser,
     cam2world: torch.Tensor,
     K: torch.Tensor,
-    depth_align_ransac: bool,
+    depth_alignment_strategy: DepthAlignmentStrategyEnum,
     downsample_factor=10,
     debug_point_cloud_export_dir: Optional[Path] = None,
     img_for_point_cloud_rgb=None,
@@ -220,8 +204,8 @@ def get_pts_from_depth(
     if torch.any(torch.isinf(depth[mask])):
         _LOGGER.warning("Encountered infinite depths in predicted depth map.")
 
-    depth_alignment, sfm_points_camera_homo = get_depth_scalar(
-        sfm_points, P, imsize, depth, mask, depth_align_ransac
+    depth_alignment = get_depth_scalar(
+        sfm_points, P, imsize, depth, mask, depth_alignment_strategy.get_implementation()
     )
 
     pts_camera: torch.Tensor = (
