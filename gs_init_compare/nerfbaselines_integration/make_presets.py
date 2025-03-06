@@ -1,6 +1,9 @@
 from enum import Enum
+import itertools
 from pathlib import Path
 from typing import Optional
+
+from gs_init_compare.depth_alignment.enum import DepthAlignmentStrategyEnum
 
 
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
@@ -17,7 +20,7 @@ def _make_depth_init_preset_base(
     downsample_factor,
     strategy: Strategy,
     noise_std_scene_frac: Optional[float],
-    ransac: bool,
+    depth_alignment_strategy: DepthAlignmentStrategyEnum,
 ):
     return {
         "init_type": "monocular_depth",
@@ -26,16 +29,16 @@ def _make_depth_init_preset_base(
         "mono_depth_pts_output_dir": "ply_export",
         "strategy": strategy.value,
         "mono_depth_noise_std_scene_frac": noise_std_scene_frac,
-        "depth_align_ransac": ransac,
+        "depth_alignment_strategy": depth_alignment_strategy,
         # "mono_depth_pts_output_per_image": True,
         # "mono_depth_pts_only": True,
     }
 
 
-def _make_metric3d_preset(downsample_factor, strategy: Strategy, noise_std_scene_frac, ransac):
+def _make_metric3d_preset(*args):
     return {
         **_make_depth_init_preset_base(
-            "metric3d", downsample_factor, strategy, noise_std_scene_frac, ransac
+            "metric3d", *args
         ),
         "metric3d_config": str(
             PROJECT_ROOT
@@ -46,21 +49,21 @@ def _make_metric3d_preset(downsample_factor, strategy: Strategy, noise_std_scene
     }
 
 
-def _make_unidepth_preset(downsample_factor, strategy: Strategy, noise_std_scene_frac, ransac):
+def _make_unidepth_preset(*args):
     return {
         **_make_depth_init_preset_base(
-            "unidepth", downsample_factor, strategy, noise_std_scene_frac, ransac
+            "unidepth", *args
         ),
         "unidepth_backbone": "vitl14",
     }
 
 
 def _make_depthanything_v2_preset(
-    downsample_factor, model_type, strategy: Strategy, noise_std_scene_frac, ransac
+    model_type, *args
 ):
     return {
         **_make_depth_init_preset_base(
-            "depth_anything_v2", downsample_factor, strategy, noise_std_scene_frac, ransac
+            "depth_anything_v2", *args
         ),
         "depth_anything_backbone": "vitl",
         "depth_anything_model_type": model_type,
@@ -77,9 +80,9 @@ def _make_depthanything_v2_preset(
 #     }
 
 
-def _make_moge_preset(downsample_factor, strategy: Strategy, noise_std_scene_frac, ransac):
+def _make_moge_preset(*args):
     return _make_depth_init_preset_base(
-        "moge", downsample_factor, strategy, noise_std_scene_frac, ransac
+        "moge", *args
     )
 
 
@@ -94,42 +97,44 @@ def make_presets(noise_std_scene_fractions=None) -> dict[str, dict]:
         "sfm": {},
         # "sfm_mcmc": {"strategy": Strategy.MCMC.value}
     }
-    for strategy in [Strategy.DEFAULT]:
-        for downsample_factor in PRESETS_DEPTH_DOWN_SAMPLE_FACTORS:
-            for noise_std_scene_frac in noise_std_scene_fractions:
-                for ransac in [True, False]:
-                    def _make_preset_name(name):
-                        name = f"{name}_depth_downsample_{downsample_factor}"
-                        if strategy != Strategy.DEFAULT:
-                            name += f"{strategy.name.lower()}"
-                        if noise_std_scene_frac is not None:
-                            name += f"_noise_{noise_std_scene_frac}"
-                        if ransac:
-                            name += "_ransac"
-                        return name
+    strategies = [Strategy.DEFAULT]
 
-                    retval[_make_preset_name("metric3d")] = _make_metric3d_preset(
-                        downsample_factor, strategy, noise_std_scene_frac, ransac
-                    )
-                    retval[_make_preset_name("moge")] = _make_moge_preset(
-                        downsample_factor, strategy, noise_std_scene_frac, ransac
-                    )
-                    retval[_make_preset_name("unidepth")] = _make_unidepth_preset(
-                        downsample_factor, strategy, noise_std_scene_frac, ransac
-                    )
-                    for model_type in ["indoor", "outdoor"]:
-                        retval[_make_preset_name(f"depth_anything_v2_{model_type}")] = (
-                            _make_depthanything_v2_preset(
-                                downsample_factor,
-                                model_type,
-                                strategy,
-                                noise_std_scene_frac, ransac
-                            )
-                        )
+    for downsample_factor, strategy, noise_std_scene_frac, depth_alignment_strategy in itertools.product(
+            PRESETS_DEPTH_DOWN_SAMPLE_FACTORS, strategies, noise_std_scene_fractions, DepthAlignmentStrategyEnum):
 
-                    # retval[f"depth_pro_depth_downsample_{downsample_factor}"] = (
-                    #     _make_depth_pro_preset(downsample_factor)
-                    # )
+        def _make_preset_name(name):
+            name = f"{name}_depth_downsample_{downsample_factor}"
+            if strategy != Strategy.DEFAULT:
+                name += f"{strategy.name.lower()}"
+            if noise_std_scene_frac is not None:
+                name += f"_noise_{noise_std_scene_frac}"
+            if depth_alignment_strategy != DepthAlignmentStrategyEnum.lstsqrs:
+                name += f"_{depth_alignment_strategy.value}"
+            return name
+
+        args = (downsample_factor, strategy,
+                noise_std_scene_frac, depth_alignment_strategy)
+
+        retval[_make_preset_name("metric3d")] = _make_metric3d_preset(
+            *args
+        )
+        retval[_make_preset_name("moge")] = _make_moge_preset(
+            *args
+        )
+        retval[_make_preset_name("unidepth")] = _make_unidepth_preset(
+            *args
+        )
+        for model_type in ["indoor", "outdoor"]:
+            retval[_make_preset_name(f"depth_anything_v2_{model_type}")] = (
+                _make_depthanything_v2_preset(
+                    model_type,
+                    *args
+                )
+            )
+
+        # retval[f"depth_pro_depth_downsample_{downsample_factor}"] = (
+        #     _make_depth_pro_preset(downsample_factor)
+        # )
     return retval
 
 
