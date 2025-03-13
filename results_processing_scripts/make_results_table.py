@@ -1,42 +1,16 @@
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
-from tensorboard.backend.event_processing import event_accumulator
 import argparse
+import logging
 import re
+from pathlib import Path
+
+from parameters import (
+    NerfbaselinesJSONParameter,
+    ParamOrdering,
+    Parameter,
+    ParameterInstance,
+    TensorboardParameter,
+)
 from tabulate import tabulate
-
-
-class TensorboardDataLoader:
-    def __init__(self, file):
-        self.ea = event_accumulator.EventAccumulator(
-            str(file),
-            size_guidance={"scalars": 0},
-        )
-        self.ea.Reload()
-
-    def read_param(self, param_name, step):
-        if param_name not in self.ea.Tags().get("scalars", []):
-            raise ValueError(f"Parameter {param_name} not found in TensorBoard logs.")
-
-        scalars = self.ea.Scalars(param_name)
-        if not scalars:
-            raise ValueError(f"No scalar data found for parameter {param_name}.")
-
-        for scalar in scalars:
-            if scalar.step == step:
-                return scalar.value
-
-        raise ValueError(f"Step {step} not found for parameter {param_name}.")
-
-
-def get_params(output_dir: Path, step: int, params: dict[str, str]) -> dict[str, Any]:
-    tensorboard_file = next((output_dir / "tensorboard").glob("events.out.tfevents.*"))
-    data_loader = TensorboardDataLoader(tensorboard_file)
-    return {
-        param_name: data_loader.read_param(param_path, step)
-        for param_name, param_path in params.items()
-    }
 
 
 def make_pretty_preset_name(preset_name: str) -> str:
@@ -64,20 +38,29 @@ def make_pretty_preset_name(preset_name: str) -> str:
     return name
 
 
-# @dataclass
-# class PresetInfo:
-#     preset_name: str
-#     pretty_name: str
-
-#     @staticmethod
-#     def from_preset_name(preset_name: str) -> "PresetInfo":
-#         return PresetInfo(
-#             preset_name=preset_name,
-#             pretty_name=transform_preset_name_to_header(preset_name),
-#         )
-
-#     def __str__(self) -> str:
-#         return self.pretty_name
+PARAMS: dict[str, Parameter] = {
+    "psnr": NerfbaselinesJSONParameter(
+        name="PSNR", json_path="metrics.psnr", ordering=ParamOrdering.HIGHER_IS_BETTER
+    ),
+    "ssim": NerfbaselinesJSONParameter(
+        name="SSIM", json_path="metrics.ssim", ordering=ParamOrdering.HIGHER_IS_BETTER
+    ),
+    "lpips": NerfbaselinesJSONParameter(
+        name="LPIPS", json_path="metrics.lpips", ordering=ParamOrdering.LOWER_IS_BETTER
+    ),
+    "lpips_vgg": NerfbaselinesJSONParameter(
+        name="LPIPS(VGG)",
+        json_path="metrics.lpips_vgg",
+        ordering=ParamOrdering.LOWER_IS_BETTER,
+    ),
+    "num_gaussians": TensorboardParameter(
+        name="Num Gaussians",
+        tensorboard_id="train/num-gaussians",
+        formatter=lambda val: f"{int(float(val) / 1000):,}K",
+        ordering=ParamOrdering.LOWER_IS_BETTER,
+        should_highlight_best=False,
+    ),
+}
 
 SCENES = {
     "mipnerf360": [
@@ -91,11 +74,99 @@ SCENES = {
         "room",
         "counter",
     ],
-    "tanksandtemples": [
-        "train",
-        "truck"
-    ]
+    "tanksandtemples": ["train", "truck"],
 }
+
+
+class PresetFilter:
+    def __init__(self, in_regex: str | None, out_regex: str | None):
+        self.in_regex = re.compile(in_regex) if in_regex else None
+        self.out_regex = re.compile(out_regex) if out_regex else None
+
+    def allows(self, preset_name: str) -> bool:
+        if self.in_regex and not self.in_regex.search(preset_name):
+            return False
+        if self.out_regex and self.out_regex.search(preset_name):
+            return False
+        return True
+
+
+class DataLoader:
+    def __init__(
+        self,
+        dataset_dir: Path,
+        scenes: list[str],
+        param_names: list[str],
+        step: int,
+        preset_filter: PresetFilter,
+    ):
+        logging.debug(f"Loading data at step {step} for:")
+        logging.debug(f"Scenes: {scenes}")
+        logging.debug(f"Params: {param_names}")
+
+        retval = {}  # {scene: param: value}
+        all_presets = set()
+
+        try:
+            params = [PARAMS[param.lower()] for param in param_names]
+        except KeyError as e:
+            raise ValueError(f"Invalid parameter {e}")
+        for scene_name in scenes:
+            scene_dir = dataset_dir / scene_name
+            if not scene_dir.is_dir():
+                continue
+
+            presets_for_scene = {}
+
+            for preset_dir in scene_dir.iterdir():
+                if not preset_filter.allows(preset_dir.name):
+                    continue
+                if not preset_dir.is_dir():
+                    continue
+
+                params_for_preset = {}
+
+                logging.debug(f"Processing {preset_dir}")
+
+                for param in params:
+                    try:
+                        params_for_preset[param.name] = param.load(preset_dir, step)
+                    except Exception as e:
+                        logging.error(
+                            f"Error loading {param.name} for {preset_dir}: {e}"
+                        )
+                        continue
+
+                presets_for_scene[preset_dir.name] = params_for_preset
+                all_presets.add(preset_dir.name)
+            retval[scene_dir.name] = presets_for_scene
+
+        self.data = retval
+
+        self.presets = []
+        if "sfm" in all_presets:
+            self.presets.append("sfm")
+            all_presets.remove("sfm")
+        self.presets.extend(sorted(all_presets))
+
+    @property
+    def scenes(self):
+        return self.data.keys()
+
+    def try_get(self, scene, preset, param) -> ParameterInstance | None:
+        try:
+            return self.data[scene][preset][PARAMS[param].name]
+        except KeyError:
+            return None
+
+
+def format_best(val, output_fmt):
+    MARKDOWN_FORMATS = ["github", "grid", "pipe", "jira", "presto", "pretty", "rst"]
+    if output_fmt in MARKDOWN_FORMATS:
+        return f"***{val}***"
+    if output_fmt == "latex":
+        return f"\\textbf{{{val}}}"
+    return f"*{val}"
 
 
 def main():
@@ -115,79 +186,86 @@ def main():
         required=True,
         help="the param to include in the table",
     )
+    parser.add_argument(
+        "--preset-regex",
+        type=str,
+        default=None,
+        help="Filter presets using this regex.",
+    )
+    parser.add_argument(
+        "--preset-exclude",
+        type=str,
+        default=None,
+        help="Exclude presets using this regex.",
+    )
+    parser.add_argument(
+        "--output-format",
+        type=str,
+        default="latex",
+        help="Output format for the table (all formats supported by tabulate package).",
+    )
+    parser.add_argument(
+        "--output-file",
+        type=str,
+        default=None,
+        help="Output file to write the table to.",
+    )
+    parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
 
     dataset_dir = Path(f"./nerfbaselines_results/{args.dataset}/")
-    param_to_param_path = {
-        "PSNR": "eval-all-test/psnr",
-        "SSIM": "eval-all-test/ssim",
-        "LPIPS": "eval-all-test/lpips",
-        "LPIPS(VGG)": "eval-all-test/lpips_vgg",
-        "Num Gaussians": "train/num-gaussians",
-    }
 
-    presets = None
+    data_loader = DataLoader(
+        dataset_dir,
+        SCENES[args.dataset],
+        [args.param],
+        args.step,
+        PresetFilter(args.preset_regex, args.preset_exclude),
+    )
+    # for scene in data:
 
-    column_by_scene = {}
-    for scene_name in SCENES[args.dataset]:
-        scene_dir = dataset_dir / scene_name
-        if not scene_dir.is_dir():
-            continue
+    first_column = ["Preset/Scene"] + [
+        make_pretty_preset_name(preset) for preset in data_loader.presets
+    ]
+    table = [first_column]
+    for scene in data_loader.scenes:
+        params = [
+            data_loader.try_get(scene, preset, args.param)
+            for preset in data_loader.presets
+        ]
+        best_row_index = None
 
-        vals_by_preset = {}
-
-        for preset_dir in scene_dir.iterdir():
-            if not preset_dir.is_dir():
+        for i, param in enumerate(params):
+            if param is None:
                 continue
-            if "noise" not in preset_dir.name:
-                continue
-            if "depth_downsample_40" in preset_dir.name:
-                continue
-            param = {args.param: param_to_param_path[args.param]}
-            param_val = get_params(preset_dir, args.step, param)[args.param]
-            vals_by_preset[preset_dir.name] = param_val
+            if best_row_index is None or param > params[best_row_index]:
+                best_row_index = i
 
-        # sort by preset name
-        vals_by_preset = dict(sorted(vals_by_preset.items()))
-        # put sfm first
-        try:
-            sfm_val = vals_by_preset.pop("sfm")
-            vals_by_preset = {"sfm": sfm_val, **vals_by_preset}
-        except KeyError:
-            pass
+        formatted_params = []
+        for i, param in enumerate(params):
+            if param is None:
+                formatted_params.append("-")
+            else:
+                formatted = param.get_formatted_value()
+                if i == best_row_index and param.should_highlight_best:
+                    formatted = format_best(formatted, args.output_format)
+                formatted_params.append(formatted)
 
-        if presets is None:
-            presets = list(vals_by_preset.keys())
+        table.append([scene] + formatted_params)
 
-        column_by_scene[scene_dir.name] = vals_by_preset.values()
+    # transpose the table TODO ??
+    table = list(map(list, zip(*table)))
 
-    first_column = [make_pretty_preset_name(preset) for preset in presets]
-    header = ["Preset"] + list(column_by_scene.keys())
-    table = [list(row) for row in zip(first_column, *column_by_scene.values())]
-
-    # for Num Gaussians, format as integer in thousands
-    if args.param == "Num Gaussians":
-        for row in table:
-            row[1:] = [f"{int(float(val) / 1000):,}K" for val in row[1:]]
-
-    # highlight the best value in each column
-    for col_ix in range(1, len(header)):
-        if "LPIPS" in args.param or args.param == "Num Gaussians":
-            best_val = min([row[col_ix] for row in table])
-        else:
-            best_val = max([row[col_ix] for row in table])
-        for row in table:
-            best = False
-            if row[col_ix] == best_val:
-                best = True
-
-            # 3 decimal places for floats
-            if isinstance(row[col_ix], float):
-                row[col_ix] = f"{row[col_ix]:.3f}"
-            if best and not args.param == "Num Gaussians":
-                row[col_ix] = f"\\textbf{{{row[col_ix]}}}"
-
-    print(tabulate(table, headers=header, tablefmt="latex_raw"))
+    if args.output_format == "latex":
+        args.output_format = "latex_raw"
+    table_str = tabulate(table, headers="firstrow", tablefmt=args.output_format)
+    if args.output_file:
+        with open(args.output_file, "w", encoding="utf-8") as f:
+            f.write(table_str)
+    else:
+        print(table_str)
 
 
 if __name__ == "__main__":
