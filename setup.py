@@ -22,7 +22,6 @@ setup(
         "imageio[ffmpeg]~=2.35.1",
         "pycolmap~=3.11",
         "microsoft-python-type-stubs @ git+https://github.com/microsoft/python-type-stubs.git",
-        "ruff",
         "pillow",
         "nerfbaselines~=1.2.8",
         "open3d~=0.18.0",
@@ -37,5 +36,5 @@ setup(
         # utils3d is a dependency of MoGe that is included in their repo, but the imports are broken
         # so it's better to install it separately
         "utils3d @ git+https://github.com/EasternJournalist/utils3d.git@db0c68cbdc9a26bea1a580a2e39c6b8ff12f87b5",
-    ]
+    ],
 )
