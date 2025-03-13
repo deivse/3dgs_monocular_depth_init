@@ -368,18 +368,18 @@ def main():
     for scene, preset in combinations:
         run_combination(scene, preset, args, args_str, eval_all_iters)
 
-    for scene in args.scenes:
-        preset = BESTISH_PRESET_PER_SCENE[scene]
-        for noise_std_frac in ALL_NOISE_STD_SCENE_FRACTIONS:
-            if noise_std_frac is None:
-                continue
-            run_combination(
-                scene,
-                f"{preset}_noise_{noise_std_frac}",
-                args,
-                args_str,
-                eval_all_iters,
-            )
+    # for scene in args.scenes:
+    #     preset = BESTISH_PRESET_PER_SCENE[scene]
+    #     for noise_std_frac in ALL_NOISE_STD_SCENE_FRACTIONS:
+    #         if noise_std_frac is None:
+    #             continue
+    #         run_combination(
+    #             scene,
+    #             f"{preset}_noise_{noise_std_frac}",
+    #             args,
+    #             args_str,
+    #             eval_all_iters,
+    #         )
 
 
 if __name__ == "__main__":
