@@ -182,8 +182,9 @@ def pts_and_rgb_from_monocular_depth(
     if config.mono_depth_pts_output_dir is not None:
         output_dir = Path(config.mono_depth_pts_output_dir) / dataset_name
         output_dir.mkdir(exist_ok=True, parents=True)
+        filename = f"{model.name}_{config.depth_alignment_strategy.value}"
         export_point_cloud_to_ply(
-            pts.cpu().numpy(), rgbs.cpu().numpy(), output_dir, model.name, outlier_std_dev=5
+            pts.cpu().numpy(), rgbs.cpu().numpy(), output_dir, filename, outlier_std_dev=5
         )
         export_point_cloud_to_ply(
             parser.points, parser.points_rgb / 255.0, output_dir, "sfm"
