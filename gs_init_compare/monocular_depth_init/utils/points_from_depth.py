@@ -170,7 +170,10 @@ def get_pts_from_depth(
         pts_world: torch.Tensor on depth.device of shape [N, 3] where N is the number of points in the world space
         valid_indices: torch.Tensor on depth.device of shape [N] where N is the number of points in the world space
     """
-    if predicted_depth.mask is None:
+    depth = predicted_depth.depth.float()
+    if predicted_depth.mask is not None:
+        mask = predicted_depth.mask
+    else:
         mask = torch.ones_like(predicted_depth.depth, dtype=bool)
 
     depth = predicted_depth.depth.float()
