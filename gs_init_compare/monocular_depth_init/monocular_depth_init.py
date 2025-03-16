@@ -50,8 +50,7 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
 
         return DepthAnythingV2
     else:
-        raise ValueError(
-            f"Unsupported monodepth model: {config.mono_depth_model}")
+        raise ValueError(f"Unsupported monodepth model: {config.mono_depth_model}")
 
 
 def predict_depth_or_get_cached_depth(
@@ -73,8 +72,7 @@ def predict_depth_or_get_cached_depth(
         try:
             depth = torch.load(cache_path)
         except Exception as e:
-            _LOGGER.warning(
-                f"Failed to load cached depth for image {image_name}: {e}")
+            _LOGGER.warning(f"Failed to load cached depth for image {image_name}: {e}")
 
     # TODO: support for models that can predict points directly
     if depth is None:
@@ -169,8 +167,7 @@ def pts_and_rgb_from_monocular_depth(
             _LOGGER.warning(f"Failed to get points for image {image_name}")
             continue
 
-        rgbs = image[::downsample_factor,
-                     ::downsample_factor, :].reshape([-1, 3])
+        rgbs = image[::downsample_factor, ::downsample_factor, :].reshape([-1, 3])
         # valid point indices are for a downsampled and flattened array
         rgbs = rgbs[valid_point_indices]
         points_list.append(points)
@@ -184,7 +181,11 @@ def pts_and_rgb_from_monocular_depth(
         output_dir.mkdir(exist_ok=True, parents=True)
         filename = f"{model.name}_{config.depth_alignment_strategy.value}"
         export_point_cloud_to_ply(
-            pts.cpu().numpy(), rgbs.cpu().numpy(), output_dir, filename, outlier_std_dev=5
+            pts.cpu().numpy(),
+            rgbs.cpu().numpy(),
+            output_dir,
+            filename,
+            outlier_std_dev=5,
         )
         export_point_cloud_to_ply(
             parser.points, parser.points_rgb / 255.0, output_dir, "sfm"

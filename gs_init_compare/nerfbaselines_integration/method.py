@@ -340,9 +340,9 @@ gs_Parser.DatasetCls = gs_Dataset
 # Extract code dynamically
 def _build_runner_module():
     module_spec = importlib.util.find_spec("gs_init_compare.runner")
-    assert (
-        module_spec is not None and module_spec.origin is not None
-    ), "Failed to find runner module"
+    assert module_spec is not None and module_spec.origin is not None, (
+        "Failed to find runner module"
+    )
     with open(module_spec.origin, "r") as f:
         runner_module_ast = ast.parse(f.read())
 
@@ -774,9 +774,9 @@ class InitCompareGsplat(Method):
             raise NotImplementedError(
                 "Appearance optimization is not enabled, add --set app_opt=True to the command line."
             )
-        assert (
-            len(dataset["images"]) == 1
-        ), "Only single image optimization is supported"
+        assert len(dataset["images"]) == 1, (
+            "Only single image optimization is supported"
+        )
         camera = dataset["cameras"].item()
         from gs_init_compare.datasets.normalize import transform_cameras  # type: ignore
 

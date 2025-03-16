@@ -11,12 +11,13 @@ class DownloadProgressBar(tqdm):
 
 def download_with_pbar(url, output_path):
     try:
-        with DownloadProgressBar(unit='B', unit_scale=True,
-                                 miniters=1, desc=url.split('/')[-1]) as t:
+        with DownloadProgressBar(
+            unit="B", unit_scale=True, miniters=1, desc=url.split("/")[-1]
+        ) as t:
             urllib.request.urlretrieve(
-                url, filename=output_path, reporthook=t.update_to)
+                url, filename=output_path, reporthook=t.update_to
+            )
     except KeyboardInterrupt:
-        print(
-            f"Keyboard interrupt. Deleting incomplete download at {output_path}")
+        print(f"Keyboard interrupt. Deleting incomplete download at {output_path}")
         output_path.unlink()
         raise

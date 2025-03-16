@@ -20,7 +20,9 @@ class DepthAlignmentParams:
 class DepthAlignmentStrategy(abc.ABC):
     @classmethod
     @abc.abstractmethod
-    def estimate_alignment(cls, predicted_depth: torch.Tensor, gt_depth: torch.Tensor) -> DepthAlignmentParams:
+    def estimate_alignment(
+        cls, predicted_depth: torch.Tensor, gt_depth: torch.Tensor
+    ) -> DepthAlignmentParams:
         """
         Estimate the alignment between predicted and ground truth depth maps.
 

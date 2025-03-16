@@ -20,5 +20,4 @@ class DepthAlignmentStrategyEnum(str, Enum):
 
             return DepthAlignmentMsac
         else:
-            raise NotImplementedError(
-                f"Unknown depth alignment strategy: {self}")
+            raise NotImplementedError(f"Unknown depth alignment strategy: {self}")

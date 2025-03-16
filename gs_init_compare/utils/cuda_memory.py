@@ -23,7 +23,9 @@ class CudaMemStats(NamedTuple):
     def log_str(self, message: Optional[str] = None, separator="\n") -> str:
         output = ""
         output += f"Cuda stats ({message or ''} {self.device}):{separator}"
-        output += f"Memory Allocated: {human_readable_memory_size(self.allocated)}{separator}"
+        output += (
+            f"Memory Allocated: {human_readable_memory_size(self.allocated)}{separator}"
+        )
         output += f"Memory Cached: {human_readable_memory_size(self.cached)}{separator}"
         return output
 

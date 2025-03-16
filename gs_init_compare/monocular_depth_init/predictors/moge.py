@@ -9,8 +9,7 @@ class MoGe(DepthPredictor):
     def __init__(self, config: Config, device: str):
         # Load the model from huggingface
         self.__device = device
-        self.__model = MoGeModel.from_pretrained(
-            "Ruicheng/moge-vitl").to(device)
+        self.__model = MoGeModel.from_pretrained("Ruicheng/moge-vitl").to(device)
 
     def can_predict_points_directly(self) -> bool:
         return True

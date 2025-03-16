@@ -56,7 +56,7 @@ def generate_spiral_path(
     near_bound = bounds.min()
     far_bound = bounds.max()
     # All cameras will point towards the world space point (0, 0, -focal).
-    focal = 1 / (((1 - focus_distance) / near_bound + focus_distance / far_bound))
+    focal = 1 / ((1 - focus_distance) / near_bound + focus_distance / far_bound)
     focal = focal * spiral_scale_f
 
     # Get radii for spiral path using 90th percentile of camera positions.

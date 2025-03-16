@@ -57,6 +57,6 @@ fi
             ("points3D_xyz", "points3D_rgb", "color", "images_points3D_indices")
         ),
         "supported_camera_models": frozenset(("pinhole",)),
-        "supported_outputs": ("color", "depth", "accumulation")
+        "supported_outputs": ("color", "depth", "accumulation"),
     }
 )

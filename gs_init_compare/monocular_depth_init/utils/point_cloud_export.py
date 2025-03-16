@@ -18,9 +18,7 @@ def export_point_cloud_to_ply(
         # Remove outliers
         mean = np.mean(pts, axis=0)
         std_dev = np.std(pts, axis=0)
-        mask = np.all(
-            np.abs((pts - mean) / std_dev) < outlier_std_dev, axis=1
-        )
+        mask = np.all(np.abs((pts - mean) / std_dev) < outlier_std_dev, axis=1)
         pts = pts[mask]
         if rgbs is not None:
             rgbs = rgbs[mask]

@@ -15,23 +15,24 @@ class RansacParams:
 
 
 DEFAULT_RANSAC_PARAMS = RansacParams(
-    inlier_threshold=0.1, max_iters=2500, confidence=0.99)
+    inlier_threshold=0.1, max_iters=2500, confidence=0.99
+)
 
 
 class DepthAlignmentRansac(DepthAlignmentStrategy):
     @classmethod
-    def estimate_alignment(cls, predicted_depth: torch.Tensor, gt_depth: torch.Tensor) -> DepthAlignmentParams:
-        return _align_depth_ransac_generic(
-            predicted_depth, gt_depth, _ransac_loss
-        )
+    def estimate_alignment(
+        cls, predicted_depth: torch.Tensor, gt_depth: torch.Tensor
+    ) -> DepthAlignmentParams:
+        return _align_depth_ransac_generic(predicted_depth, gt_depth, _ransac_loss)
 
 
 class DepthAlignmentMsac(DepthAlignmentStrategy):
     @classmethod
-    def estimate_alignment(cls, predicted_depth: torch.Tensor, gt_depth: torch.Tensor) -> DepthAlignmentParams:
-        return _align_depth_ransac_generic(
-            predicted_depth, gt_depth, _msac_loss
-        )
+    def estimate_alignment(
+        cls, predicted_depth: torch.Tensor, gt_depth: torch.Tensor
+    ) -> DepthAlignmentParams:
+        return _align_depth_ransac_generic(predicted_depth, gt_depth, _msac_loss)
 
 
 def _ransac_loss(dists: torch.Tensor, inlier_threshold: float):
@@ -68,8 +69,10 @@ def _required_samples(
         return 0
 
 
-def _l2_dists_squared(h: DepthAlignmentParams, depth: torch.Tensor, gt_depth: torch.Tensor) -> torch.Tensor:
-    return (h.scale * depth + h.shift - gt_depth)**2
+def _l2_dists_squared(
+    h: DepthAlignmentParams, depth: torch.Tensor, gt_depth: torch.Tensor
+) -> torch.Tensor:
+    return (h.scale * depth + h.shift - gt_depth) ** 2
 
 
 def _align_depth_ransac_generic(
@@ -98,7 +101,8 @@ def _align_depth_ransac_generic(
     for iteration in range(p.max_iters):
         sample_indices = torch.randint(0, num_samples, (SAMPLE_SIZE,))
         h = align_depth_least_squares(
-            depth[:, sample_indices], gt_depth[sample_indices])
+            depth[:, sample_indices], gt_depth[sample_indices]
+        )
 
         dists = _l2_dists_squared(h, depth[0], gt_depth)
         inlier_indices = dists < p.inlier_threshold
@@ -113,8 +117,7 @@ def _align_depth_ransac_generic(
             num_inliers_best = torch.sum(inlier_indices_best)
 
         if (
-            _required_samples(num_inliers_best, num_samples,
-                              SAMPLE_SIZE, p.confidence)
+            _required_samples(num_inliers_best, num_samples, SAMPLE_SIZE, p.confidence)
             <= iteration
             and h_best is not None
         ):
@@ -124,16 +127,16 @@ def _align_depth_ransac_generic(
         depth[:, inlier_indices_best], gt_depth[inlier_indices_best]
     )
     inlier_indices_best = (
-        torch.abs(h_best.scale * depth[0] +
-                  h_best.shift - gt_depth) < p.inlier_threshold
+        torch.abs(h_best.scale * depth[0] + h_best.shift - gt_depth)
+        < p.inlier_threshold
     )
     num_inliers_best = torch.sum(inlier_indices_best)
 
     #########################################
     h_test = align_depth_least_squares(depth, gt_depth)
     inlier_indices_test = (
-        torch.abs(h_test.scale * depth[0] +
-                  h_test.shift - gt_depth) < p.inlier_threshold
+        torch.abs(h_test.scale * depth[0] + h_test.shift - gt_depth)
+        < p.inlier_threshold
     )
     num_inliers_test = torch.sum(inlier_indices_test)
     avg_err_best = torch.mean(

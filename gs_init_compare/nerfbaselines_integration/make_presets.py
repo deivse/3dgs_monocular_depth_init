@@ -37,9 +37,7 @@ def _make_depth_init_preset_base(
 
 def _make_metric3d_preset(*args):
     return {
-        **_make_depth_init_preset_base(
-            "metric3d", *args
-        ),
+        **_make_depth_init_preset_base("metric3d", *args),
         "metric3d_config": str(
             PROJECT_ROOT
             / "third_party/metric3d/mono/configs/HourglassDecoder/vit.raft5.large.py"
@@ -51,20 +49,14 @@ def _make_metric3d_preset(*args):
 
 def _make_unidepth_preset(*args):
     return {
-        **_make_depth_init_preset_base(
-            "unidepth", *args
-        ),
+        **_make_depth_init_preset_base("unidepth", *args),
         "unidepth_backbone": "vitl14",
     }
 
 
-def _make_depthanything_v2_preset(
-    model_type, *args
-):
+def _make_depthanything_v2_preset(model_type, *args):
     return {
-        **_make_depth_init_preset_base(
-            "depth_anything_v2", *args
-        ),
+        **_make_depth_init_preset_base("depth_anything_v2", *args),
         "depth_anything_backbone": "vitl",
         "depth_anything_model_type": model_type,
     }
@@ -81,9 +73,7 @@ def _make_depthanything_v2_preset(
 
 
 def _make_moge_preset(*args):
-    return _make_depth_init_preset_base(
-        "moge", *args
-    )
+    return _make_depth_init_preset_base("moge", *args)
 
 
 ALL_NOISE_STD_SCENE_FRACTIONS = [None, 0.01, 0.05, 0.1, 0.15, 0.25]
@@ -99,8 +89,17 @@ def make_presets(noise_std_scene_fractions=None) -> dict[str, dict]:
     }
     strategies = [Strategy.DEFAULT]
 
-    for downsample_factor, strategy, noise_std_scene_frac, depth_alignment_strategy in itertools.product(
-            PRESETS_DEPTH_DOWN_SAMPLE_FACTORS, strategies, noise_std_scene_fractions, DepthAlignmentStrategyEnum):
+    for (
+        downsample_factor,
+        strategy,
+        noise_std_scene_frac,
+        depth_alignment_strategy,
+    ) in itertools.product(
+        PRESETS_DEPTH_DOWN_SAMPLE_FACTORS,
+        strategies,
+        noise_std_scene_fractions,
+        DepthAlignmentStrategyEnum,
+    ):
 
         def _make_preset_name(name):
             name = f"{name}_depth_downsample_{downsample_factor}"
@@ -112,24 +111,19 @@ def make_presets(noise_std_scene_fractions=None) -> dict[str, dict]:
                 name += f"_{depth_alignment_strategy.value}"
             return name
 
-        args = (downsample_factor, strategy,
-                noise_std_scene_frac, depth_alignment_strategy)
+        args = (
+            downsample_factor,
+            strategy,
+            noise_std_scene_frac,
+            depth_alignment_strategy,
+        )
 
-        retval[_make_preset_name("metric3d")] = _make_metric3d_preset(
-            *args
-        )
-        retval[_make_preset_name("moge")] = _make_moge_preset(
-            *args
-        )
-        retval[_make_preset_name("unidepth")] = _make_unidepth_preset(
-            *args
-        )
+        retval[_make_preset_name("metric3d")] = _make_metric3d_preset(*args)
+        retval[_make_preset_name("moge")] = _make_moge_preset(*args)
+        retval[_make_preset_name("unidepth")] = _make_unidepth_preset(*args)
         for model_type in ["indoor", "outdoor"]:
             retval[_make_preset_name(f"depth_anything_v2_{model_type}")] = (
-                _make_depthanything_v2_preset(
-                    model_type,
-                    *args
-                )
+                _make_depthanything_v2_preset(model_type, *args)
             )
 
         # retval[f"depth_pro_depth_downsample_{downsample_factor}"] = (

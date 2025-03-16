@@ -44,9 +44,9 @@ class Parser:
         colmap_dir = os.path.join(data_dir, "sparse/0/")
         if not os.path.exists(colmap_dir):
             colmap_dir = os.path.join(data_dir, "sparse")
-        assert os.path.exists(
-            colmap_dir
-        ), f"COLMAP directory {colmap_dir} does not exist."
+        assert os.path.exists(colmap_dir), (
+            f"COLMAP directory {colmap_dir} does not exist."
+        )
 
         reconstruction = pycolmap.Reconstruction(colmap_dir)
 
@@ -256,9 +256,9 @@ class Parser:
             if len(params) == 0:
                 continue  # no distortion
             assert camera_id in self.Ks_dict, f"Missing K for camera {camera_id}"
-            assert (
-                camera_id in self.params_dict
-            ), f"Missing params for camera {camera_id}"
+            assert camera_id in self.params_dict, (
+                f"Missing params for camera {camera_id}"
+            )
             K = self.Ks_dict[camera_id]
             width, height = self.imsize_dict[camera_id]
 
