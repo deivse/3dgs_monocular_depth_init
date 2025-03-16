@@ -8,12 +8,12 @@
             "name": "make_results_table",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/make_results_table.py",
+            "program": "${workspaceFolder}/results_processing_scripts/make_results_table.py",
             "console": "integratedTerminal",
             "args": [
                 "--dataset=mipnerf360",
                 "--step=30000",
-                "--param=PSNR"
+                "--param=psnr"
             ],
             "cwd": "${workspaceFolder}/",
         },
@@ -136,7 +136,7 @@
                 "--unidepth-backbone=vitl14",
                 "--ignore-mono-depth-cache",
                 "--mono-depth-pts-output-dir=${workspaceFolder}/unidepth_debug_ply",
-                // "--mono-depth-pts-output-per-image",
+                "--mono-depth-pts-output-per-image",
                 // "--data-dir=data/nerfbaselines_garden"
             ],
             "cwd": "${workspaceFolder}/gs_init_compare/",
@@ -197,7 +197,8 @@
                 "--data-dir=data/360_v2/bonsai",
                 "--metric3d-config=${workspaceFolder}/metric3d_configs/vit.raft5.large.py",
                 "--metric3d-weights=${workspaceFolder}/metric3d_configs/metric_depth_vit_large_800k.pth",
-                "--mono-depth-pts-output-dir=mono_depth_init_ply"
+                "--mono-depth-pts-output-dir=mono_depth_init_ply",
+                "--mono-depth-pts-output-per-image",
             ],
             "cwd": "${workspaceFolder}/gs_init_compare/",
             "console": "integratedTerminal",

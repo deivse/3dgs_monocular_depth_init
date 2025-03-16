@@ -16,6 +16,9 @@ classifiers = ["Programming Language :: Python"]
 [tool.setuptools]
 packages = ["gs_init_compare"]
 
+[tool.ruff]
+line-length = 88
+
 [[tool.mypy.overrides]]
 module = [
     'depth_pro',

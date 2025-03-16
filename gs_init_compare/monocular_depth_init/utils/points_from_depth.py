@@ -6,12 +6,16 @@ import torch
 
 from gs_init_compare.datasets.colmap import Parser
 from gs_init_compare.depth_alignment import (
-    DepthAlignmentStrategyEnum, DepthAlignmentStrategy, DepthAlignmentParams
+    DepthAlignmentStrategyEnum,
+    DepthAlignmentStrategy,
+    DepthAlignmentParams,
 )
 from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
-from gs_init_compare.nerfbaselines_integration.method import gs_Parser as NerfbaselinesParser
+from gs_init_compare.nerfbaselines_integration.method import (
+    gs_Parser as NerfbaselinesParser,
+)
 from gs_init_compare.monocular_depth_init.utils.point_cloud_export import (
     export_point_cloud_to_ply,
 )
@@ -31,7 +35,7 @@ def debug_export_point_clouds(
     sfm_points,
     pts_world,
     masked_out_world,
-    mask,
+    non_downsampled_mask,
     parser,
     image_name,
     downsample_factor,
@@ -40,7 +44,7 @@ def debug_export_point_clouds(
 ):
     camera_plane = torch.dstack(
         [
-            torch.from_numpy(np.mgrid[0: imsize[0], 0: imsize[1]].T).to(
+            torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(
                 cam2world.device
             ),
             torch.ones(imsize, device=cam2world.device).T,
@@ -52,14 +56,12 @@ def debug_export_point_clouds(
 
     export_point_cloud_to_ply(
         transform_c2w(camera_plane).reshape(-1, 3).cpu().numpy(),
-        rgb_image.reshape(-1,
-                          3).cpu().numpy() if rgb_image is not None else None,
+        rgb_image.reshape(-1, 3).cpu().numpy() if rgb_image is not None else None,
         dir,
         "camera_plane",
     )
     sfm_points_repro_world = P @ torch.vstack(
-        [sfm_points.T, torch.ones(
-            sfm_points.shape[0], device=cam2world.device)]
+        [sfm_points.T, torch.ones(sfm_points.shape[0], device=cam2world.device)]
     )
     sfm_points_repro_world = sfm_points_repro_world / sfm_points_repro_world[2]
     sfm_pt_rgbs = parser.points_rgb[parser.point_indices[image_name]] / 255.0
@@ -80,7 +82,8 @@ def debug_export_point_clouds(
     if rgb_image is not None:
         rgbs = rgb_image[::downsample_factor, ::downsample_factor]
         rgbs = rgbs.reshape(-1, 3).cpu().numpy()
-        rgbs = rgbs[mask.cpu().numpy()]
+        if non_downsampled_mask is not None:
+            rgbs = rgbs[non_downsampled_mask.cpu().numpy()]
 
     export_point_cloud_to_ply(
         pts_world.reshape(-1, 3).cpu().numpy(),
@@ -103,10 +106,8 @@ def debug_export_point_clouds(
 
 def get_valid_sfm_pts(sfm_pts_camera, sfm_pts_camera_depth, mask, imsize):
     valid_sfm_pt_indices = torch.logical_and(
-        torch.logical_and(sfm_pts_camera[0] >=
-                          0, sfm_pts_camera[0] < imsize[0]),
-        torch.logical_and(sfm_pts_camera[1] >=
-                          0, sfm_pts_camera[1] < imsize[1]),
+        torch.logical_and(sfm_pts_camera[0] >= 0, sfm_pts_camera[0] < imsize[0]),
+        torch.logical_and(sfm_pts_camera[1] >= 0, sfm_pts_camera[1] < imsize[1]),
     )
     valid_sfm_pt_indices = torch.logical_and(
         valid_sfm_pt_indices, sfm_pts_camera_depth >= 0
@@ -135,7 +136,9 @@ def get_valid_sfm_pts(sfm_pts_camera, sfm_pts_camera_depth, mask, imsize):
     ]
 
 
-def get_depth_scalar(sfm_points, P, imsize, depth, mask, strategy: DepthAlignmentStrategy) -> DepthAlignmentParams:
+def align_depth(
+    sfm_points, P, imsize, depth, mask, strategy: DepthAlignmentStrategy
+) -> DepthAlignmentParams:
     device = sfm_points.device
 
     sfm_points_camera = P @ torch.vstack(
@@ -148,9 +151,7 @@ def get_depth_scalar(sfm_points, P, imsize, depth, mask, strategy: DepthAlignmen
     sfm_points_camera, sfm_points_depth = get_valid_sfm_pts(
         sfm_points_camera, sfm_points_depth, mask, imsize
     )
-    predicted_depth: torch.Tensor = depth[
-        sfm_points_camera[1], sfm_points_camera[0]
-    ]
+    predicted_depth: torch.Tensor = depth[sfm_points_camera[1], sfm_points_camera[0]]
     return strategy.estimate_alignment(predicted_depth, sfm_points_depth)
 
 
@@ -198,8 +199,7 @@ def get_pts_from_depth(
         dense_world = (
             cam2world
             @ torch.vstack(
-                [dense_world, torch.ones(
-                    dense_world.shape[1], device=cam2world.device)]
+                [dense_world, torch.ones(dense_world.shape[1], device=cam2world.device)]
             )
         )[:3].T
         return dense_world
@@ -207,14 +207,19 @@ def get_pts_from_depth(
     if torch.any(torch.isinf(depth[mask])):
         _LOGGER.warning("Encountered infinite depths in predicted depth map.")
 
-    depth_alignment = get_depth_scalar(
-        sfm_points, P, imsize, depth, mask, depth_alignment_strategy.get_implementation()
+    depth_alignment = align_depth(
+        sfm_points,
+        P,
+        imsize,
+        depth,
+        mask,
+        depth_alignment_strategy.get_implementation(),
     )
 
     pts_camera: torch.Tensor = (
         torch.dstack(
             [
-                torch.from_numpy(np.mgrid[0: imsize[0], 0: imsize[1]].T).to(
+                torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(
                     depth.device
                 ),
                 depth_alignment.scale * depth + depth_alignment.shift,
@@ -224,8 +229,7 @@ def get_pts_from_depth(
         .to(depth.device)
     )
 
-    downsampled_mask = mask[::downsample_factor,
-                            ::downsample_factor].reshape(-1)
+    downsampled_mask = mask[::downsample_factor, ::downsample_factor].reshape(-1)
 
     pts_camera[:, 0] = (pts_camera[:, 0] + 0.5) * pts_camera[:, 2]
     pts_camera[:, 1] = (pts_camera[:, 1] + 0.5) * pts_camera[:, 2]
@@ -243,7 +247,7 @@ def get_pts_from_depth(
             sfm_points,
             pts_world,
             masked_out_world,
-            mask,
+            predicted_depth.mask,
             parser,
             image_name,
             downsample_factor,
