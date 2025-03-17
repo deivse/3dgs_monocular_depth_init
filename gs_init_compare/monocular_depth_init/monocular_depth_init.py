@@ -128,14 +128,16 @@ def pts_and_rgb_from_monocular_depth(
             )
 
         try:
-            points, valid_point_indices = get_pts_from_depth(
+            # TODO: Adaptive downsampling as optional feature!!
+            points, adaptive_ds_mask, valid_point_indices = get_pts_from_depth(
                 predicted_depth,
+                image,
                 image_name,
                 parser,
                 cam2world,
                 K,
                 config.depth_alignment_strategy,
-                downsample_factor=downsample_factor,
+                # downsample_factor=downsample_factor,
                 debug_point_cloud_export_dir=(
                     Path(config.mono_depth_pts_output_dir)
                     / dataset_name
@@ -145,7 +147,6 @@ def pts_and_rgb_from_monocular_depth(
                     and config.mono_depth_pts_output_per_image
                     else None
                 ),
-                img_for_point_cloud_rgb=image,
             )
 
             if config.mono_depth_noise_std_scene_frac is not None:
@@ -167,7 +168,7 @@ def pts_and_rgb_from_monocular_depth(
             _LOGGER.warning(f"Failed to get points for image {image_name}")
             continue
 
-        rgbs = image[::downsample_factor, ::downsample_factor, :].reshape([-1, 3])
+        rgbs = image.view([-1, 3])[adaptive_ds_mask]
         # valid point indices are for a downsampled and flattened array
         rgbs = rgbs[valid_point_indices]
         points_list.append(points)

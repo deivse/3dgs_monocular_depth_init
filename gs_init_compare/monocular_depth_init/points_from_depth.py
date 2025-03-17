@@ -10,6 +10,10 @@ from gs_init_compare.depth_alignment import (
     DepthAlignmentStrategy,
     DepthAlignmentParams,
 )
+from gs_init_compare.monocular_depth_init.adaptive_subsampling import (
+    calculate_downsample_factor_map,
+    get_sample_mask,
+)
 from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
@@ -35,10 +39,9 @@ def debug_export_point_clouds(
     sfm_points,
     pts_world,
     masked_out_world,
-    non_downsampled_mask,
     parser,
     image_name,
-    downsample_factor,
+    downsample_mask,
     rgb_image,
     dir=Path("ply_export_debug"),
 ):
@@ -80,10 +83,8 @@ def debug_export_point_clouds(
     )
     rgbs = None
     if rgb_image is not None:
-        rgbs = rgb_image[::downsample_factor, ::downsample_factor]
-        rgbs = rgbs.reshape(-1, 3).cpu().numpy()
-        if non_downsampled_mask is not None:
-            rgbs = rgbs[non_downsampled_mask.cpu().numpy()]
+        rgbs = rgb_image.view(-1, 3)[downsample_mask]
+        rgbs = rgbs.cpu().numpy()
 
     export_point_cloud_to_ply(
         pts_world.reshape(-1, 3).cpu().numpy(),
@@ -157,14 +158,13 @@ def align_depth(
 
 def get_pts_from_depth(
     predicted_depth: PredictedDepth,
+    image: torch.Tensor,
     image_name: str,
     parser: Parser | NerfbaselinesParser,
     cam2world: torch.Tensor,
     K: torch.Tensor,
     depth_alignment_strategy: DepthAlignmentStrategyEnum,
-    downsample_factor=10,
     debug_point_cloud_export_dir: Optional[Path] = None,
-    img_for_point_cloud_rgb: Optional[torch.Tensor] = None,
 ):
     """
     Returns:
@@ -217,6 +217,8 @@ def get_pts_from_depth(
     )
     aligned_depth = depth_alignment.scale * depth + depth_alignment.shift
 
+    downsample_map = calculate_downsample_factor_map(image)
+    adaptive_ds_mask = get_sample_mask(downsample_map, image.shape[:2])
     pts_camera: torch.Tensor = (
         torch.dstack(
             [
@@ -225,12 +227,12 @@ def get_pts_from_depth(
                 ),
                 aligned_depth,
             ],
-        )[::downsample_factor, ::downsample_factor, :]
-        .reshape(-1, 3)
+        )
+        .reshape(-1, 3)[adaptive_ds_mask]
         .to(depth.device)
     )
 
-    downsampled_mask = mask[::downsample_factor, ::downsample_factor].reshape(-1)
+    downsampled_mask = mask.reshape(-1)[adaptive_ds_mask]
 
     pts_camera[:, 0] = (pts_camera[:, 0] + 0.5) * pts_camera[:, 2]
     pts_camera[:, 1] = (pts_camera[:, 1] + 0.5) * pts_camera[:, 2]
@@ -248,12 +250,11 @@ def get_pts_from_depth(
             sfm_points,
             pts_world,
             masked_out_world,
-            predicted_depth.mask,
             parser,
             image_name,
-            downsample_factor,
-            img_for_point_cloud_rgb,
+            adaptive_ds_mask,
+            image,
             debug_point_cloud_export_dir,
         )
 
-    return pts_world.reshape([-1, 3]).float(), downsampled_mask.cpu()
+    return pts_world.reshape([-1, 3]).float(), adaptive_ds_mask, downsampled_mask.cpu()
