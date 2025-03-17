@@ -164,7 +164,7 @@ def get_pts_from_depth(
     depth_alignment_strategy: DepthAlignmentStrategyEnum,
     downsample_factor=10,
     debug_point_cloud_export_dir: Optional[Path] = None,
-    img_for_point_cloud_rgb=None,
+    img_for_point_cloud_rgb: Optional[torch.Tensor] = None,
 ):
     """
     Returns:
@@ -215,6 +215,7 @@ def get_pts_from_depth(
         mask,
         depth_alignment_strategy.get_implementation(),
     )
+    aligned_depth = depth_alignment.scale * depth + depth_alignment.shift
 
     pts_camera: torch.Tensor = (
         torch.dstack(
@@ -222,7 +223,7 @@ def get_pts_from_depth(
                 torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(
                     depth.device
                 ),
-                depth_alignment.scale * depth + depth_alignment.shift,
+                aligned_depth,
             ],
         )[::downsample_factor, ::downsample_factor, :]
         .reshape(-1, 3)
