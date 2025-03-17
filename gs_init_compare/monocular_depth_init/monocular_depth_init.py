@@ -15,7 +15,7 @@ from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface i
 from gs_init_compare.monocular_depth_init.utils.point_cloud_export import (
     export_point_cloud_to_ply,
 )
-from gs_init_compare.monocular_depth_init.utils.points_from_depth import (
+from gs_init_compare.monocular_depth_init.points_from_depth import (
     LowDepthAlignmentConfidenceError,
     get_pts_from_depth,
 )

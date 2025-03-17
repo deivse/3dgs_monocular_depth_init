@@ -40,6 +40,7 @@
         "reprojected",
         "rgbs",
         "scalecano",
+        "sobel",
         "ssim",
         "ssimloss",
         "tensorboard",
@@ -60,5 +61,6 @@
         "ylim",
         "zlabel",
         "zlim"
-    ]
+    ],
+    "cSpell.enabled": false
 }
