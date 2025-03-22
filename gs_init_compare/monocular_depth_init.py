@@ -19,6 +19,10 @@ from gs_init_compare.depth_prediction.points_from_depth import (
     LowDepthAlignmentConfidenceError,
     get_pts_from_depth,
 )
+from gs_init_compare.depth_subsampling.adaptive_subsampling import (
+    AdaptiveDepthSubsampler,
+)
+from gs_init_compare.depth_subsampling.static_subsampler import StaticDepthSubsampler
 from gs_init_compare.utils.cuda_memory import cuda_stats_msg
 
 
@@ -90,6 +94,15 @@ def add_noise_to_point_cloud(pts: torch.Tensor, noise_std: float):
     return pts + noise
 
 
+def get_subsampler(cfg: Config):
+    if cfg.mdi.subsample_factor == "adaptive":
+        return AdaptiveDepthSubsampler(cfg.mdi.adaptive_subsampling)
+    elif isinstance(cfg.mdi.subsample_factor, int):
+        return StaticDepthSubsampler(cfg.mdi.subsample_factor)
+    else:
+        raise ValueError(f"Unsupported subsampling factor: {cfg.mdi.subsample_factor}")
+
+
 def pts_and_rgb_from_monocular_depth(
     config: Config, parser: Parser, device: str = "cuda"
 ):
@@ -104,7 +117,6 @@ def pts_and_rgb_from_monocular_depth(
     points_list: List[torch.Tensor] = []
     rgbs_list: List[torch.Tensor] = []
 
-    downsample_factor = config.mdi.subsample_factor
     dataset = type(parser).DatasetCls(parser, split="train")
     progress_bar = tqdm(
         dataset,
@@ -134,6 +146,7 @@ def pts_and_rgb_from_monocular_depth(
                 image,
                 image_name,
                 parser,
+                get_subsampler(config),
                 cam2world,
                 K,
                 config.mdi.depth_alignment_strategy,
@@ -176,10 +189,10 @@ def pts_and_rgb_from_monocular_depth(
     pts = torch.cat(points_list, dim=0).float()
     rgbs = torch.cat(rgbs_list, dim=0).float()
 
-    if config.mono_depth_pts_output_dir is not None:
-        output_dir = Path(config.mono_depth_pts_output_dir) / dataset_name
+    if config.mdi.pts_output_dir is not None:
+        output_dir = Path(config.mdi.pts_output_dir) / dataset_name
         output_dir.mkdir(exist_ok=True, parents=True)
-        filename = f"{model.name}_{config.mdi.depth_alignment_strategy.value}"
+        filename = f"{model.name}_{config.mdi.subsample_factor}_{config.mdi.depth_alignment_strategy.value}"
         export_point_cloud_to_ply(
             pts.cpu().numpy(),
             rgbs.cpu().numpy(),
@@ -190,7 +203,7 @@ def pts_and_rgb_from_monocular_depth(
         export_point_cloud_to_ply(
             parser.points, parser.points_rgb / 255.0, output_dir, "sfm"
         )
-        if config.mono_depth_pts_only:
+        if config.mdi.pts_only:
             sys.exit(0)
 
     return pts, rgbs

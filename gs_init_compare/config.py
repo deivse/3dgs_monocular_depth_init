@@ -6,7 +6,7 @@ from gsplat.strategy import DefaultStrategy, MCMCStrategy
 
 
 from .depth_alignment.config import DepthAlignmentStrategyEnum
-from .depth_subsampling.config import DepthSubsamplingConfig
+from .depth_subsampling.config import AdaptiveSubsamplingConfig
 from .depth_prediction.configs import (
     Metric3dV2Config,
     DepthAnythingV2Config,
@@ -39,7 +39,7 @@ class MonocularDepthInitConfig:
     # configured using --mdi.adaptive-subsampling.
     subsample_factor: Union[int, Literal["adaptive"]] = 10
     # Configuration for adaptive subsampling. Ignored if not using "adaptive" subsampling.
-    adaptive_subsampling: DepthSubsamplingConfig = DepthSubsamplingConfig()
+    adaptive_subsampling: AdaptiveSubsamplingConfig = AdaptiveSubsamplingConfig()
 
     # If set, point clouds from monocular depth init are saved to this directory.
     pts_output_dir: Optional[str] = None

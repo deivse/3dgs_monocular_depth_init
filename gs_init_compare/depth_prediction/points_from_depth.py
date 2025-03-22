@@ -10,13 +10,10 @@ from gs_init_compare.depth_alignment import (
     DepthAlignmentStrategy,
     DepthAlignmentParams,
 )
-from gs_init_compare.depth_subsampling.adaptive_subsampling import (
-    calculate_downsample_factor_map,
-    get_sample_mask,
-)
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
+from gs_init_compare.depth_subsampling.interface import DepthSubsampler
 from gs_init_compare.nerfbaselines_integration.method import (
     gs_Parser as NerfbaselinesParser,
 )
@@ -161,6 +158,7 @@ def get_pts_from_depth(
     image: torch.Tensor,
     image_name: str,
     parser: Parser | NerfbaselinesParser,
+    subsampler: DepthSubsampler,
     cam2world: torch.Tensor,
     K: torch.Tensor,
     depth_alignment_strategy: DepthAlignmentStrategyEnum,
@@ -217,8 +215,8 @@ def get_pts_from_depth(
     )
     aligned_depth = depth_alignment.scale * depth + depth_alignment.shift
 
-    downsample_map = calculate_downsample_factor_map(image)
-    adaptive_ds_mask = get_sample_mask(downsample_map, image.shape[:2])
+    subsampling_mask = subsampler.get_mask(image, aligned_depth)
+
     pts_camera: torch.Tensor = (
         torch.dstack(
             [
@@ -228,20 +226,20 @@ def get_pts_from_depth(
                 aligned_depth,
             ],
         )
-        .reshape(-1, 3)[adaptive_ds_mask]
+        .reshape(-1, 3)[subsampling_mask]
         .to(depth.device)
     )
 
-    downsampled_mask = mask.reshape(-1)[adaptive_ds_mask]
+    subsampled_mask = mask.reshape(-1)[subsampling_mask]
 
     pts_camera[:, 0] = (pts_camera[:, 0] + 0.5) * pts_camera[:, 2]
     pts_camera[:, 1] = (pts_camera[:, 1] + 0.5) * pts_camera[:, 2]
 
     pts_world_unfiltered = transform_camera_to_world_space(pts_camera)
-    pts_world = pts_world_unfiltered[downsampled_mask]
+    pts_world = pts_world_unfiltered[subsampled_mask]
 
     if debug_point_cloud_export_dir is not None:
-        masked_out_world = pts_world_unfiltered[~downsampled_mask]
+        masked_out_world = pts_world_unfiltered[~subsampled_mask]
         debug_export_point_clouds(
             imsize,
             cam2world,
@@ -252,9 +250,9 @@ def get_pts_from_depth(
             masked_out_world,
             parser,
             image_name,
-            adaptive_ds_mask,
+            subsampling_mask,
             image,
             debug_point_cloud_export_dir,
         )
 
-    return pts_world.reshape([-1, 3]).float(), adaptive_ds_mask, downsampled_mask.cpu()
+    return pts_world.reshape([-1, 3]).float(), subsampling_mask, subsampled_mask.cpu()

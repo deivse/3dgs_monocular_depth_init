@@ -194,7 +194,7 @@
                 "default",
                 "--init-type=monocular_depth",
                 "--mono_depth_model=metric3d",
-                "--data-dir=data/360_v2/garden",
+                "--data-dir=data/360_v2/stump",
                 "--metric3d-config=${workspaceFolder}/metric3d_configs/vit.raft5.large.py",
                 "--metric3d-weights=${workspaceFolder}/metric3d_configs/metric_depth_vit_large_800k.pth",
                 "--mono-depth-pts-output-dir=mono_depth_init_ply",

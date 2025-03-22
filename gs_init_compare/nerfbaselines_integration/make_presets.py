@@ -7,7 +7,7 @@ from gs_init_compare.depth_alignment.config import DepthAlignmentStrategyEnum
 
 
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
-PRESETS_DEPTH_DOWN_SAMPLE_FACTORS = [10, 20]
+PRESETS_DEPTH_SUBSAMPLE_FACTORS = [10, 20, "adaptive"]
 
 
 class Strategy(Enum):
@@ -17,7 +17,7 @@ class Strategy(Enum):
 
 def _make_depth_init_preset_base(
     model,
-    downsample_factor,
+    subsample_factor,
     strategy: Strategy,
     noise_std_scene_frac: Optional[float],
     depth_alignment_strategy: DepthAlignmentStrategyEnum,
@@ -26,7 +26,7 @@ def _make_depth_init_preset_base(
         "strategy": strategy.value,
         "init_type": "monocular_depth",
         "mdi.predictor": model,
-        "mdi.subsample_factor": downsample_factor,
+        "mdi.subsample_factor": subsample_factor,
         "mdi.pts_output_dir": "ply_export",
         "mdi.noise_std_scene_frac": noise_std_scene_frac,
         "mdi.depth_alignment_strategy": depth_alignment_strategy,
@@ -95,7 +95,7 @@ def make_presets(noise_std_scene_fractions=None) -> dict[str, dict]:
         noise_std_scene_frac,
         depth_alignment_strategy,
     ) in itertools.product(
-        PRESETS_DEPTH_DOWN_SAMPLE_FACTORS,
+        PRESETS_DEPTH_SUBSAMPLE_FACTORS,
         strategies,
         noise_std_scene_fractions,
         DepthAlignmentStrategyEnum,

@@ -1,8 +1,11 @@
-from typing import Tuple, Union
+from dataclasses import dataclass
+from typing import Sequence, Tuple, Union
 import torch
 from gs_init_compare.depth_prediction.utils.image_filtering import (
     spatial_gradient_first_order,
 )
+from gs_init_compare.depth_subsampling.config import AdaptiveSubsamplingConfig
+from gs_init_compare.depth_subsampling.interface import DepthSubsampler
 
 
 def _map_to_range(tensor: torch.Tensor, range_start=0.0, range_end=1.0):
@@ -11,10 +14,10 @@ def _map_to_range(tensor: torch.Tensor, range_start=0.0, range_end=1.0):
     return (range_end - range_start) * tensor + range_start
 
 
-def calculate_downsample_factor_map(
+def color_downsample_factor_map(
     rgb: torch.Tensor,
     tile_size: int = 20,
-    possible_subsample_factors: Tuple[int] = (5, 10),
+    possible_subsample_factors: Sequence[int] = (5, 10),
     grad_approx_gauss_sigma: float = 1.2,
 ) -> torch.Tensor:
     """
@@ -82,3 +85,15 @@ def get_sample_mask(
         (pixel_coords[:, 0] % per_pixel_df.view(-1)) == 0,
         (pixel_coords[:, 1] % per_pixel_df.view(-1)) == 0,
     )
+
+
+@dataclass
+class AdaptiveDepthSubsampler(DepthSubsampler):
+    config: AdaptiveSubsamplingConfig
+
+    def __post_init__(self):
+        self.config.factors = list(set(self.config.factors))
+        self.config.factors.sort()
+
+    def get_mask(self, rgb, depth):
+        raise NotImplementedError("oops")
