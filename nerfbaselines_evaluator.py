@@ -154,6 +154,12 @@ def create_argument_parser():
         default=2000,
         help="Evaluate all images every N steps.",
     )
+    add_argument(
+        "--run-label",
+        type=str,
+        default=None,
+        help="A custom label to be added to the preset directories for this run.",
+    )
     return parser
 
 
@@ -161,9 +167,7 @@ def make_method_config_overrides(args: argparse.Namespace) -> dict[str, str]:
     return {
         "max_steps": str(args.max_steps),
         "mdi.ignore_cache": str(args.invalidate_mono_depth_cache),
-        "mdi.cache_dir": str(
-            Path(args.output_dir, "__mono_depth_cache__").absolute()
-        ),
+        "mdi.cache_dir": str(Path(args.output_dir, "__mono_depth_cache__").absolute()),
     }
 
 
@@ -251,6 +255,10 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
         sep="\n",
     )
     curr_output_dir = Path(args.output_dir / scene / preset)
+    if args.run_label:
+        curr_output_dir = curr_output_dir.with_name(
+            f"{curr_output_dir.name}_{args.run_label}"
+        )
 
     if curr_output_dir.exists():
         if not curr_output_dir.is_dir():
