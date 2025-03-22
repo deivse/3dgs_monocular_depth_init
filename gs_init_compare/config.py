@@ -208,32 +208,3 @@ class Config:
             strategy.refine_every = int(strategy.refine_every * factor)
         else:
             assert_never(strategy)
-
-    def validate(self):
-        """
-        Validate the configuration.
-
-        NOTE: This currently only checks the monocular_depth configuration.
-        """
-
-        if self.init_type == "monocular_depth":
-            supported_models = (
-                get_type_hints(self)["mono_depth_model"].__args__[0].__args__
-            )
-
-            if self.mono_depth_model is None:
-                raise ValueError(" is not provided for monocular_depth initialization.")
-            if self.mono_depth_model not in supported_models:
-                raise ValueError(
-                    f"Unsupported monodepth model: {self.mono_depth_model}"
-                )
-
-            if self.mono_depth_model == "metric3d":
-                if self.metric3d_config is None:
-                    raise ValueError(
-                        "--metric3d_config is required for monocular_depth initialization using Metric3d."
-                    )
-                if self.metric3d_weights is None:
-                    raise ValueError(
-                        "--metric3d_weights is required for monocular_depth initialization using Metric3d."
-                    )

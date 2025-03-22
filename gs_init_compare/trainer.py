@@ -41,11 +41,6 @@ def main(local_rank: int, world_rank, world_size: int, cfg: Config):
 
 
 def run_with_config(cfg: Config):
-    try:
-        cfg.validate()
-    except Exception as e:
-        print(f"Invalid CLI arguments: {e}")
-        sys.exit(1)
     cfg.adjust_steps(cfg.steps_scaler)
 
     # try import extra dependencies

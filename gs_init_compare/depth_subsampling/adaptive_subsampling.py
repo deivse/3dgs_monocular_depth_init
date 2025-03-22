@@ -2,22 +2,29 @@ from dataclasses import dataclass
 from typing import Sequence, Tuple, Union
 import torch
 from gs_init_compare.depth_prediction.utils.image_filtering import (
+    gaussian_filter2d,
     spatial_gradient_first_order,
 )
 from gs_init_compare.depth_subsampling.config import AdaptiveSubsamplingConfig
 from gs_init_compare.depth_subsampling.interface import DepthSubsampler
 
 
-def _map_to_range(tensor: torch.Tensor, range_start=0.0, range_end=1.0):
-    tensor = tensor - tensor.min()
-    tensor /= tensor.max()
-    return (range_end - range_start) * tensor + range_start
+def _map_to_range(tensor: torch.Tensor, range=(0.0, 1.0), input_range=None):
+    if input_range is None:
+        input_range = (tensor.min(), tensor.max())
+    tensor = tensor - input_range[0]
+    tensor /= input_range[1] - input_range[0]
+    return (range[1] - range[0]) * tensor + range[0]
 
 
-def color_downsample_factor_map(
+def _map_to_closest_discrete_value(data: torch.Tensor, values: Sequence[int | float]):
+    range = torch.tensor(values, device=data.device)
+    dists = torch.abs(data[:, :, None] - range[None, None, :])
+    return range[torch.argmin(torch.abs(dists), dim=-1)]
+
+
+def _color_grad_intensity_map(
     rgb: torch.Tensor,
-    tile_size: int = 20,
-    possible_subsample_factors: Sequence[int] = (5, 10),
     grad_approx_gauss_sigma: float = 1.2,
 ) -> torch.Tensor:
     """
@@ -28,7 +35,6 @@ def color_downsample_factor_map(
         `grad_approx_gauss_sigma`    sigma for gaussian kernel used to approximate
                                      gradient of the image
     """
-    h, w, _ = rgb.shape
     color_grad = (
         spatial_gradient_first_order(
             rgb.permute(2, 0, 1)[None], sigma=grad_approx_gauss_sigma
@@ -36,22 +42,8 @@ def color_downsample_factor_map(
         .sum(1)
         .sum(1)
     )
-    df = _map_to_range(color_grad.abs())
-    df = torch.nn.functional.adaptive_avg_pool2d(
-        df,
-        [h // tile_size, w // tile_size],
-    )
-
-    df = _map_to_range(
-        1 - df,
-        possible_subsample_factors[0],
-        possible_subsample_factors[-1],
-    ).squeeze()
-
-    # Clamp to closest value in range
-    range = torch.tensor(possible_subsample_factors)
-    dists = torch.abs(df[:, :, None] - range[None, None, :])
-    return range[torch.argmin(torch.abs(dists), dim=-1)]
+    intensity_0_to_1 = _map_to_range(color_grad.abs())
+    return gaussian_filter2d(intensity_0_to_1[None], 5).squeeze()
 
 
 def get_sample_mask(
@@ -77,7 +69,8 @@ def get_sample_mask(
         .to(int)
     )
     pixel_coords = torch.cartesian_prod(
-        torch.arange(per_pixel_df.shape[0]), torch.arange(per_pixel_df.shape[1])
+        torch.arange(per_pixel_df.shape[0], device=per_pixel_df.device),
+        torch.arange(per_pixel_df.shape[1], device=per_pixel_df.device),
     )
 
     per_pixel_df[per_pixel_df == 0] = 1
@@ -85,6 +78,25 @@ def get_sample_mask(
         (pixel_coords[:, 0] % per_pixel_df.view(-1)) == 0,
         (pixel_coords[:, 1] % per_pixel_df.view(-1)) == 0,
     )
+
+
+def iqr_outlier_bounds(data: torch.Tensor):
+    q1 = torch.quantile(data, 0.25)
+    q3 = torch.quantile(data, 0.75)
+    iqr = q3 - q1
+    return q1 - 1.5 * iqr, q3 + 1.5 * iqr
+
+
+def get_depth_multipler_map(depth: torch.Tensor, mask: torch.Tensor):
+    masked_depth = depth[mask]
+    outlier_bounds = iqr_outlier_bounds(masked_depth)
+    input_range = (
+        max(masked_depth.min(), outlier_bounds[0]),
+        min(masked_depth.max(), outlier_bounds[1]),
+    )
+    multiplier_map = torch.clamp(_map_to_range(depth, input_range=input_range), 0, 1)
+    multiplier_map[~mask] = 0.5
+    return 1.0 - multiplier_map
 
 
 @dataclass
@@ -95,5 +107,15 @@ class AdaptiveDepthSubsampler(DepthSubsampler):
         self.config.factors = list(set(self.config.factors))
         self.config.factors.sort()
 
-    def get_mask(self, rgb, depth):
-        raise NotImplementedError("oops")
+    def get_mask(self, rgb, depth, depth_mask):
+        multiplier_map = get_depth_multipler_map(depth, depth_mask)
+        factor_map = torch.clamp(
+            _map_to_range(
+                multiplier_map,
+                (self.config.factors[0], self.config.factors[-1]),
+                input_range=(0.0, 1.0),
+            ),
+            self.config.factors[0],
+            self.config.factors[-1],
+        )
+        return get_sample_mask(factor_map.to(int), rgb.shape[:2])

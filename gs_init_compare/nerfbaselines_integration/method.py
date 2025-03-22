@@ -633,15 +633,11 @@ class InitCompareGsplat(Method):
                 continue
 
             last_dot_index = k.rfind(".")
-            print(f"{k=},{v=}")
             if last_dot_index != -1:
                 parent = attrgetter(k[: k.rfind(".")])(cfg)
-                print(f"{parent=}")
                 parent_prop_types = {k.name: k.type for k in dataclasses.fields(parent)}
                 key_relative_to_parent = k[last_dot_index + 1 :]
-                print(f"{key_relative_to_parent=}")
                 v = cast_value(parent_prop_types[key_relative_to_parent], v)
-                print(f"{v=}")
                 setattr(parent, key_relative_to_parent, v)
             else:
                 v = cast_value(field_types[k], v)

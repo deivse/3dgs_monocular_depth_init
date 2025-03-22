@@ -171,9 +171,9 @@ def get_pts_from_depth(
     """
     depth = predicted_depth.depth.float()
     if predicted_depth.mask is not None:
-        mask = predicted_depth.mask
+        mask_from_predictor = predicted_depth.mask
     else:
-        mask = torch.ones_like(predicted_depth.depth, dtype=bool)
+        mask_from_predictor = torch.ones_like(predicted_depth.depth, dtype=bool)
 
     depth = predicted_depth.depth.float()
     imsize = depth.T.shape
@@ -202,7 +202,7 @@ def get_pts_from_depth(
         )[:3].T
         return dense_world
 
-    if torch.any(torch.isinf(depth[mask])):
+    if torch.any(torch.isinf(depth[mask_from_predictor])):
         _LOGGER.warning("Encountered infinite depths in predicted depth map.")
 
     depth_alignment = align_depth(
@@ -210,12 +210,14 @@ def get_pts_from_depth(
         P,
         imsize,
         depth,
-        mask,
+        mask_from_predictor,
         depth_alignment_strategy.get_implementation(),
     )
     aligned_depth = depth_alignment.scale * depth + depth_alignment.shift
 
-    subsampling_mask = subsampler.get_mask(image, aligned_depth)
+    subsampling_mask = subsampler.get_mask(
+        image, aligned_depth, mask_from_predictor
+    ).cpu()
 
     pts_camera: torch.Tensor = (
         torch.dstack(
@@ -230,16 +232,16 @@ def get_pts_from_depth(
         .to(depth.device)
     )
 
-    subsampled_mask = mask.reshape(-1)[subsampling_mask]
+    subsampled_mask_from_predictor = mask_from_predictor.reshape(-1)[subsampling_mask]
 
     pts_camera[:, 0] = (pts_camera[:, 0] + 0.5) * pts_camera[:, 2]
     pts_camera[:, 1] = (pts_camera[:, 1] + 0.5) * pts_camera[:, 2]
 
     pts_world_unfiltered = transform_camera_to_world_space(pts_camera)
-    pts_world = pts_world_unfiltered[subsampled_mask]
+    pts_world = pts_world_unfiltered[subsampled_mask_from_predictor]
 
     if debug_point_cloud_export_dir is not None:
-        masked_out_world = pts_world_unfiltered[~subsampled_mask]
+        masked_out_world = pts_world_unfiltered[~subsampled_mask_from_predictor]
         debug_export_point_clouds(
             imsize,
             cam2world,
@@ -250,9 +252,13 @@ def get_pts_from_depth(
             masked_out_world,
             parser,
             image_name,
-            subsampling_mask,
+            subsampling_mask.cpu(),
             image,
             debug_point_cloud_export_dir,
         )
 
-    return pts_world.reshape([-1, 3]).float(), subsampling_mask, subsampled_mask.cpu()
+    return (
+        pts_world.reshape([-1, 3]).float(),
+        subsampling_mask,
+        subsampled_mask_from_predictor.cpu(),
+    )
