@@ -1,6 +1,6 @@
 from typing import Tuple, Union
 import torch
-from gs_init_compare.monocular_depth_init.utils.image_filtering import (
+from gs_init_compare.depth_prediction.utils.image_filtering import (
     spatial_gradient_first_order,
 )
 
@@ -14,7 +14,7 @@ def _map_to_range(tensor: torch.Tensor, range_start=0.0, range_end=1.0):
 def calculate_downsample_factor_map(
     rgb: torch.Tensor,
     tile_size: int = 20,
-    possible_subsample_factors: Tuple[int] = (5, 10, 20, 30),
+    possible_subsample_factors: Tuple[int] = (5, 10),
     grad_approx_gauss_sigma: float = 1.2,
 ) -> torch.Tensor:
     """
@@ -34,13 +34,15 @@ def calculate_downsample_factor_map(
         .sum(1)
     )
     df = _map_to_range(color_grad.abs())
-    df = torch.nn.functional.adaptive_max_pool2d(
+    df = torch.nn.functional.adaptive_avg_pool2d(
         df,
         [h // tile_size, w // tile_size],
     )
 
     df = _map_to_range(
-        1 - df, possible_subsample_factors[0], possible_subsample_factors[-1]
+        1 - df,
+        possible_subsample_factors[0],
+        possible_subsample_factors[-1],
     ).squeeze()
 
     # Clamp to closest value in range

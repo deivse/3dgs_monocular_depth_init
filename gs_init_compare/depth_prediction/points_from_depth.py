@@ -10,17 +10,17 @@ from gs_init_compare.depth_alignment import (
     DepthAlignmentStrategy,
     DepthAlignmentParams,
 )
-from gs_init_compare.monocular_depth_init.adaptive_subsampling import (
+from gs_init_compare.depth_prediction.adaptive_subsampling import (
     calculate_downsample_factor_map,
     get_sample_mask,
 )
-from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
+from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
 from gs_init_compare.nerfbaselines_integration.method import (
     gs_Parser as NerfbaselinesParser,
 )
-from gs_init_compare.monocular_depth_init.utils.point_cloud_export import (
+from gs_init_compare.depth_prediction.utils.point_cloud_export import (
     export_point_cloud_to_ply,
 )
 

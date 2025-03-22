@@ -2,7 +2,7 @@ import torch
 
 from unidepth.models import UniDepthV1
 from gs_init_compare.config import Config
-from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
+from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     CameraIntrinsics,
     DepthPredictor,
     PredictedDepth,

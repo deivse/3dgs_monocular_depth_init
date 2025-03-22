@@ -11,7 +11,7 @@ from gs_init_compare.third_party.metric3d.mono.utils.do_test import (
     transform_test_data_scalecano,
 )
 from gs_init_compare.third_party.metric3d.mono.utils.running import load_ckpt
-from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
+from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     CameraIntrinsics,
     DepthPredictor,
     PredictedDepth,

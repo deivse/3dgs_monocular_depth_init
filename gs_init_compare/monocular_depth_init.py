@@ -8,14 +8,14 @@ from tqdm import tqdm
 
 from gs_init_compare.config import Config
 from gs_init_compare.datasets.colmap import Parser
-from gs_init_compare.monocular_depth_init.predictors.depth_predictor_interface import (
+from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     CameraIntrinsics,
     DepthPredictor,
 )
-from gs_init_compare.monocular_depth_init.utils.point_cloud_export import (
+from gs_init_compare.depth_prediction.utils.point_cloud_export import (
     export_point_cloud_to_ply,
 )
-from gs_init_compare.monocular_depth_init.points_from_depth import (
+from gs_init_compare.depth_prediction.points_from_depth import (
     LowDepthAlignmentConfidenceError,
     get_pts_from_depth,
 )
@@ -30,23 +30,23 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
         raise ValueError("No depth predictor model specified in config.")
 
     if config.mono_depth_model == "metric3d":
-        from .predictors.metric3d import Metric3d
+        from .depth_prediction.predictors.metric3d import Metric3d
 
         return Metric3d
     elif config.mono_depth_model == "depth_pro":
-        from .predictors.apple_depth_pro import AppleDepthPro
+        from .depth_prediction.predictors.apple_depth_pro import AppleDepthPro
 
         return AppleDepthPro
     elif config.mono_depth_model == "moge":
-        from .predictors.moge import MoGe
+        from .depth_prediction.predictors.moge import MoGe
 
         return MoGe
     elif config.mono_depth_model == "unidepth":
-        from .predictors.unidepth import UniDepth
+        from .depth_prediction.predictors.unidepth import UniDepth
 
         return UniDepth
     elif config.mono_depth_model == "depth_anything_v2":
-        from .predictors.depth_anything_v2 import DepthAnythingV2
+        from .depth_prediction.predictors.depth_anything_v2 import DepthAnythingV2
 
         return DepthAnythingV2
     else:

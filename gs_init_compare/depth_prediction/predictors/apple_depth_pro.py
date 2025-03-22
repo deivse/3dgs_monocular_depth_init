@@ -8,7 +8,7 @@ from PIL import Image
 import torch
 
 from gs_init_compare.config import Config
-from gs_init_compare.monocular_depth_init.utils.download_with_tqdm import (
+from gs_init_compare.depth_prediction.utils.download_with_tqdm import (
     download_with_pbar,
 )
 
