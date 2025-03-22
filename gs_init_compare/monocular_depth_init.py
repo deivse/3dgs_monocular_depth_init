@@ -26,31 +26,31 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def pick_model(config: Config) -> Type[DepthPredictor]:
-    if config.mono_depth_model is None:
+    if config.mdi.predictor is None:
         raise ValueError("No depth predictor model specified in config.")
 
-    if config.mono_depth_model == "metric3d":
+    if config.mdi.predictor == "metric3d":
         from .depth_prediction.predictors.metric3d import Metric3d
 
         return Metric3d
-    elif config.mono_depth_model == "depth_pro":
+    elif config.mdi.predictor == "depth_pro":
         from .depth_prediction.predictors.apple_depth_pro import AppleDepthPro
 
         return AppleDepthPro
-    elif config.mono_depth_model == "moge":
+    elif config.mdi.predictor == "moge":
         from .depth_prediction.predictors.moge import MoGe
 
         return MoGe
-    elif config.mono_depth_model == "unidepth":
+    elif config.mdi.predictor == "unidepth":
         from .depth_prediction.predictors.unidepth import UniDepth
 
         return UniDepth
-    elif config.mono_depth_model == "depth_anything_v2":
+    elif config.mdi.predictor == "depth_anything_v2":
         from .depth_prediction.predictors.depth_anything_v2 import DepthAnythingV2
 
         return DepthAnythingV2
     else:
-        raise ValueError(f"Unsupported monodepth model: {config.mono_depth_model}")
+        raise ValueError(f"Unsupported monodepth model: {config.mdi.predictor}")
 
 
 def predict_depth_or_get_cached_depth(
@@ -61,14 +61,14 @@ def predict_depth_or_get_cached_depth(
     config: Config,
     dataset_name: str,
 ):
-    cache_dir = Path(config.mono_depth_cache_dir) / model.name / dataset_name
+    cache_dir = Path(config.mdi.cache_dir) / model.name / dataset_name
 
     cache_dir.mkdir(exist_ok=True, parents=True)
     image_name = str(image_id)
     cache_path = cache_dir / f"{image_name}.pth"
 
     depth = None
-    if not config.ignore_mono_depth_cache and cache_path.exists():
+    if not config.mdi.ignore_cache and cache_path.exists():
         try:
             depth = torch.load(cache_path)
         except Exception as e:
@@ -104,7 +104,7 @@ def pts_and_rgb_from_monocular_depth(
     points_list: List[torch.Tensor] = []
     rgbs_list: List[torch.Tensor] = []
 
-    downsample_factor = config.dense_depth_downsample_factor
+    downsample_factor = config.mdi.subsample_factor
     dataset = type(parser).DatasetCls(parser, split="train")
     progress_bar = tqdm(
         dataset,
@@ -136,22 +136,21 @@ def pts_and_rgb_from_monocular_depth(
                 parser,
                 cam2world,
                 K,
-                config.depth_alignment_strategy,
+                config.mdi.depth_alignment_strategy,
                 # downsample_factor=downsample_factor,
                 debug_point_cloud_export_dir=(
-                    Path(config.mono_depth_pts_output_dir)
+                    Path(config.mdi.pts_output_dir)
                     / dataset_name
                     / model.name
                     / image_name
-                    if config.mono_depth_pts_output_dir
-                    and config.mono_depth_pts_output_per_image
+                    if config.mdi.pts_output_dir and config.mdi.pts_output_per_image
                     else None
                 ),
             )
 
-            if config.mono_depth_noise_std_scene_frac is not None:
+            if config.mdi.noise_std_scene_frac is not None:
                 points = add_noise_to_point_cloud(
-                    points, parser.scene_scale * config.mono_depth_noise_std_scene_frac
+                    points, parser.scene_scale * config.mdi.noise_std_scene_frac
                 )
 
         except LowDepthAlignmentConfidenceError as e:
@@ -180,7 +179,7 @@ def pts_and_rgb_from_monocular_depth(
     if config.mono_depth_pts_output_dir is not None:
         output_dir = Path(config.mono_depth_pts_output_dir) / dataset_name
         output_dir.mkdir(exist_ok=True, parents=True)
-        filename = f"{model.name}_{config.depth_alignment_strategy.value}"
+        filename = f"{model.name}_{config.mdi.depth_alignment_strategy.value}"
         export_point_cloud_to_ply(
             pts.cpu().numpy(),
             rgbs.cpu().numpy(),

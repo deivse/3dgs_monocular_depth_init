@@ -50,8 +50,8 @@ class DepthAnythingV2(DepthPredictor):
 
     def __init__(self, config: Config, device: str):
         self.device = device
-        self.encoder = config.depth_anything_backbone
-        self.model_type = config.depth_anything_model_type
+        self.encoder = config.mdi.depthanything.backbone
+        self.model_type = config.mdi.depthanything.model_type
 
         try:
             dataset = self._MODEL_PARAMS_BY_TYPE[self.model_type]["dataset"]

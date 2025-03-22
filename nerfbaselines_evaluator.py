@@ -160,8 +160,8 @@ def create_argument_parser():
 def make_method_config_overrides(args: argparse.Namespace) -> dict[str, str]:
     return {
         "max_steps": str(args.max_steps),
-        "ignore_mono_depth_cache": str(args.invalidate_mono_depth_cache),
-        "mono_depth_cache_dir": str(
+        "mdi.ignore_cache": str(args.invalidate_mono_depth_cache),
+        "mdi.cache_dir": str(
             Path(args.output_dir, "__mono_depth_cache__").absolute()
         ),
     }

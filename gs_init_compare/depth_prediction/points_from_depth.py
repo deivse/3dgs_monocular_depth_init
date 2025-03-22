@@ -10,7 +10,7 @@ from gs_init_compare.depth_alignment import (
     DepthAlignmentStrategy,
     DepthAlignmentParams,
 )
-from gs_init_compare.depth_prediction.adaptive_subsampling import (
+from gs_init_compare.depth_subsampling.adaptive_subsampling import (
     calculate_downsample_factor_map,
     get_sample_mask,
 )

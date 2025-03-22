@@ -3,7 +3,7 @@ import itertools
 from pathlib import Path
 from typing import Optional
 
-from gs_init_compare.depth_alignment.enum import DepthAlignmentStrategyEnum
+from gs_init_compare.depth_alignment.config import DepthAlignmentStrategyEnum
 
 
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
@@ -23,13 +23,13 @@ def _make_depth_init_preset_base(
     depth_alignment_strategy: DepthAlignmentStrategyEnum,
 ):
     return {
-        "init_type": "monocular_depth",
-        "mono_depth_model": model,
-        "dense_depth_downsample_factor": downsample_factor,
-        "mono_depth_pts_output_dir": "ply_export",
         "strategy": strategy.value,
-        "mono_depth_noise_std_scene_frac": noise_std_scene_frac,
-        "depth_alignment_strategy": depth_alignment_strategy,
+        "init_type": "monocular_depth",
+        "mdi.predictor": model,
+        "mdi.subsample_factor": downsample_factor,
+        "mdi.pts_output_dir": "ply_export",
+        "mdi.noise_std_scene_frac": noise_std_scene_frac,
+        "mdi.depth_alignment_strategy": depth_alignment_strategy,
         # "mono_depth_pts_output_per_image": True,
         # "mono_depth_pts_only": True,
     }
@@ -38,27 +38,27 @@ def _make_depth_init_preset_base(
 def _make_metric3d_preset(*args):
     return {
         **_make_depth_init_preset_base("metric3d", *args),
-        "metric3d_config": str(
+        "mdi.metric3d.config": str(
             PROJECT_ROOT
             / "third_party/metric3d/mono/configs/HourglassDecoder/vit.raft5.large.py"
         ),
         # TODO: mechanism to download weights if missing... then don't use hardcoded path
-        "metric3d_weights": "/workspaces/gs_init_comparison/metric3d_configs/metric_depth_vit_large_800k.pth",
+        "mdi.metric3d.weights": "/workspaces/gs_init_comparison/metric3d_configs/metric_depth_vit_large_800k.pth",
     }
 
 
 def _make_unidepth_preset(*args):
     return {
         **_make_depth_init_preset_base("unidepth", *args),
-        "unidepth_backbone": "vitl14",
+        "mdi.unidepth.backbone": "vitl14",
     }
 
 
 def _make_depthanything_v2_preset(model_type, *args):
     return {
         **_make_depth_init_preset_base("depth_anything_v2", *args),
-        "depth_anything_backbone": "vitl",
-        "depth_anything_model_type": model_type,
+        "mdi.depthanything.backbone": "vitl",
+        "mdi.depthanything.model_type": model_type,
     }
 
 

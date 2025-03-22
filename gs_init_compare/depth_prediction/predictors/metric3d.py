@@ -27,15 +27,15 @@ _LOGGER = logging.getLogger(__name__)
 
 class Metric3d(DepthPredictor):
     def __init__(self, config: Config, device: str):
-        if config.metric3d_config is None:
+        if config.mdi.metric3d.config is None:
             raise ValueError("Metric3d config path is not provided.")
-        if config.metric3d_weights is None:
+        if config.mdi.metric3d.weights is None:
             raise ValueError("Metric3d weights path is not provided.")
 
-        self.__name = f"Metric3d_{config.metric3d_config.split('.')[-2]}"
-        self.__cfg = Metric3dConfig.fromfile(config.metric3d_config)
+        self.__name = f"Metric3d_{config.mdi.metric3d.config.split('.')[-2]}"
+        self.__cfg = Metric3dConfig.fromfile(config.mdi.metric3d.config)
         self.__model, _, _, _ = load_ckpt(
-            config.metric3d_weights,
+            config.mdi.metric3d.weights,
             get_configured_monodepth_model(
                 self.__cfg,
             ),

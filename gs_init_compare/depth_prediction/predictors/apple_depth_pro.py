@@ -65,7 +65,7 @@ def _load_rgb(pil_img: Image.Image, auto_rotate: bool, remove_alpha: bool):
 
 class AppleDepthPro(DepthPredictor):
     def __init__(self, config: Config, device: str):
-        checkpoint_path = Path(config.mono_depth_cache_dir) / "checkpoints/depth_pro.pt"
+        checkpoint_path = Path(config.mdi.cache_dir) / "checkpoints/depth_pro.pt"
 
         depth_pro_config = deepcopy(depth_pro.depth_pro.DEFAULT_MONODEPTH_CONFIG_DICT)
         depth_pro_config.checkpoint_uri = str(checkpoint_path)

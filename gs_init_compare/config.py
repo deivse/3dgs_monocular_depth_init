@@ -2,10 +2,58 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Literal, Union, Tuple, get_type_hints
 from typing_extensions import assert_never
 
-# Assuming DefaultStrategy, MCMCStrategy, and assert_never are defined in a module named 'strategies'
 from gsplat.strategy import DefaultStrategy, MCMCStrategy
 
-from gs_init_compare.depth_alignment import DepthAlignmentStrategyEnum
+
+from .depth_alignment.config import DepthAlignmentStrategyEnum
+from .depth_subsampling.config import DepthSubsamplingConfig
+from .depth_prediction.configs import (
+    Metric3dV2Config,
+    DepthAnythingV2Config,
+    UnidepthConfig,
+)
+
+
+@dataclass
+class MonocularDepthInitConfig:
+    """
+    Configuration of monocular depth initialization.
+    """
+
+    # Which monocular depth prediction model to use.
+    predictor: Optional[
+        Literal["metric3d", "depth_pro", "moge", "unidepth", "depth_anything_v2"]
+    ] = "metric3d"
+
+    metric3d: Metric3dV2Config = Metric3dV2Config()
+    unidepth: UnidepthConfig = UnidepthConfig()
+    depthanything: DepthAnythingV2Config = DepthAnythingV2Config()
+
+    # Strategy to align predicted depth to depth of known SfM points.
+    depth_alignment_strategy: DepthAlignmentStrategyEnum = (
+        DepthAlignmentStrategyEnum.ransac
+    )
+    # How depth is subsampled to temper the number of generated 3D points.
+    # If set to an int, a constant subsampling factor is used. If set to
+    # "adaptive", adaptive subsampling is used, which can be further
+    # configured using --mdi.adaptive-subsampling.
+    subsample_factor: Union[int, Literal["adaptive"]] = 10
+    # Configuration for adaptive subsampling. Ignored if not using "adaptive" subsampling.
+    adaptive_subsampling: DepthSubsamplingConfig = DepthSubsamplingConfig()
+
+    # If set, point clouds from monocular depth init are saved to this directory.
+    pts_output_dir: Optional[str] = None
+    # If set, a point cloud is saved per-image, in addition to the final point cloud.
+    pts_output_per_image: bool = False
+    # If set, the program will exit after exporting point clouds.
+    pts_only: bool = False
+
+    # If set, normally distributed noise is added to the point cloud produced
+    # by monocular depth initialization, with standard deviation equal to this fraction of the scene scale.
+    noise_std_scene_frac: Optional[float] = None
+
+    ignore_cache: bool = False
+    cache_dir: str = "__mono_depth_cache__"
 
 
 @dataclass
@@ -56,34 +104,7 @@ class Config:
     # Initialization strategy
     init_type: Literal["sfm", "random", "monocular_depth"] = "sfm"
 
-    mono_depth_model: Optional[
-        Literal["metric3d", "depth_pro", "moge", "unidepth", "depth_anything_v2"]
-    ] = "metric3d"
-    depth_alignment_strategy: DepthAlignmentStrategyEnum = (
-        DepthAlignmentStrategyEnum.ransac
-    )
-    mono_depth_cache_dir: str = "__mono_depth_cache__"
-    # If set, point clouds from monocular depth initialization are saved to this directory.
-    mono_depth_pts_output_dir: Optional[str] = None
-    mono_depth_pts_output_per_image: bool = False
-    mono_depth_pts_only: bool = False
-    # If set, normally distributed noise is added to the point cloud produced
-    # by monocular depth initialization, with standard deviation equal to this fraction of the scene scale.
-    mono_depth_noise_std_scene_frac: Optional[float] = None
-    ignore_mono_depth_cache: bool = False
-
-    # Optional path to Metric3d config file if using "metric3d" mono_depth_model.
-    metric3d_config: Optional[str] = None
-    # Optional path to Metric3d model weights if using "metric3d" mono_depth_model.
-    metric3d_weights: Optional[str] = None
-    # Select backbone for UniDepth model if using "unidepth" mono_depth_model.
-    unidepth_backbone: Literal["vitl14", "cnvnxtl"] = "vitl14"
-    # Select backbone for Depth Anything V2 model if using "depth_anything_v2" mono_depth_model.
-    depth_anything_backbone: Literal["vits", "vitb", "vitl"] = "vitl"
-    depth_anything_model_type: Literal["indoor", "outdoor"] = "indoor"
-    # Factor by which the number of points unprojected from dense depth is reduced
-    # in each dimension. Ignored if not using "monocular_depth" init_type.
-    dense_depth_downsample_factor: int = 10
+    mdi: MonocularDepthInitConfig = MonocularDepthInitConfig()
 
     # Initial number of GSs. Ignored if using sfm or monocular_depth
     init_num_pts: int = 100_000

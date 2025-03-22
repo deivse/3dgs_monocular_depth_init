@@ -38,7 +38,7 @@ from gs_init_compare.lib_bilagrid import (
     slice,
     total_variation_loss,
 )
-from gs_init_compare.depth_prediction import pts_and_rgb_from_monocular_depth
+from gs_init_compare.monocular_depth_init import pts_and_rgb_from_monocular_depth
 from gs_init_compare.utils.runner_utils import (
     AppearanceOptModule,
     CameraOptModule,

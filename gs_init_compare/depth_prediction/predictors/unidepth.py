@@ -12,7 +12,7 @@ from gs_init_compare.depth_prediction.predictors.depth_predictor_interface impor
 
 class UniDepth(DepthPredictor):
     def __init__(self, config: Config, device: str):
-        self.model_backbone = config.unidepth_backbone
+        self.model_backbone = config.mdi.unidepth.backbone
         self.model = UniDepthV1.from_pretrained(
             f"lpiccinelli/unidepth-v1-{self.model_backbone}"
         ).to(device)

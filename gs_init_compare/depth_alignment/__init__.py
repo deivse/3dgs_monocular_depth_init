@@ -1,5 +1,5 @@
 from .interface import DepthAlignmentParams, DepthAlignmentStrategy
-from .enum import DepthAlignmentStrategyEnum
+from .config import DepthAlignmentStrategyEnum
 
 __all__ = [
     "DepthAlignmentParams",

@@ -13,6 +13,7 @@ import numpy as np
 import argparse
 import os
 import ast
+from operator import attrgetter
 import importlib.util
 from typing import cast, Optional, List, Union
 from nerfbaselines import (
@@ -625,17 +626,26 @@ class InitCompareGsplat(Method):
             import gsplat.strategy as strategies  # type: ignore
 
             cfg.strategy = getattr(strategies, config_overrides["strategy"])()
-        strat_types = {k.name: k.type for k in dataclasses.fields(cfg.strategy)}
+
+        k: str
         for k, v in (config_overrides or {}).items():
             if k == "strategy":
                 continue
-            if k.startswith("strategy."):
-                strat_k = k[len("strategy.") :]
-                v = cast_value(strat_types[strat_k], v)
-                setattr(cfg.strategy, strat_k, v)
-                continue
-            v = cast_value(field_types[k], v)
-            setattr(cfg, k, v)
+
+            last_dot_index = k.rfind(".")
+            print(f"{k=},{v=}")
+            if last_dot_index != -1:
+                parent = attrgetter(k[: k.rfind(".")])(cfg)
+                print(f"{parent=}")
+                parent_prop_types = {k.name: k.type for k in dataclasses.fields(parent)}
+                key_relative_to_parent = k[last_dot_index + 1 :]
+                print(f"{key_relative_to_parent=}")
+                v = cast_value(parent_prop_types[key_relative_to_parent], v)
+                print(f"{v=}")
+                setattr(parent, key_relative_to_parent, v)
+            else:
+                v = cast_value(field_types[k], v)
+                setattr(cfg, k, v)
 
         cfg.adjust_steps(cfg.steps_scaler)
         cfg.steps_scaler = 1.0  # We have already adjusted the steps
