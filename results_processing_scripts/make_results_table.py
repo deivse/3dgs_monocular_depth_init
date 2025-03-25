@@ -3,6 +3,7 @@ import logging
 import re
 from pathlib import Path
 from typing import List
+from tqdm import tqdm
 
 from parameters import (
     NerfbaselinesJSONParameter,
@@ -112,24 +113,32 @@ class DataLoader:
             params = [PARAMS[param.lower()] for param in param_names]
         except KeyError as e:
             raise ValueError(f"Invalid parameter {e}")
-        for scene_name in scenes:
+        scene_pbar = tqdm(scenes, leave=False)
+        for scene_name in scene_pbar:
+            scene_pbar.set_description(f"Processing {scene_name}")
             scene_dir = dataset_dir / scene_name
             if not scene_dir.is_dir():
                 continue
 
             presets_for_scene = {}
 
-            for preset_dir in scene_dir.iterdir():
-                if not preset_filter.allows(preset_dir.name):
-                    continue
-                if not preset_dir.is_dir():
-                    continue
+            preset_dirs = [
+                preset_dir
+                for preset_dir in scene_dir.iterdir()
+                if preset_dir.is_dir() and preset_filter.allows(preset_dir.name)
+            ]
+
+            preset_pbar = tqdm(preset_dirs, leave=False)
+            for preset_dir in preset_pbar:
+                preset_pbar.set_description(f"Processing {preset_dir.name}")
 
                 params_for_preset = {}
 
                 logging.debug(f"Processing {preset_dir}")
 
-                for param in params:
+                param_pbar = tqdm(params, leave=False)
+                for param in param_pbar:
+                    param_pbar.set_description(f"Processing {param.name}")
                     try:
                         params_for_preset[param.name] = param.load(preset_dir, step)
                     except Exception as e:
@@ -312,7 +321,9 @@ def main():
         help="the param to include in the table",
         choices=PARAMS.keys(),
     )
-    all_scene_average = subparsers.add_parser("all_scene_avg",)
+    all_scene_average = subparsers.add_parser(
+        "all_scene_avg",
+    )
     all_scene_average.add_argument("params", nargs="+", choices=PARAMS.keys())
     args = parser.parse_args()
     if args.debug:
