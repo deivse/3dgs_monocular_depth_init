@@ -84,105 +84,6 @@
             "justMyCode": false
         },
         {
-            "name": "evaluator",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/gs_init_compare/evaluator.py",
-            "console": "integratedTerminal",
-            "args": [
-                "--output-dir",
-                "./combined_tb_data",
-                "--results-dir",
-                "results/",
-                "--overwrite"
-            ],
-            "cwd": "${workspaceFolder}/gs_init_compare/",
-        },
-        {
-            "name": "gsplat trainer depthanything export points",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/gs_init_compare/trainer.py",
-            "env": {
-                "CUDA_VISIBLE_DEVICES": "0"
-            },
-            "args": [
-                "default",
-                "--init-type=monocular_depth",
-                "--mono-depth-model=depth_anything_v2",
-                "--depth-anything-backbone=vitl",
-                "--depth-anything-model-type=indoor",
-                "--ignore-mono-depth-cache",
-                "--mono-depth-pts-output-dir=${workspaceFolder}/depthanything_debug_ply",
-                // "--mono-depth-pts-output-per-image",
-                // "--data-dir=data/nerfbaselines_garden"
-            ],
-            "cwd": "${workspaceFolder}/gs_init_compare/",
-            "console": "integratedTerminal",
-            "justMyCode": false
-        },
-        {
-            "name": "gsplat trainer unidepth export points",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/gs_init_compare/trainer.py",
-            "env": {
-                "CUDA_VISIBLE_DEVICES": "0"
-            },
-            "args": [
-                "default",
-                "--init-type=monocular_depth",
-                "--mono-depth-model=unidepth",
-                "--unidepth-backbone=vitl14",
-                "--ignore-mono-depth-cache",
-                "--mono-depth-pts-output-dir=${workspaceFolder}/unidepth_debug_ply",
-                "--mono-depth-pts-output-per-image",
-                // "--data-dir=data/nerfbaselines_garden"
-            ],
-            "cwd": "${workspaceFolder}/gs_init_compare/",
-            "console": "integratedTerminal",
-            "justMyCode": false
-        },
-        {
-            "name": "gsplat trainer MoGe export points",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/gs_init_compare/trainer.py",
-            "env": {
-                "CUDA_VISIBLE_DEVICES": "0"
-            },
-            "args": [
-                "default",
-                "--init-type=monocular_depth",
-                "--mono-depth-model=moge",
-                "--ignore-mono-depth-cache",
-                "--mono-depth-pts-output-dir=${workspaceFolder}/launchjson_debug_ply",
-                // "--mono-depth-pts-output-per-image",
-                "--data-dir=data/360_v2/stump"
-            ],
-            "cwd": "${workspaceFolder}/gs_init_compare/",
-            "console": "integratedTerminal",
-            "justMyCode": false
-        },
-        {
-            "name": "gsplat trainer depth pro",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/gs_init_compare/trainer.py",
-            "env": {
-                "CUDA_VISIBLE_DEVICES": "0"
-            },
-            "args": [
-                "default",
-                "--init-type=monocular_depth",
-                "--mono-depth-model=depth_pro",
-                "--depth-pro-checkpoint=${workspaceFolder}/gs_init_compare/third_party/apple_depth_pro/checkpoints/depth_pro.pt",
-            ],
-            "cwd": "${workspaceFolder}/gs_init_compare/",
-            "console": "integratedTerminal",
-            "justMyCode": false
-        },
-        {
             "name": "gsplat trainer metric3d vit large",
             "type": "debugpy",
             "request": "launch",
@@ -193,44 +94,17 @@
             "args": [
                 "default",
                 "--init-type=monocular_depth",
-                "--mono_depth_model=metric3d",
+                "--mdi.predictor=metric3d",
                 "--data-dir=data/360_v2/stump",
-                "--metric3d-config=${workspaceFolder}/metric3d_configs/vit.raft5.large.py",
-                "--metric3d-weights=${workspaceFolder}/metric3d_configs/metric_depth_vit_large_800k.pth",
-                "--mono-depth-pts-output-dir=mono_depth_init_ply",
-                "--mono-depth-pts-output-per-image",
+                "--mdi.metric3d.config=${workspaceFolder}/metric3d_configs/vit.raft5.large.py",
+                "--mdi.metric3d.weights=${workspaceFolder}/metric3d_configs/metric_depth_vit_large_800k.pth",
+                "--mdi.pts-output-dir=mono_depth_init_ply",
+                "--mdi.subsample-factor=adaptive",
+                "--mdi.pts-output-per-image",
             ],
             "cwd": "${workspaceFolder}/gs_init_compare/",
             "console": "integratedTerminal",
             "justMyCode": false
-        },
-        {
-            "name": "gsplat trainer metric3d vit small",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/gs_init_compare/trainer.py",
-            "env": {
-                "CUDA_VISIBLE_DEVICES": "0"
-            },
-            "args": [
-                "default",
-                "--init-type=monocular_depth",
-                "--mono_depth_model=metric3d",
-                "--metric3d-config=${workspaceFolder}/metric3d_configs/vit.raft5.small.py",
-                "--metric3d-weights=${workspaceFolder}/metric3d_configs/metric_depth_vit_small_800k.pth",
-                // "--no-normalize-world-space"
-            ],
-            "cwd": "${workspaceFolder}/gs_init_compare/",
-            "console": "integratedTerminal",
-            "justMyCode": false
-        },
-        {
-            "name": "metric3d interactive",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/gs_init_compare/metric_3d/app.py",
-            "cwd": "${workspaceFolder}/gs_init_compare/metric_3d",
-            "console": "integratedTerminal"
         },
     ]
 }
