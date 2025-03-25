@@ -2,6 +2,7 @@ import argparse
 import logging
 import re
 from pathlib import Path
+from typing import List
 
 from parameters import (
     NerfbaselinesJSONParameter,
@@ -142,7 +143,7 @@ class DataLoader:
             retval[scene_dir.name] = presets_for_scene
 
         self.data = retval
-
+        self.params = params
         self.presets = []
         if "sfm" in all_presets:
             self.presets.append("sfm")
@@ -155,7 +156,9 @@ class DataLoader:
 
     def try_get(self, scene, preset, param) -> ParameterInstance | None:
         try:
-            return self.data[scene][preset][PARAMS[param].name]
+            if isinstance(param, str):
+                param = PARAMS[param]
+            return self.data[scene][preset][param.name]
         except KeyError:
             return None
 
@@ -169,6 +172,98 @@ def format_best(val, output_fmt):
     return f"*{val}"
 
 
+class MakeTableFuncs:
+    @staticmethod
+    def single_param(data_loader: DataLoader, args):
+        if args.param is None:
+            raise ValueError("No parameter specified")
+
+        first_column = ["Preset/Scene"] + [
+            make_pretty_preset_name(preset) for preset in data_loader.presets
+        ]
+        table = [first_column]
+        for scene in data_loader.scenes:
+            params = [
+                data_loader.try_get(scene, preset, args.param)
+                for preset in data_loader.presets
+            ]
+            best_row_index = None
+
+            for i, param in enumerate(params):
+                if param is None:
+                    continue
+                if best_row_index is None or param > params[best_row_index]:
+                    best_row_index = i
+
+            formatted_params = []
+            for i, param in enumerate(params):
+                if param is None:
+                    formatted_params.append("-")
+                else:
+                    formatted = param.get_formatted_value()
+                    if i == best_row_index and param.should_highlight_best:
+                        formatted = format_best(formatted, args.output_format)
+                    formatted_params.append(formatted)
+
+            table.append([scene] + formatted_params)
+
+        return list(map(list, zip(*table)))
+
+    @staticmethod
+    def all_scene_avg(data_loader: DataLoader, args):
+        """
+        Average all parameters over all scenes for each preset.
+        """
+        table: List[List[ParameterInstance]] = []
+        for preset in data_loader.presets:
+            row = []
+            for param in data_loader.params:
+                average = param.make_instance(0.0)
+                seen_count = 0.0
+                for scene in data_loader.scenes:
+                    instance = data_loader.try_get(scene, preset, param)
+                    if instance is None:
+                        continue
+                    average.value += instance.value
+                    seen_count += 1
+                if seen_count == len(data_loader.scenes):
+                    average.value /= seen_count
+                    row.append(average)
+                else:
+                    row.append(None)
+            table.append(row)
+
+        best_row_per_param = []
+        for param_ix in range(len(data_loader.params)):
+            best_row = None
+            for row_ix, row in enumerate(table):
+                if row[param_ix] is not None and (
+                    best_row is None
+                    or row[param_ix].value > table[best_row][param_ix].value
+                ):
+                    best_row = row_ix
+            best_row_per_param.append(best_row)
+
+        first_row = ["Preset"] + [param.name for param in data_loader.params]
+        formatted_table = [first_row]
+        for (row_ix, row), preset in zip(enumerate(table), data_loader.presets):
+            formatted_row = [make_pretty_preset_name(preset)]
+            for param_ix, param in enumerate(row):
+                if param is None:
+                    formatted_row.append("-")
+                    continue
+                formatted = param.get_formatted_value()
+                if (
+                    param.should_highlight_best
+                    and row_ix == best_row_per_param[param_ix]
+                ):
+                    formatted = format_best(formatted, args.output_format)
+                formatted_row.append(formatted)
+            formatted_table.append(formatted_row)
+
+        return formatted_table
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -177,14 +272,8 @@ def main():
     parser.add_argument(
         "--step",
         type=int,
-        required=True,
+        default=30000,
         help="Step number to extract parameters from.",
-    )
-    parser.add_argument(
-        "--param",
-        type=str,
-        required=True,
-        help="the param to include in the table",
     )
     parser.add_argument(
         "--preset-regex",
@@ -211,52 +300,41 @@ def main():
         help="Output file to write the table to.",
     )
     parser.add_argument("--debug", action="store_true")
+
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+    single_param_parser = subparsers.add_parser(
+        "single_param",
+        help="Create a table for a single parameter.",
+    )
+    single_param_parser.add_argument(
+        "param",
+        type=str,
+        help="the param to include in the table",
+        choices=PARAMS.keys(),
+    )
+    all_scene_average = subparsers.add_parser("all_scene_avg",)
+    all_scene_average.add_argument("params", nargs="+", choices=PARAMS.keys())
     args = parser.parse_args()
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
     dataset_dir = Path(f"./nerfbaselines_results/{args.dataset}/")
 
+    if args.subcommand == "single_param":
+        params = [args.param]
+    else:
+        params = args.params
+
     data_loader = DataLoader(
         dataset_dir,
         SCENES[args.dataset],
-        [args.param],
+        params,
         args.step,
         PresetFilter(args.preset_regex, args.preset_exclude),
     )
-    # for scene in data:
 
-    first_column = ["Preset/Scene"] + [
-        make_pretty_preset_name(preset) for preset in data_loader.presets
-    ]
-    table = [first_column]
-    for scene in data_loader.scenes:
-        params = [
-            data_loader.try_get(scene, preset, args.param)
-            for preset in data_loader.presets
-        ]
-        best_row_index = None
-
-        for i, param in enumerate(params):
-            if param is None:
-                continue
-            if best_row_index is None or param > params[best_row_index]:
-                best_row_index = i
-
-        formatted_params = []
-        for i, param in enumerate(params):
-            if param is None:
-                formatted_params.append("-")
-            else:
-                formatted = param.get_formatted_value()
-                if i == best_row_index and param.should_highlight_best:
-                    formatted = format_best(formatted, args.output_format)
-                formatted_params.append(formatted)
-
-        table.append([scene] + formatted_params)
-
-    # transpose the table TODO ??
-    table = list(map(list, zip(*table)))
+    func = getattr(MakeTableFuncs, args.subcommand)
+    table = func(data_loader, args)
 
     if args.output_format == "latex":
         args.output_format = "latex_raw"

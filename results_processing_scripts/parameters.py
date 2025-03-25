@@ -83,7 +83,7 @@ class Parameter(abc.ABC):
     def load(self, results_dir: Path, step: int) -> ParameterInstance:
         raise NotImplementedError()
 
-    def _make_instance(self, value):
+    def make_instance(self, value):
         return ParameterInstance(
             self.name, value, self.ordering, self.formatter, self.should_highlight_best
         )
@@ -108,7 +108,7 @@ class TensorboardParameter(Parameter):
             )
             data_loader = TensorboardDataLoader(tensorboard_file)
             val = data_loader.read_param(self.tensorboard_id, step)
-            return self._make_instance(val)
+            return self.make_instance(val)
         except StopIteration:
             raise ValueError(
                 f"Tensorboard file not found in {results_dir / 'tensorboard'}"
@@ -138,7 +138,7 @@ class NerfbaselinesJSONParameter(Parameter):
                 data = json.load(f)
                 for key in self.json_path:
                     data = data[key]
-                return self._make_instance(data)
+                return self.make_instance(data)
         except FileNotFoundError:
             raise ValueError(f"JSON file {json_file} not found in {results_dir}")
         except KeyError:

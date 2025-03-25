@@ -13,7 +13,9 @@
             "args": [
                 "--dataset=mipnerf360",
                 "--step=30000",
-                "--param=psnr"
+                "all_scene_average",
+                "psnr",
+                "ssim"
             ],
             "cwd": "${workspaceFolder}/",
         },
