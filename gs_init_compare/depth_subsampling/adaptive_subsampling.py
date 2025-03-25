@@ -9,12 +9,12 @@ from gs_init_compare.depth_subsampling.config import AdaptiveSubsamplingConfig
 from gs_init_compare.depth_subsampling.interface import DepthSubsampler
 
 
-def _map_to_range(tensor: torch.Tensor, range=(0.0, 1.0), input_range=None):
+def _map_to_range(tensor: torch.Tensor, output_range=(0.0, 1.0), input_range=None):
     if input_range is None:
         input_range = (tensor.min(), tensor.max())
     tensor = tensor - input_range[0]
     tensor /= input_range[1] - input_range[0]
-    return (range[1] - range[0]) * tensor + range[0]
+    return (output_range[1] - output_range[0]) * tensor + output_range[0]
 
 
 def _map_to_closest_discrete_value(data: torch.Tensor, values: Sequence[int | float]):
@@ -103,19 +103,15 @@ def get_depth_multipler_map(depth: torch.Tensor, mask: torch.Tensor):
 class AdaptiveDepthSubsampler(DepthSubsampler):
     config: AdaptiveSubsamplingConfig
 
-    def __post_init__(self):
-        self.config.factors = list(set(self.config.factors))
-        self.config.factors.sort()
-
     def get_mask(self, rgb, depth, depth_mask):
         multiplier_map = get_depth_multipler_map(depth, depth_mask)
         factor_map = torch.clamp(
             _map_to_range(
                 multiplier_map,
-                (self.config.factors[0], self.config.factors[-1]),
+                output_range=self.config.factor_range,
                 input_range=(0.0, 1.0),
             ),
-            self.config.factors[0],
-            self.config.factors[-1],
+            self.config.factor_range[0],
+            self.config.factor_range[1],
         )
         return get_sample_mask(factor_map.to(int), rgb.shape[:2])

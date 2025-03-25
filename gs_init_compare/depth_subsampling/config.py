@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Tuple
 
 
 @dataclass
@@ -8,8 +8,8 @@ class AdaptiveSubsamplingConfig:
     Configures which heuristics to use for adaptive subsampling.
     """
 
-    # List of possible subsample factors to choose from.
-    factors: Sequence[int] = (5, 10, 15)
+    # Range of subsample factors to choose from.
+    factor_range: Tuple[int, int] = (5, 20)
 
     # The image is divided into tiles, a constant subsampling factor is used on each tile.
     # This parameter controls the size of these tiles.
