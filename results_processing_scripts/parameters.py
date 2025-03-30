@@ -11,6 +11,7 @@ class TensorboardDataLoader:
     def __init__(self, file):
         self.ea = event_accumulator.EventAccumulator(
             str(file),
+            size_guidance={"tensors": 1, "histograms": 1, "images": 1, "scalars": 1},
         )
         self.ea.Reload()
 

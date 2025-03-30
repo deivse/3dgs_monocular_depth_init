@@ -248,7 +248,7 @@ class MakeTableFuncs:
             for row_ix, row in enumerate(table):
                 if row[param_ix] is not None and (
                     best_row is None
-                    or row[param_ix].value > table[best_row][param_ix].value
+                    or row[param_ix] > table[best_row][param_ix]
                 ):
                     best_row = row_ix
             best_row_per_param.append(best_row)
@@ -277,6 +277,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dataset", type=str, required=True, help="Name of the dataset."
+    )
+    parser.add_argument(
+        "--scenes", nargs="+", default=None, help="Scenes to include in the table."
     )
     parser.add_argument(
         "--step",
@@ -325,6 +328,7 @@ def main():
         "all_scene_avg",
     )
     all_scene_average.add_argument("params", nargs="+", choices=PARAMS.keys())
+
     args = parser.parse_args()
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
@@ -336,9 +340,14 @@ def main():
     else:
         params = args.params
 
+    if args.scenes is None:
+        scenes = SCENES[args.dataset]
+    else:
+        scenes = args.scenes
+
     data_loader = DataLoader(
         dataset_dir,
-        SCENES[args.dataset],
+        scenes,
         params,
         args.step,
         PresetFilter(args.preset_regex, args.preset_exclude),
