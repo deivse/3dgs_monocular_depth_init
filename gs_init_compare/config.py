@@ -4,6 +4,8 @@ from typing_extensions import assert_never
 
 from gsplat.strategy import DefaultStrategy, MCMCStrategy
 
+from gs_init_compare.point_cloud_postprocess.config import PointCloudPostprocessConfig
+
 
 from .depth_alignment.config import DepthAlignmentStrategyEnum
 from .depth_subsampling.config import AdaptiveSubsamplingConfig
@@ -40,6 +42,8 @@ class MonocularDepthInitConfig:
     subsample_factor: Union[int, Literal["adaptive"]] = 10
     # Configuration for adaptive subsampling. Ignored if not using "adaptive" subsampling.
     adaptive_subsampling: AdaptiveSubsamplingConfig = AdaptiveSubsamplingConfig()
+
+    postprocess: PointCloudPostprocessConfig = PointCloudPostprocessConfig()
 
     # If set, point clouds from monocular depth init are saved to this directory.
     pts_output_dir: Optional[str] = None

@@ -22,6 +22,7 @@ from gs_init_compare.depth_prediction.points_from_depth import (
 from gs_init_compare.depth_subsampling.adaptive_subsampling import (
     AdaptiveDepthSubsampler,
 )
+from gs_init_compare.point_cloud_postprocess.postprocess import postprocess_point_cloud
 from gs_init_compare.depth_subsampling.static_subsampler import StaticDepthSubsampler
 from gs_init_compare.utils.cuda_memory import cuda_stats_msg
 
@@ -189,6 +190,12 @@ def pts_and_rgb_from_monocular_depth(
     pts = torch.cat(points_list, dim=0).float()
     rgbs = torch.cat(rgbs_list, dim=0).float()
 
+    print("Num points before postprocess:", pts.shape[0])
+    pts, rgbs = postprocess_point_cloud(
+        pts, rgbs, parser.scene_scale, config.mdi.postprocess
+    )
+    print("Num points after postprocess:", pts.shape[0])
+
     if config.mdi.pts_output_dir is not None:
         output_dir = Path(config.mdi.pts_output_dir) / dataset_name
         output_dir.mkdir(exist_ok=True, parents=True)
@@ -198,7 +205,7 @@ def pts_and_rgb_from_monocular_depth(
             rgbs.cpu().numpy(),
             output_dir,
             filename,
-            outlier_std_dev=5,
+            outlier_std_dev=None,
         )
         export_point_cloud_to_ply(
             parser.points, parser.points_rgb / 255.0, output_dir, "sfm"
