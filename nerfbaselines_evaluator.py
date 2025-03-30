@@ -160,6 +160,8 @@ def create_argument_parser():
         default=None,
         help="A custom label to be added to the preset directories for this run.",
     )
+    add_argument("--force-overwrite", action="store_true", default=False)
+    add_argument("--pts-only", action="store_true", default=False)
     return parser
 
 
@@ -168,6 +170,7 @@ def make_method_config_overrides(args: argparse.Namespace) -> dict[str, str]:
         "max_steps": str(args.max_steps),
         "mdi.ignore_cache": str(args.invalidate_mono_depth_cache),
         "mdi.cache_dir": str(Path(args.output_dir, "__mono_depth_cache__").absolute()),
+        "mdi.pts_only": str(args.pts_only),
     }
 
 
@@ -197,6 +200,9 @@ def output_dir_needs_overwrite(
     args_str: str,
     eval_all_iters: list[int],
 ) -> bool:
+    if args.force_overwrite:
+        return True
+
     if not directory_exists_and_has_files(output_dir):
         return False
 
@@ -260,7 +266,7 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
             f"{curr_output_dir.name}_{args.run_label}"
         )
 
-    if curr_output_dir.exists():
+    if curr_output_dir.exists() and not args.pts_only:
         if not curr_output_dir.is_dir():
             raise ValueError(f"Output path is not a directory: {curr_output_dir}")
 
@@ -291,8 +297,9 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
         )
     )
     curr_output_dir.mkdir(parents=True, exist_ok=True)
-    with open(curr_output_dir / ARGS_STR_FILENAME, "w") as f:
-        f.write(args_str)
+    if not args.pts_only:
+        with open(curr_output_dir / ARGS_STR_FILENAME, "w") as f:
+            f.write(args_str)
 
     overrides_cli = []
     for kv_pair in make_method_config_overrides(args).items():
