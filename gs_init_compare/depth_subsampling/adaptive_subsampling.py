@@ -8,7 +8,6 @@ from gs_init_compare.depth_prediction.utils.image_filtering import (
 from gs_init_compare.depth_subsampling.config import AdaptiveSubsamplingConfig
 from gs_init_compare.depth_subsampling.interface import DepthSubsampler
 
-
 def _map_to_range(tensor: torch.Tensor, output_range=(0.0, 1.0), input_range=None):
     if input_range is None:
         input_range = (tensor.min(), tensor.max())

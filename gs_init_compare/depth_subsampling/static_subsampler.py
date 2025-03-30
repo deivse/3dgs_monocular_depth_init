@@ -8,7 +8,7 @@ from .interface import DepthSubsampler
 class StaticDepthSubsampler(DepthSubsampler):
     subsample_factor: int
 
-    def get_mask(self, rgb, depth):
+    def get_mask(self, rgb, depth, mask_from_predictor):
         pixel_coords = torch.cartesian_prod(
             torch.arange(depth.shape[0]), torch.arange(depth.shape[1])
         )
