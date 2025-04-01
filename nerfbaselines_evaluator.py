@@ -3,6 +3,7 @@ Runs training and evaluation for multiple scenes and initialization strategies, 
 """
 
 from datetime import datetime
+import os
 from pathlib import Path
 import subprocess
 
@@ -10,9 +11,11 @@ import argparse
 
 from itertools import product
 import sys
+from gs_init_compare.depth_alignment.config import DepthAlignmentStrategyEnum
 from gs_init_compare.nerfbaselines_integration.make_presets import (
-    ALL_NOISE_STD_SCENE_FRACTIONS,
-    get_preset_names,
+    ALL_PREDICTOR_NAMES,
+    for_each_monodepth_setting_combination,
+    make_preset_name,
 )
 
 from nerfbaselines import get_dataset_spec
@@ -109,6 +112,24 @@ ALL_SCENES = [
 ]
 
 
+DEFAULT_PRESETS = [
+    "sfm",
+    *[
+        make_preset_name(name, *args)
+        for name in ALL_PREDICTOR_NAMES
+        for args in for_each_monodepth_setting_combination(
+            [DepthAlignmentStrategyEnum.lstsqrs, DepthAlignmentStrategyEnum.msac],
+            downsample_factors=[10, 20, "adaptive"],
+        )
+    ],
+]
+
+
+def print_default_presets():
+    for i, preset in enumerate(DEFAULT_PRESETS):
+        print(f"{i+1}. {preset} [{i}]")
+
+
 def create_argument_parser():
     parser = argparse.ArgumentParser()
 
@@ -120,7 +141,7 @@ def create_argument_parser():
     add_argument(
         "--presets",
         nargs="+",
-        default=get_preset_names([None]),
+        default=DEFAULT_PRESETS,
         help="Presets to pass to the method.",
     )
     add_argument(
@@ -160,6 +181,7 @@ def create_argument_parser():
         default=None,
         help="A custom label to be added to the preset directories for this run.",
     )
+    add_argument("--print-default-presets", action="store_true", default=False)
     add_argument("--force-overwrite", action="store_true", default=False)
     add_argument("--pts-only", action="store_true", default=False)
     return parser
@@ -359,6 +381,20 @@ BESTISH_PRESET_PER_SCENE = {
 def main():
     sys.stdout.reconfigure(line_buffering=True)
     args = create_argument_parser().parse_args()
+
+    if args.print_default_presets:
+        print_default_presets()
+        return
+
+    slurm_array_task_id = os.environ.get("SLURM_ARRAY_TASK_ID", None)
+    if slurm_array_task_id is not None:
+        args.presets = [DEFAULT_PRESETS[int(slurm_array_task_id) - 1]]
+        print(
+            ANSIEscapes.color(
+                f"Overriding presets based on SLURM_ARRAY_TASK_ID={int(slurm_array_task_id)}: {args.presets}",
+                "yellow",
+            )
+        )
 
     eval_all_iters = list(range(0, args.max_steps + 1, args.eval_frequency))
     if eval_all_iters[-1] != args.max_steps:
