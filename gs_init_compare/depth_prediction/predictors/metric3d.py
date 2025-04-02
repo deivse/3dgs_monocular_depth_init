@@ -1,8 +1,12 @@
 import logging
+from pathlib import Path
+from typing import Tuple
 
 import torch
 
 from gs_init_compare.config import Config
+from gs_init_compare.depth_prediction.configs import Metric3dPreset
+from gs_init_compare.depth_prediction.utils.download_with_tqdm import download_with_pbar
 from gs_init_compare.third_party.metric3d.mono.model.monodepth_model import (
     get_configured_monodepth_model,
 )
@@ -25,17 +29,49 @@ except ImportError:
 _LOGGER = logging.getLogger(__name__)
 
 
+def weights_url_by_name(name):
+    return f"https://huggingface.co/spaces/JUGGHM/Metric3D/resolve/main/weight/{name}?download=true"
+
+
+def get_config_and_weights_name_by_preset(config: Config) -> Tuple[Path, str]:
+    PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
+    CONFIG_FILENAMES = {
+        Metric3dPreset.vit_large: "vit.raft5.large.py",
+        Metric3dPreset.vit_small: "vit.raft5.small.py",
+    }
+    WEIGHTS_FILENAMES = {
+        Metric3dPreset.vit_large: "metric_depth_vit_large_800k.pth",
+        Metric3dPreset.vit_small: "metric_depth_vit_small_800k.pth",
+    }
+    preset = config.mdi.metric3d.preset
+    config = (
+        PROJECT_ROOT
+        / "third_party/metric3d/mono/configs/HourglassDecoder"
+        / CONFIG_FILENAMES[preset]
+    )
+
+    return config, WEIGHTS_FILENAMES[preset]
+
+
 class Metric3d(DepthPredictor):
     def __init__(self, config: Config, device: str):
-        if config.mdi.metric3d.config is None:
-            raise ValueError("Metric3d config path is not provided.")
-        if config.mdi.metric3d.weights is None:
-            raise ValueError("Metric3d weights path is not provided.")
+        config_path, weights_filename = get_config_and_weights_name_by_preset(config)
 
-        self.__name = f"Metric3d_{config.mdi.metric3d.config.split('.')[-2]}"
-        self.__cfg = Metric3dConfig.fromfile(config.mdi.metric3d.config)
+        weights_path = Path(config.mdi.cache_dir) / "checkpoints" / weights_filename
+
+        if not weights_path.exists():
+            # Download the checkpoint if it doesn't exist
+            url = weights_url_by_name(weights_filename)
+            weights_path.parent.mkdir(parents=True, exist_ok=True)
+            _LOGGER.info(
+                f"Downloading Metric3dV2 checkpoint from {url} to {str(weights_path)}"
+            )
+            download_with_pbar(url, weights_path)
+
+        self.__name = f"Metric3d_{config_path.name.split('.')[-2]}"
+        self.__cfg = Metric3dConfig.fromfile(config_path)
         self.__model, _, _, _ = load_ckpt(
-            config.mdi.metric3d.weights,
+            weights_path,
             get_configured_monodepth_model(
                 self.__cfg,
             ),

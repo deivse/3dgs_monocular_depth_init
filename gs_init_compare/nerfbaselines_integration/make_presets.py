@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from gs_init_compare.depth_alignment.config import DepthAlignmentStrategyEnum
+from gs_init_compare.depth_prediction.configs import Metric3dPreset
 
 
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
@@ -49,12 +50,7 @@ def _make_depth_init_preset_base(
 def _make_metric3d_preset(*args):
     return {
         **_make_depth_init_preset_base("metric3d", *args),
-        "mdi.metric3d.config": str(
-            PROJECT_ROOT
-            / "third_party/metric3d/mono/configs/HourglassDecoder/vit.raft5.large.py"
-        ),
-        # TODO: mechanism to download weights if missing... then don't use hardcoded path
-        "mdi.metric3d.weights": "/workspaces/gs_init_comparison/metric3d_configs/metric_depth_vit_large_800k.pth",
+        "mdi.metric3d.preset": Metric3dPreset.vit_large,
     }
 
 

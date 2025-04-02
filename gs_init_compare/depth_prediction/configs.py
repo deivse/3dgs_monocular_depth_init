@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Literal, Optional
+from enum import Enum
+from typing import Literal
 
 
 @dataclass
@@ -14,16 +15,18 @@ class DepthAnythingV2Config:
     model_type: Literal["indoor", "outdoor"] = "indoor"
 
 
+class Metric3dPreset(str, Enum):
+    vit_large = "vit_large"
+    vit_small = "vit_small"
+
+
 @dataclass
 class Metric3dV2Config:
     """
     Configuration for the Metric3dV2 monocular depth predictor.
     """
 
-    # Path to Metric3d config file. Must be set if using Metric3D as the depth predictor.
-    config: Optional[str] = None
-    # Path to Metric3d checkpoint. Must be set if using Metric3D as the depth predictor.
-    weights: Optional[str] = None
+    preset: Metric3dPreset = Metric3dPreset.vit_large
 
 
 @dataclass
