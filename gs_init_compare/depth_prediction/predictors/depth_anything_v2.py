@@ -62,7 +62,7 @@ class DepthAnythingV2(DepthPredictor):
             ) from e
 
         checkpoint_path = (
-            Path(config.mono_depth_cache_dir)
+            Path(config.mdi.cache_dir)
             / f"checkpoints/depth_anything_v2_metric_{self.encoder}_{dataset}.pt"
         )
 
