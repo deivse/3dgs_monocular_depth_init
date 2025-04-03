@@ -112,9 +112,7 @@ def for_each_monodepth_setting_combination(
     if noise_std_scene_fractions is None:
         noise_std_scene_fractions = [None]
 
-    strategies = [Strategy.DEFAULT]
-    if mcmc:
-        strategies.append(Strategy.MCMC)
+    strategies = [Strategy.MCMC if mcmc else Strategy.DEFAULT]
 
     for (
         downsample_factor,
@@ -155,16 +153,27 @@ def make_presets(noise_std_scene_fractions=None) -> dict[str, dict]:
         "sfm_mcmc": {"strategy": Strategy.MCMC.value, **MCMC_DEFAULT_PARAMS},
     }
 
-    for args in for_each_monodepth_setting_combination(
-        noise_std_scene_fractions=noise_std_scene_fractions,
-        mcmc=True,
-    ):
-        retval[make_preset_name("metric3d", *args)] = _make_metric3d_preset(*args)
+    def append_preset(*args):
+        retval[make_preset_name("metric3d", *args)
+               ] = _make_metric3d_preset(*args)
         retval[make_preset_name("moge", *args)] = _make_moge_preset(*args)
-        retval[make_preset_name("unidepth", *args)] = _make_unidepth_preset(*args)
+        retval[make_preset_name("unidepth", *args)
+               ] = _make_unidepth_preset(*args)
         for model_type in ["indoor", "outdoor"]:
             retval[make_preset_name(f"depth_anything_v2_{model_type}", *args)] = (
                 _make_depthanything_v2_preset(model_type, *args)
             )
+
+    for args in for_each_monodepth_setting_combination(
+        noise_std_scene_fractions=noise_std_scene_fractions,
+        mcmc=False,
+    ):
+        append_preset(*args)
+
+    for args in for_each_monodepth_setting_combination(
+        noise_std_scene_fractions=noise_std_scene_fractions,
+        mcmc=True,
+    ):
+        append_preset(*args)
 
     return retval

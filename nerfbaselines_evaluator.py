@@ -119,7 +119,14 @@ DEFAULT_PRESETS = [
         for name in ALL_PREDICTOR_NAMES
         for args in for_each_monodepth_setting_combination(
             [DepthAlignmentStrategyEnum.lstsqrs, DepthAlignmentStrategyEnum.msac],
-            downsample_factors=[10, 20, "adaptive"],
+            downsample_factors=[10, 20, "adaptive"], mcmc=False
+        )
+    ],
+    *[
+        make_preset_name("metric3d", *args)
+        for args in for_each_monodepth_setting_combination(
+            [DepthAlignmentStrategyEnum.lstsqrs, DepthAlignmentStrategyEnum.msac],
+            downsample_factors=[10, 20, "adaptive"], mcmc=True
         )
     ],
 ]
