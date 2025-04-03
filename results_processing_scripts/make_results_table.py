@@ -247,8 +247,7 @@ class MakeTableFuncs:
             best_row = None
             for row_ix, row in enumerate(table):
                 if row[param_ix] is not None and (
-                    best_row is None
-                    or row[param_ix] > table[best_row][param_ix]
+                    best_row is None or row[param_ix] > table[best_row][param_ix]
                 ):
                     best_row = row_ix
             best_row_per_param.append(best_row)
@@ -281,6 +280,7 @@ def main():
     parser.add_argument(
         "--scenes", nargs="+", default=None, help="Scenes to include in the table."
     )
+    parser.add_argument("--results-dir", type=str, default="./nerfbaselines_results")
     parser.add_argument(
         "--step",
         type=int,
@@ -333,7 +333,9 @@ def main():
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    dataset_dir = Path(f"./nerfbaselines_results/{args.dataset}/")
+    dataset_dir: Path = Path(args.results_dir) / args.dataset
+    if not dataset_dir.is_dir():
+        raise ValueError(f"Dataset directory {dataset_dir.absolute()} not found.")
 
     if args.subcommand == "single_param":
         params = [args.param]
