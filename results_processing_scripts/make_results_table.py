@@ -196,21 +196,24 @@ class MakeTableFuncs:
                 data_loader.try_get(scene, preset, args.param)
                 for preset in data_loader.presets
             ]
-            best_row_index = None
+            best_row_instance = None
 
-            for i, param in enumerate(params):
+            for param in params:
                 if param is None:
                     continue
-                if best_row_index is None or param > params[best_row_index]:
-                    best_row_index = i
+                if best_row_instance is None or param > best_row_instance:
+                    best_row_instance = param
 
             formatted_params = []
-            for i, param in enumerate(params):
+            for param in params:
                 if param is None:
                     formatted_params.append("-")
                 else:
                     formatted = param.get_formatted_value()
-                    if i == best_row_index and param.should_highlight_best:
+                    if (
+                        param.value == best_row_instance.value
+                        and param.should_highlight_best
+                    ):
                         formatted = format_best(formatted, args.output_format)
                     formatted_params.append(formatted)
 
@@ -242,15 +245,15 @@ class MakeTableFuncs:
                     row.append(None)
             table.append(row)
 
-        best_row_per_param = []
+        best_instance_per_param = []
         for param_ix in range(len(data_loader.params)):
-            best_row = None
+            best_val_instance = None
             for row_ix, row in enumerate(table):
                 if row[param_ix] is not None and (
-                    best_row is None or row[param_ix] > table[best_row][param_ix]
+                    best_val_instance is None or row[param_ix] > best_val_instance
                 ):
-                    best_row = row_ix
-            best_row_per_param.append(best_row)
+                    best_val_instance = row[param_ix]
+            best_instance_per_param.append(best_val_instance)
 
         first_row = ["Preset"] + [param.name for param in data_loader.params]
         formatted_table = [first_row]
@@ -263,7 +266,7 @@ class MakeTableFuncs:
                 formatted = param.get_formatted_value()
                 if (
                     param.should_highlight_best
-                    and row_ix == best_row_per_param[param_ix]
+                    and param.value == best_instance_per_param[param_ix].value
                 ):
                     formatted = format_best(formatted, args.output_format)
                 formatted_row.append(formatted)
