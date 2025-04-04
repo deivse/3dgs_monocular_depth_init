@@ -90,26 +90,26 @@ def get_dataset_scenes(dataset_id: str, exclude_list) -> list[str]:
     ]
 
 
-# ALL_SCENES = [
-#     *get_dataset_scenes("mipnerf360", []),
-#     *get_dataset_scenes("tanksandtemples", []),
-# ]
+ALL_SCENES = [
+    *get_dataset_scenes("mipnerf360", []),
+    *get_dataset_scenes("tanksandtemples", []),
+]
 
 # print(ALL_SCENES)
 
-ALL_SCENES = [
-    "mipnerf360/garden",  # PSNR worse, others better
-    "mipnerf360/bonsai",  # everything worse
-    "mipnerf360/stump",  # everything better
-    "mipnerf360/flowers",  # PSNR worse, others better
-    "mipnerf360/bicycle",  # everything better
-    "mipnerf360/kitchen",  # everything worse
-    "mipnerf360/treehill",  # PSNR worse, others better
-    "mipnerf360/room",  # everything better (but significantly more gaussians)
-    "mipnerf360/counter",  # PSNR worse, others better
-    "tanksandtemples/truck",  # PSNR worse, others better (only lpips) more gaussians
-    "tanksandtemples/train",  # PSNR worse, others better (only lpips) less gaussians
-]
+# ALL_SCENES = [
+#     "mipnerf360/garden",  # PSNR worse, others better
+#     "mipnerf360/bonsai",  # everything worse
+#     "mipnerf360/stump",  # everything better
+#     "mipnerf360/flowers",  # PSNR worse, others better
+#     "mipnerf360/bicycle",  # everything better
+#     "mipnerf360/kitchen",  # everything worse
+#     "mipnerf360/treehill",  # PSNR worse, others better
+#     "mipnerf360/room",  # everything better (but significantly more gaussians)
+#     "mipnerf360/counter",  # PSNR worse, others better
+#     "tanksandtemples/truck",  # PSNR worse, others better (only lpips) more gaussians
+#     "tanksandtemples/train",  # PSNR worse, others better (only lpips) less gaussians
+# ]
 
 
 DEFAULT_PRESETS = [
@@ -129,6 +129,7 @@ DEFAULT_PRESETS = [
             downsample_factors=[10, 20, "adaptive"], mcmc=True
         )
     ],
+    "sfm_mcmc",
 ]
 
 
