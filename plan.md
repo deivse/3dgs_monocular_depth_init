@@ -1,12 +1,15 @@
 # TODO
 - [x] RANSAC (MSAC)
-- [ ] Adaptive sub-sampling
-- [ ] Re-run experiments
-- [ ] Make it run on CIIRC cluster
-- [ ] Merging step
-    - simple things eg kmeans clustering
-    - agglomerative clustering of points
+- [x] Adaptive sub-sampling (kinda, depending on depth)
+- [x] Re-run experiments
+- [x] Make it run on RCI cluster
+- [x] Merging step: tried voxel downsampling
 - [ ] Test on more data - tanksandtemples
+- [ ] Capture my own scenes. What I want:
+    - Scene with specular surfaces.
+    - Scene where only a couple frames capture some secondary object.
+- [ ] Test with outlier removal?
+- [ ] Ablations?
 - [ ] Write the thesis
 - [ ] Profit
 
