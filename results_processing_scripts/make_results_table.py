@@ -2,7 +2,7 @@ import argparse
 import logging
 import re
 from pathlib import Path
-from typing import List
+from typing import Iterable, List
 from tqdm import tqdm
 
 from parameters import (
@@ -182,16 +182,25 @@ class DataLoader:
         self.presets.extend(sorted(all_presets))
 
     @property
-    def scenes(self):
-        return self.data.keys()
+    def scenes(self) -> List[str]:
+        return list(self.data.keys())
 
-    def try_get(self, scene, preset, param) -> ParameterInstance | None:
+    def try_get(
+        self, scene: str, preset: str, param: str | Parameter
+    ) -> ParameterInstance | None:
         try:
             if isinstance(param, str):
                 param = PARAMS[param]
             return self.data[scene][preset][param.name]
         except KeyError:
             return None
+
+
+def preset_without_predictor(preset_id: str):
+    KNOWN_PREDICTOR_IDS = ["metric3d", "unidepth", "depth_anything_v2", "moge"]
+    for predictor_id in KNOWN_PREDICTOR_IDS:
+        if predictor_id in preset_id:
+            return preset_id.replace(f"{predictor_id}_", "")
 
 
 def format_best(val, output_fmt):
@@ -296,6 +305,78 @@ class MakeTableFuncs:
 
         return formatted_table
 
+    def avg_per_config(data_loader: DataLoader, args):
+        """
+        Average over all configurations, ignoring predictor used, and over all scenes, for each param.
+        """
+        all_configs = set(preset_without_predictor(p) for p in data_loader.presets)
+        all_configs.remove(None)
+
+        i_per_param_per_base_preset: dict[str, dict[str, list[ParameterInstance]]] = {
+            param.name: {config: [] for config in all_configs}
+            for param in data_loader.params
+        }
+
+        for param in data_loader.params:
+            for preset in data_loader.presets:
+                config = preset_without_predictor(preset)
+                if config is None:
+                    continue
+
+                instances_for_all_scenes = [
+                    data_loader.try_get(scene, preset, param)
+                    for scene in data_loader.scenes
+                ]
+                i_per_param_per_base_preset[param.name][config].extend(
+                    instances_for_all_scenes
+                )
+
+        avg_per_param_per_config = {param.name: {} for param in data_loader.params}
+        for param in data_loader.params:
+            for config in all_configs:
+                instances = i_per_param_per_base_preset[param.name][config]
+                if None in instances:
+                    avg_per_param_per_config[param.name][config] = None
+                    continue
+
+                avg_per_param_per_config[param.name][config] = param.make_instance(
+                    sum(map(lambda x: x.value, instances)) / len(instances)
+                )
+
+        best_avg_per_param = {}
+        for param in data_loader.params:
+            best_avg_instance = None
+            for config, avg_instance in avg_per_param_per_config[param.name].items():
+                if avg_instance is None:
+                    continue
+                if best_avg_instance is None or avg_instance > best_avg_instance:
+                    best_avg_instance = avg_instance
+            best_avg_per_param[param.name] = best_avg_instance
+
+        formatted_table = [["Config"] + [param.name for param in data_loader.params]]
+        for config in sorted(all_configs):
+            row = [make_pretty_preset_name(config)]
+            had_val = False
+            for param in data_loader.params:
+                avg_instance: ParameterInstance = avg_per_param_per_config[
+                    param.name
+                ].get(config)
+                if avg_instance is None:
+                    row.append("-")
+                else:
+                    formatted = avg_instance.get_formatted_value()
+                    if (
+                        avg_instance.should_highlight_best
+                        and avg_instance.value == best_avg_per_param[param.name].value
+                    ):
+                        formatted = format_best(formatted, args.output_format)
+                    row.append(formatted)
+                    had_val = True
+            if had_val:
+                formatted_table.append(row)
+
+        return formatted_table
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -353,6 +434,8 @@ def main():
         "all_scene_avg",
     )
     all_scene_average.add_argument("params", nargs="+", choices=PARAMS.keys())
+    avg_per_config = subparsers.add_parser("avg_per_config")
+    avg_per_config.add_argument("params", nargs="+", choices=PARAMS.keys())
 
     args = parser.parse_args()
     if args.debug:
