@@ -16,7 +16,7 @@ from tabulate import tabulate
 
 
 def make_pretty_preset_name(preset_name: str) -> str:
-    preset_name = re.sub(r"depth_downsample_(\d+)", r"[\1]", preset_name)
+    preset_name = re.sub(r"depth_downsample_(\d+|adaptive)", r"[\1]", preset_name)
 
     name = preset_name.replace("_", " ")
     substitutions = {
@@ -197,7 +197,7 @@ class DataLoader:
 
 
 def preset_without_predictor(preset_id: str):
-    KNOWN_PREDICTOR_IDS = ["metric3d", "unidepth", "depth_anything_v2", "moge"]
+    KNOWN_PREDICTOR_IDS = ["metric3d", "unidepth", "depth_anything_v2_indoor", "depth_anything_v2_outdoor", "moge"]
     for predictor_id in KNOWN_PREDICTOR_IDS:
         if predictor_id in preset_id:
             return preset_id.replace(f"{predictor_id}_", "")
