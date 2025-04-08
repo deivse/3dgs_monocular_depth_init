@@ -118,15 +118,25 @@ DEFAULT_PRESETS = [
         make_preset_name(name, *args)
         for name in ALL_PREDICTOR_NAMES
         for args in for_each_monodepth_setting_combination(
-            [DepthAlignmentStrategyEnum.lstsqrs, DepthAlignmentStrategyEnum.msac],
-            downsample_factors=[10, 20, "adaptive"], mcmc=False
+            [
+                DepthAlignmentStrategyEnum.lstsqrs,
+                DepthAlignmentStrategyEnum.ransac,
+                DepthAlignmentStrategyEnum.msac,
+            ],
+            downsample_factors=[10, 20, 30, "adaptive"],
+            mcmc=False,
         )
     ],
     *[
         make_preset_name("metric3d", *args)
         for args in for_each_monodepth_setting_combination(
-            [DepthAlignmentStrategyEnum.lstsqrs, DepthAlignmentStrategyEnum.msac],
-            downsample_factors=[10, 20, "adaptive"], mcmc=True
+            [
+                DepthAlignmentStrategyEnum.lstsqrs,
+                DepthAlignmentStrategyEnum.ransac,
+                DepthAlignmentStrategyEnum.msac,
+            ],
+            downsample_factors=[10, 20, 30, "adaptive"],
+            mcmc=True,
         )
     ],
     "sfm_mcmc",
@@ -135,7 +145,7 @@ DEFAULT_PRESETS = [
 
 def print_default_presets():
     for i, preset in enumerate(DEFAULT_PRESETS):
-        print(f"{i+1}. {preset} [{i}]")
+        print(f"{i + 1}. {preset} [{i}]")
 
 
 def create_argument_parser():
