@@ -201,6 +201,7 @@ def preset_without_predictor(preset_id: str):
     for predictor_id in KNOWN_PREDICTOR_IDS:
         if predictor_id in preset_id:
             return preset_id.replace(f"{predictor_id}_", "")
+    return preset_id
 
 
 def format_best(val, output_fmt):
@@ -310,7 +311,6 @@ class MakeTableFuncs:
         Average over all configurations, ignoring predictor used, and over all scenes, for each param.
         """
         all_configs = set(preset_without_predictor(p) for p in data_loader.presets)
-        all_configs.remove(None)
 
         i_per_param_per_base_preset: dict[str, dict[str, list[ParameterInstance]]] = {
             param.name: {config: [] for config in all_configs}
@@ -320,8 +320,6 @@ class MakeTableFuncs:
         for param in data_loader.params:
             for preset in data_loader.presets:
                 config = preset_without_predictor(preset)
-                if config is None:
-                    continue
 
                 instances_for_all_scenes = [
                     data_loader.try_get(scene, preset, param)
