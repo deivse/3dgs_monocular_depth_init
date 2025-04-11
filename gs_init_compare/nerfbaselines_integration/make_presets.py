@@ -8,7 +8,7 @@ from gs_init_compare.depth_prediction.configs import Metric3dPreset
 
 
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
-PRESETS_DEPTH_SUBSAMPLE_FACTORS = [10, 20, "adaptive"]
+PRESETS_DEPTH_SUBSAMPLE_FACTORS = [10, 20, 30, "adaptive"]
 
 MCMC_DEFAULT_PARAMS = {
     "init_opa": 0.5,
