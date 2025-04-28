@@ -415,7 +415,6 @@ def main():
     if args.noise_test:
         print(ANSIEscapes.color("Running noise test...", "yellow"))
         for scene in get_dataset_scenes("mipnerf360", []):
-            preset = "metric3d_depth_downsample_adaptive_ransac"
             slurm_array_task_id = os.environ.get("SLURM_ARRAY_TASK_ID", None)
             if slurm_array_task_id is None:
                 fracs = ALL_NOISE_STD_SCENE_FRACTIONS
@@ -428,7 +427,7 @@ def main():
                     continue
                 run_combination(
                     scene,
-                    f"{preset}_noise_{noise_std_frac}",
+                    f"metric3d_depth_downsample_adaptive_noise_{noise_std_frac}_ransac",
                     args,
                     args_str,
                     eval_all_iters,
