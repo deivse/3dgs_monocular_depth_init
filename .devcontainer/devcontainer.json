@@ -10,7 +10,8 @@
 	},
 	"runArgs": [
 		"--gpus=all",
-		"--ipc=host"
+		"--ipc=host",
+		"--privileged"
 	],
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},

@@ -97,12 +97,29 @@
                 "default",
                 "--init-type=monocular_depth",
                 "--mdi.predictor=metric3d",
-                "--data-dir=data/360_v2/stump",
+                "--data-dir=data/360_v2/garden",
                 "--mdi.metric3d.config=${workspaceFolder}/metric3d_configs/vit.raft5.large.py",
                 "--mdi.metric3d.weights=${workspaceFolder}/metric3d_configs/metric_depth_vit_large_800k.pth",
                 "--mdi.pts-output-dir=mono_depth_init_ply",
                 "--mdi.subsample-factor=adaptive",
-                "--mdi.pts-output-per-image",
+                // "--mdi.pts-output-per-image",
+            ],
+            "cwd": "${workspaceFolder}/gs_init_compare/",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "gsplat trainer MCMC",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/gs_init_compare/trainer.py",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "mcmc",
+                "--strategy.cap-max=5979198",
+                "--data-dir=/root/.cache/nerfbaselines/datasets/mipnerf360/garden/"
             ],
             "cwd": "${workspaceFolder}/gs_init_compare/",
             "console": "integratedTerminal",

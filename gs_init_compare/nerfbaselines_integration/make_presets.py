@@ -154,11 +154,9 @@ def make_presets(noise_std_scene_fractions=None) -> dict[str, dict]:
     }
 
     def append_preset(*args):
-        retval[make_preset_name("metric3d", *args)
-               ] = _make_metric3d_preset(*args)
+        retval[make_preset_name("metric3d", *args)] = _make_metric3d_preset(*args)
         retval[make_preset_name("moge", *args)] = _make_moge_preset(*args)
-        retval[make_preset_name("unidepth", *args)
-               ] = _make_unidepth_preset(*args)
+        retval[make_preset_name("unidepth", *args)] = _make_unidepth_preset(*args)
         for model_type in ["indoor", "outdoor"]:
             retval[make_preset_name(f"depth_anything_v2_{model_type}", *args)] = (
                 _make_depthanything_v2_preset(model_type, *args)

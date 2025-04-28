@@ -13,6 +13,7 @@ from itertools import product
 import sys
 from gs_init_compare.depth_alignment.config import DepthAlignmentStrategyEnum
 from gs_init_compare.nerfbaselines_integration.make_presets import (
+    ALL_NOISE_STD_SCENE_FRACTIONS,
     ALL_PREDICTOR_NAMES,
     for_each_monodepth_setting_combination,
     make_preset_name,
@@ -161,6 +162,12 @@ def create_argument_parser():
         nargs="+",
         default=DEFAULT_PRESETS,
         help="Presets to pass to the method.",
+    )
+    add_argument(
+        "--noise-test",
+        action="store_true",
+        default=False,
+        help="If true, runs the noise ablation test.",
     )
     add_argument(
         "--output-dir",
@@ -381,21 +388,6 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
         print(ANSIEscapes.color(f"Error: Training output not found:\n {e}", "red"))
 
 
-BESTISH_PRESET_PER_SCENE = {
-    "mipnerf360/garden": "metric3d_depth_downsample_10",
-    "mipnerf360/bonsai": "metric3d_depth_downsample_30",
-    "mipnerf360/stump": "metric3d_depth_downsample_10",
-    "mipnerf360/flowers": "unidepth_depth_downsample_10",
-    "mipnerf360/bicycle": "unidepth_depth_downsample_10",
-    "mipnerf360/kitchen": "depth_anything_v2_outdoor_depth_downsample_10",
-    "mipnerf360/treehill": "metric3d_depth_downsample_10",
-    "mipnerf360/room": "metric3d_depth_downsample_10",
-    "mipnerf360/counter": "metric3d_depth_downsample_10",
-    "tanksandtemples/truck": "metric3d_depth_downsample_10",
-    "tanksandtemples/train": "depth_anything_v2_outdoor_depth_downsample_20",
-}
-
-
 def main():
     sys.stdout.reconfigure(line_buffering=True)
     args = create_argument_parser().parse_args()
@@ -420,6 +412,22 @@ def main():
 
     args_str = get_args_str(args)
 
+    if args.noise_test:
+        print(ANSIEscapes.color("Running noise test...", "yellow"))
+        for scene in get_dataset_scenes("mipnerf360", []):
+            preset = "metric3d_depth_downsample_adaptive_ransac"
+            for noise_std_frac in ALL_NOISE_STD_SCENE_FRACTIONS:
+                if noise_std_frac is None:
+                    continue
+                run_combination(
+                    scene,
+                    f"{preset}_noise_{noise_std_frac}",
+                    args,
+                    args_str,
+                    eval_all_iters,
+                )
+        sys.exit(0)
+
     combinations = list(product(args.scenes, args.presets))
     print(
         ANSIEscapes.color("_" * 80, "bold"),
@@ -436,19 +444,6 @@ def main():
 
     for scene, preset in combinations:
         run_combination(scene, preset, args, args_str, eval_all_iters)
-
-    # for scene in args.scenes:
-    #     preset = BESTISH_PRESET_PER_SCENE[scene]
-    #     for noise_std_frac in ALL_NOISE_STD_SCENE_FRACTIONS:
-    #         if noise_std_frac is None:
-    #             continue
-    #         run_combination(
-    #             scene,
-    #             f"{preset}_noise_{noise_std_frac}",
-    #             args,
-    #             args_str,
-    #             eval_all_iters,
-    #         )
 
 
 if __name__ == "__main__":
