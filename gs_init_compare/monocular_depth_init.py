@@ -141,7 +141,6 @@ def pts_and_rgb_from_monocular_depth(
             )
 
         try:
-            # TODO: Adaptive downsampling as optional feature!!
             points, adaptive_ds_mask, valid_point_indices = get_pts_from_depth(
                 predicted_depth,
                 image,
@@ -151,7 +150,6 @@ def pts_and_rgb_from_monocular_depth(
                 cam2world,
                 K,
                 config.mdi.depth_alignment_strategy,
-                # downsample_factor=downsample_factor,
                 debug_point_cloud_export_dir=(
                     Path(config.mdi.pts_output_dir)
                     / dataset_name
