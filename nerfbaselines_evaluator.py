@@ -292,13 +292,17 @@ def read_param_from_last_tensorboard_step(file, param_name):
     return scalars[-1].value
 
 
-def get_final_num_gaussians(output_dir: Path) -> int:
-    tensorboard_file = next((output_dir / "tensorboard").glob("events.out.tfevents.*"))
-    value = read_param_from_last_tensorboard_step(
-        tensorboard_file, "train/num-gaussians"
-    )
-    print(f"Final number of gaussians for sfm: {value}")
-    return int(value)
+MCMC_GAUSSIAN_CAPS = {
+    "garden": 6000000,
+    "bonsai": 4800000,
+    "stump": 4700000,
+    "flowers": 3700000,
+    "bicycle": 6100000,
+    "kitchen": 4300000,
+    "treehill": 3800000,
+    "room": 5500000,
+    "counter": 4000000,
+}
 
 
 def run_combination(scene, preset, args, args_str, eval_all_iters):
@@ -356,7 +360,7 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
         overrides_cli.extend(
             [
                 "--set",
-                f"strategy.cap_max={get_final_num_gaussians(curr_output_dir.parent / 'sfm')}",
+                f"strategy.cap_max={MCMC_GAUSSIAN_CAPS[scene]}",
             ]
         )
 
