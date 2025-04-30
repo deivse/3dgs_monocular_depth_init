@@ -293,15 +293,15 @@ def read_param_from_last_tensorboard_step(file, param_name):
 
 
 MCMC_GAUSSIAN_CAPS = {
-    "garden": 6000000,
-    "bonsai": 4800000,
-    "stump": 4700000,
-    "flowers": 3700000,
-    "bicycle": 6100000,
-    "kitchen": 4300000,
-    "treehill": 3800000,
-    "room": 5500000,
-    "counter": 4000000,
+    "mipnerf360/garden": 6000000,
+    "mipnerf360/bonsai": 4800000,
+    "mipnerf360/stump": 4700000,
+    "mipnerf360/flowers": 3700000,
+    "mipnerf360/bicycle": 6100000,
+    "mipnerf360/kitchen": 4300000,
+    "mipnerf360/treehill": 3800000,
+    "mipnerf360/room": 5500000,
+    "mipnerf360/counter": 4000000,
 }
 
 
