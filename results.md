@@ -1,7 +1,7 @@
 # Quantitative evaluation results
 
 All results were measured using this implementation.
-Please see the thesis (#TODO: URL) for a precise description of evaluation methodology, specification of preset name structure and for additional results. Best results indicated by "*", best preset in italic.
+Please see the thesis (URL coming soon™) for a precise description of evaluation methodology, specification of preset name structure and for additional results. Best results indicated by "*", best preset in italic.
 
 ### Average results on MipNerf360 (9 scene version)
 
