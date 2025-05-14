@@ -40,7 +40,7 @@ To install all dependencies, including git submodule initialization, run the `in
 This software, excluding the third-party modules listed below, is distributed under the [MIT license](LICENSE).
 
 - Several files in `gs_init_compare` are based on the [gsplat examples](https://github.com/nerfstudio-project/gsplat/tree/main/examples), which 
-are distributed under the [Apache 2.0 license](LICENSE_gsplat_examples). Modifications have been made to the code in order to integrate it with 
+are distributed under the [Apache 2.0 license](gs_init_compare/LICENSE_gsplat_examples). Modifications have been made to the code in order to integrate it with 
 the overall application structure, add support for monocular depth initialization, and improve integration with `nerfbaselines`.
 - `gs_init_compare/lib_bilagrid.py` is distributed under the [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0).
 - `gs_init_compare/third_party/metric3d` contains a slightly modified version of the metric3d repository, and is distributed under the [BSD 2-Clause License](gs_init_compare/third_party/metric3d/LICENSE). The modifications were required to fix python include issues.
