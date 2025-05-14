@@ -4,13 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gs_init_compare"
-version = "0.1.0"
+version = "1.0.0"
 # Dynamic dependencies used to facilitate using project-relative paths for some dependencies
 dynamic = ["dependencies"]
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
-authors = [{ name = "Ivan Desiatov", email = "desiaiva@cvut.cz" }]
-maintainers = [{ name = "Ivan Desiatov", email = "desiaiva@cvut.cz" }]
-description = "TODO"
+authors = [{ name = "Ivan Desiatov", email = "deivse@gmail.com" }]
+maintainers = [{ name = "Ivan Desiatov", email = "deivse@gmail.com" }]
+description = "3DGS initialized from monocular depth prediction."
+readme = "README.md"
 classifiers = ["Programming Language :: Python"]
 
 [tool.setuptools]
