@@ -1,4 +1,4 @@
-# 3DGS Initialization from Monocular Depth Predictions.
+# 3DGS Initialization from Monocular Depth Predictions
 
 This repository contains the source code used in my master's thesis at the Faculty of Electrical Engineering of the Czech Technical University, titled "Using Monocular Depth Estimates to Improve 3D Gaussian Splatting".
 
