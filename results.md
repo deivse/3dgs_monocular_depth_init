@@ -3,7 +3,7 @@
 All results were measured using this implementation.
 Please see the thesis (#TODO: URL) for a precise description of evaluation methodology, specification of preset name structure and for additional results. Best results indicated by "*", best preset in italic.
 
-### MipNerf360 (9 scene version)
+### Average results on MipNerf360 (9 scene version)
 
 | Preset                          | PSNR         | SSIM        | LPIPS       | LPIPS(VGG)   |                                                                                                                                                        
 |---------------------------------|--------------|-------------|-------------|--------------|                                                                                                                                                        
@@ -14,7 +14,7 @@ Please see the thesis (#TODO: URL) for a precise description of evaluation metho
 | MoGe [adaptive] Ransac          | 27.413       | 0.825       | 0.150       | 0.227        |
 | UniDepth [adaptive] Ransac      | 27.466       | 0.823       | 0.152       | 0.229        |
 
-### Tanks\&Temples
+### Average results on Tanks&Temples
 
 | Preset                          | PSNR         | SSIM        | LPIPS       |                                                                                                                                                                       
 |---------------------------------|--------------|-------------|-------------|                                                                                                                                                                       
