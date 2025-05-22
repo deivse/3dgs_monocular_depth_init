@@ -30,7 +30,6 @@ def _color_grad_intensity_map(
     Args:
         `rgb`                        input RGB image `[H, W, 3]`
         `possible_subsample_factors` range of possible subsample factors in increasing order
-        `tile_size`                  size of tiles on which subsampling factor is uniform
         `grad_approx_gauss_sigma`    sigma for gaussian kernel used to approximate
                                      gradient of the image
     """
