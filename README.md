@@ -4,7 +4,7 @@ This repository contains the source code used in my master's thesis at the Facul
 
 ![Select qualitative results](qualitative_results.png)
 
-*More qualitative and quantitative results are available [here](results.md), or see the [thesis itself](http://hdl.handle.net/10467/123491), for full detailed evaluation.*
+*More qualitative and quantitative results are available [here](results.md), or see the [thesis itself](http://hdl.handle.net/10467/123491) (click "PLNY_TEXT (97.85Mb)"), for full detailed evaluation.*
 
 ## Setup instructions
 
