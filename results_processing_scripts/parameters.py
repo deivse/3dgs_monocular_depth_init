@@ -89,6 +89,20 @@ class Parameter(abc.ABC):
             self.name, value, self.ordering, self.formatter, self.should_highlight_best
         )
 
+def average_param_instances(param_instances):
+    if not param_instances:
+        return None
+
+    total_value = sum(instance.value for instance in param_instances)
+    average_value = total_value / len(param_instances)
+
+    return ParameterInstance(
+        name=param_instances[0].name,
+        value=average_value,
+        ordering=param_instances[0].ordering,
+        formatter=param_instances[0].formatter,
+        should_highlight_best=param_instances[0].should_highlight_best,
+    )
 
 class TensorboardParameter(Parameter):
     def __init__(

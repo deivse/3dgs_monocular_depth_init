@@ -11,6 +11,7 @@ from parameters import (
     Parameter,
     ParameterInstance,
     TensorboardParameter,
+    average_param_instances,
 )
 from tabulate import tabulate
 
@@ -118,7 +119,7 @@ class PresetFilter:
 class DataLoader:
     def __init__(
         self,
-        dataset_dir: Path,
+        dataset_dirs: list[Path],
         scenes: list[str],
         param_names: list[str],
         step: int,
@@ -138,40 +139,56 @@ class DataLoader:
         scene_pbar = tqdm(scenes, leave=False)
         for scene_name in scene_pbar:
             scene_pbar.set_description(f"Processing {scene_name}")
-            scene_dir = dataset_dir / scene_name
-            if not scene_dir.is_dir():
-                continue
+            presets_for_scene: dict[list] = {}
 
-            presets_for_scene = {}
+            for dataset_dir in tqdm(dataset_dirs, leave=False):
+                scene_dir = dataset_dir / scene_name
+                if not scene_dir.is_dir():
+                    continue
 
-            preset_dirs = [
-                preset_dir
-                for preset_dir in scene_dir.iterdir()
-                if preset_dir.is_dir() and preset_filter.allows(preset_dir.name)
-            ]
 
-            preset_pbar = tqdm(preset_dirs, leave=False)
-            for preset_dir in preset_pbar:
-                preset_pbar.set_description(f"Processing {preset_dir.name}")
+                preset_dirs = [
+                    preset_dir
+                    for preset_dir in scene_dir.iterdir()
+                    if preset_dir.is_dir() and preset_filter.allows(preset_dir.name)
+                ]
 
-                params_for_preset = {}
+                preset_pbar = tqdm(preset_dirs, leave=False)
+                for preset_dir in preset_pbar:
+                    preset_pbar.set_description(f"Processing {preset_dir.name}")
 
-                logging.debug(f"Processing {preset_dir}")
+                    params_for_preset: dict[list] = presets_for_scene.setdefault(preset_dir.name, {})
 
-                param_pbar = tqdm(params, leave=False)
-                for param in param_pbar:
-                    param_pbar.set_description(f"Processing {param.name}")
-                    try:
-                        params_for_preset[param.name] = param.load(preset_dir, step)
-                    except Exception as e:
-                        logging.error(
-                            f"Error loading {param.name} for {preset_dir}: {e}"
+                    logging.debug(f"Processing {preset_dir}")
+
+                    param_pbar = tqdm(params, leave=False)
+                    for param in param_pbar:
+                        param_pbar.set_description(f"Processing {param.name}")
+                        try:
+                            params_for_preset.setdefault(param.name, [])
+                            params_for_preset[param.name].append(param.load(preset_dir, step))
+                        except Exception as e:
+                            logging.error(
+                                f"Error loading {param.name} for {preset_dir}: {e}"
+                            )
+                            continue
+                        
+                    presets_for_scene[preset_dir.name] = params_for_preset
+                    all_presets.add(preset_dir.name)
+
+            averaged_presets_for_scene = {}
+            for preset_name, param_instances in presets_for_scene.items():
+                averaged_params_for_preset = {}
+                for param_name, param_instances in param_instances.items():
+                    if len(param_instances) != len(dataset_dirs):
+                        logging.warning(
+                            f"Not all runs have {param_name} for {preset_name} in {scene_name}. "
+                            f"Expected {len(dataset_dirs)}, got {len(param_instances)}."
                         )
-                        continue
-
-                presets_for_scene[preset_dir.name] = params_for_preset
-                all_presets.add(preset_dir.name)
-            retval[scene_dir.name] = presets_for_scene
+                    averaged_params_for_preset[param_name] = average_param_instances(param_instances)
+                averaged_presets_for_scene[preset_name] = averaged_params_for_preset
+                    
+            retval[scene_dir.name] = averaged_presets_for_scene
 
         self.data = retval
         self.params = params
@@ -384,7 +401,7 @@ def main():
     parser.add_argument(
         "--scenes", nargs="+", default=None, help="Scenes to include in the table."
     )
-    parser.add_argument("--results-dir", type=str, default="./nerfbaselines_results")
+    parser.add_argument("--results-dirs", nargs="+", type=str, default=["./nerfbaselines_results"])
     parser.add_argument(
         "--step",
         type=int,
@@ -439,9 +456,10 @@ def main():
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    dataset_dir: Path = Path(args.results_dir) / args.dataset
-    if not dataset_dir.is_dir():
-        raise ValueError(f"Dataset directory {dataset_dir.absolute()} not found.")
+    dataset_dirs: list[Path] = [Path(results_dir) / args.dataset for results_dir in args.results_dirs]
+    for dir in dataset_dirs:
+        if not dir.is_dir():
+            raise ValueError(f"Dataset directory {dir.absolute()} not found.")
 
     if args.subcommand == "single_param":
         params = [args.param]
@@ -454,7 +472,7 @@ def main():
         scenes = args.scenes
 
     data_loader = DataLoader(
-        dataset_dir,
+        dataset_dirs,
         scenes,
         params,
         args.step,
