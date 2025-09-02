@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 import numpy as np
 import torch
 
@@ -35,7 +35,6 @@ def debug_export_point_clouds(
     transform_c2w,
     sfm_points,
     pts_world,
-    masked_out_world,
     parser,
     image_name,
     downsample_mask,
@@ -90,17 +89,6 @@ def debug_export_point_clouds(
         "my_points_world",
     )
 
-    if masked_out_world.shape[0] == 0:
-        return
-
-    red = np.array([1, 0, 0])
-    export_point_cloud_to_ply(
-        masked_out_world.cpu().numpy(),
-        np.tile(red, (masked_out_world.shape[0], 1)),
-        dir,
-        "my_outliers_world",
-    )
-
 
 def get_valid_sfm_pts(sfm_pts_camera, sfm_pts_camera_depth, mask, imsize):
     valid_sfm_pt_indices = torch.logical_and(
@@ -153,14 +141,18 @@ def align_depth(
     return strategy.estimate_alignment(predicted_depth, sfm_points_depth)
 
 
+class InputImage(NamedTuple):
+    data: torch.Tensor
+    name: str
+    cam2world: torch.Tensor
+    K: torch.Tensor
+
+
 def get_pts_from_depth(
     predicted_depth: PredictedDepth,
-    image: torch.Tensor,
-    image_name: str,
+    image: InputImage,
     parser: Parser | NerfbaselinesParser,
     subsampler: DepthSubsampler,
-    cam2world: torch.Tensor,
-    K: torch.Tensor,
     depth_alignment_strategy: DepthAlignmentStrategyEnum,
     debug_point_cloud_export_dir: Optional[Path] = None,
 ):
@@ -177,20 +169,20 @@ def get_pts_from_depth(
 
     depth = predicted_depth.depth.float()
     imsize = depth.T.shape
-    w2c = torch.linalg.inv(cam2world)
+    w2c = torch.linalg.inv(image.cam2world)
     R = w2c[:3, :3]
     C = -R.T @ w2c[:3, 3]
-    P = K @ R @ torch.hstack([torch.eye(3), -C[:, None]])
+    P = image.K @ R @ torch.hstack([torch.eye(3), -C[:, None]])
 
     sfm_points = (
-        torch.from_numpy(parser.points[parser.point_indices[image_name]])
+        torch.from_numpy(parser.points[parser.point_indices[image.name]])
         .to(depth.device)
         .float()
     )
 
-    cam2world = cam2world.to(depth.device).float()
+    cam2world = image.cam2world.to(depth.device).float()
     P = P.to(depth.device).float()
-    K = K.to(depth.device).float()
+    K = image.K.to(depth.device).float()
 
     def transform_camera_to_world_space(camera_homo: torch.Tensor) -> torch.Tensor:
         dense_world = torch.linalg.inv(K) @ camera_homo.reshape((-1, 3)).T
@@ -215,8 +207,9 @@ def get_pts_from_depth(
     )
     aligned_depth = depth_alignment.scale * depth + depth_alignment.shift
 
+    # get_mask should apply mask_from_predictor as well
     subsampling_mask = subsampler.get_mask(
-        image, aligned_depth, mask_from_predictor
+        image.data, aligned_depth, mask_from_predictor
     ).cpu()
 
     pts_camera: torch.Tensor = (
@@ -232,16 +225,12 @@ def get_pts_from_depth(
         .to(depth.device)
     )
 
-    subsampled_mask_from_predictor = mask_from_predictor.reshape(-1)[subsampling_mask]
-
     pts_camera[:, 0] = (pts_camera[:, 0] + 0.5) * pts_camera[:, 2]
     pts_camera[:, 1] = (pts_camera[:, 1] + 0.5) * pts_camera[:, 2]
 
-    pts_world_unfiltered = transform_camera_to_world_space(pts_camera)
-    pts_world = pts_world_unfiltered[subsampled_mask_from_predictor]
+    pts_world = transform_camera_to_world_space(pts_camera)
 
     if debug_point_cloud_export_dir is not None:
-        masked_out_world = pts_world_unfiltered[~subsampled_mask_from_predictor]
         debug_export_point_clouds(
             imsize,
             cam2world,
@@ -249,16 +238,11 @@ def get_pts_from_depth(
             transform_camera_to_world_space,
             sfm_points,
             pts_world,
-            masked_out_world,
             parser,
-            image_name,
+            image.name,
             subsampling_mask.cpu(),
-            image,
+            image.data,
             debug_point_cloud_export_dir,
         )
 
-    return (
-        pts_world.reshape([-1, 3]).float(),
-        subsampling_mask,
-        subsampled_mask_from_predictor.cpu(),
-    )
+    return (pts_world.reshape([-1, 3]).float(), subsampling_mask.cpu())

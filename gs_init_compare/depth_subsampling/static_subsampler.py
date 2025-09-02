@@ -14,6 +14,9 @@ class StaticDepthSubsampler(DepthSubsampler):
         )
 
         return torch.logical_and(
-            (pixel_coords[:, 0] % self.subsample_factor) == 0,
-            (pixel_coords[:, 1] % self.subsample_factor) == 0,
+            torch.logical_and(
+                (pixel_coords[:, 0] % self.subsample_factor) == 0,
+                (pixel_coords[:, 1] % self.subsample_factor) == 0,
+            ),
+            mask_from_predictor.view(-1),
         )

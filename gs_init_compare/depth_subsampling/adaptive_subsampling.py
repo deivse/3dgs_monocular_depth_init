@@ -8,6 +8,7 @@ from gs_init_compare.depth_prediction.utils.image_filtering import (
 from gs_init_compare.depth_subsampling.config import AdaptiveSubsamplingConfig
 from gs_init_compare.depth_subsampling.interface import DepthSubsampler
 
+
 def _map_to_range(tensor: torch.Tensor, output_range=(0.0, 1.0), input_range=None):
     if input_range is None:
         input_range = (tensor.min(), tensor.max())
@@ -101,8 +102,8 @@ def get_depth_multipler_map(depth: torch.Tensor, mask: torch.Tensor):
 class AdaptiveDepthSubsampler(DepthSubsampler):
     config: AdaptiveSubsamplingConfig
 
-    def get_mask(self, rgb, depth, depth_mask):
-        multiplier_map = get_depth_multipler_map(depth, depth_mask)
+    def get_mask(self, rgb, depth, mask_from_predictor):
+        multiplier_map = get_depth_multipler_map(depth, mask_from_predictor)
         factor_map = torch.clamp(
             _map_to_range(
                 multiplier_map,
@@ -112,4 +113,6 @@ class AdaptiveDepthSubsampler(DepthSubsampler):
             self.config.factor_range[0],
             self.config.factor_range[1],
         )
-        return get_sample_mask(factor_map.to(int), rgb.shape[:2])
+        return torch.logical_and(
+            get_sample_mask(factor_map.to(int), rgb.shape[:2]), mask_from_predictor.view(-1)
+        )

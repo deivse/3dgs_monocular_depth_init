@@ -16,6 +16,7 @@ from gs_init_compare.depth_prediction.utils.point_cloud_export import (
     export_point_cloud_to_ply,
 )
 from gs_init_compare.depth_prediction.points_from_depth import (
+    InputImage,
     LowDepthAlignmentConfidenceError,
     get_pts_from_depth,
 )
@@ -62,14 +63,13 @@ def predict_depth_or_get_cached_depth(
     model: DepthPredictor,
     image: torch.Tensor,
     intrinsics: CameraIntrinsics,
-    image_id,
+    image_name: str,
     config: Config,
     dataset_name: str,
 ):
     cache_dir = Path(config.mdi.cache_dir) / model.name / dataset_name
 
     cache_dir.mkdir(exist_ok=True, parents=True)
-    image_name = str(image_id)
     cache_path = cache_dir / f"{image_name}.pth"
 
     depth = None
@@ -125,39 +125,40 @@ def pts_and_rgb_from_monocular_depth(
     )
     print("Running monocular depth initialization...")
     for data in progress_bar:
-        image_id = data["image_id"]
-        cam2world = data["camtoworld"]
-        image_name = data["image_name"]
-        K = data["K"]
-        intrinsics = CameraIntrinsics(K)
-
         # Check that the image is actually 0-255
         assert data["image"].max() > 1
-        image: torch.Tensor = data["image"] / 255.0
+
+        image = InputImage(
+            name=data["image_name"],
+            cam2world=data["camtoworld"],
+            K=data["K"],
+            data=data["image"] / 255.0,
+        )
+        intrinsics = CameraIntrinsics(image.K)
 
         with torch.no_grad():
             predicted_depth = predict_depth_or_get_cached_depth(
-                model, image, intrinsics, image_id, config, dataset_name
+                model,
+                image.data,
+                intrinsics,
+                image.name,
+                config,
+                dataset_name,
             )
 
         try:
-            points, adaptive_ds_mask, valid_point_indices = get_pts_from_depth(
+            debug_point_cloud_export_dir = (
+                Path(config.mdi.pts_output_dir) / dataset_name / model.name / image.name
+                if config.mdi.pts_output_dir and config.mdi.pts_output_per_image
+                else None
+            )
+            points, subsampling_mask = get_pts_from_depth(
                 predicted_depth,
                 image,
-                image_name,
                 parser,
                 get_subsampler(config),
-                cam2world,
-                K,
                 config.mdi.depth_alignment_strategy,
-                debug_point_cloud_export_dir=(
-                    Path(config.mdi.pts_output_dir)
-                    / dataset_name
-                    / model.name
-                    / image_name
-                    if config.mdi.pts_output_dir and config.mdi.pts_output_per_image
-                    else None
-                ),
+                debug_point_cloud_export_dir,
             )
 
             if config.mdi.noise_std_scene_frac is not None:
@@ -167,21 +168,12 @@ def pts_and_rgb_from_monocular_depth(
 
         except LowDepthAlignmentConfidenceError as e:
             _LOGGER.warning(
-                f"Low depth alignment confidence for image {image_name}: {e}"
+                f"Low depth alignment confidence for image {image.name}: {e}"
             )
             continue
-        progress_bar.set_description(
-            f"Last processed '{image_name}'",
-            refresh=True,
-        )
+        progress_bar.set_description(f"Last processed '{image.name}'", refresh=True)
 
-        if points is None:
-            _LOGGER.warning(f"Failed to get points for image {image_name}")
-            continue
-
-        rgbs = image.view([-1, 3])[adaptive_ds_mask]
-        # valid point indices are for a downsampled and flattened array
-        rgbs = rgbs[valid_point_indices]
+        rgbs = image.data.view([-1, 3])[subsampling_mask]
         points_list.append(points)
         rgbs_list.append(rgbs.float())
 
