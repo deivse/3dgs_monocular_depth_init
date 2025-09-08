@@ -20,11 +20,7 @@ from gs_init_compare.depth_prediction.points_from_depth import (
     LowDepthAlignmentConfidenceError,
     get_pts_from_depth,
 )
-from gs_init_compare.depth_subsampling.adaptive_subsampling import (
-    AdaptiveDepthSubsampler,
-)
 from gs_init_compare.point_cloud_postprocess.postprocess import postprocess_point_cloud
-from gs_init_compare.depth_subsampling.static_subsampler import StaticDepthSubsampler
 from gs_init_compare.utils.cuda_memory import cuda_stats_msg
 
 
@@ -56,7 +52,8 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
 
         return DepthAnythingV2
     else:
-        raise ValueError(f"Unsupported monodepth model: {config.mdi.predictor}")
+        raise ValueError(
+            f"Unsupported monodepth model: {config.mdi.predictor}")
 
 
 def predict_depth_or_get_cached_depth(
@@ -77,7 +74,8 @@ def predict_depth_or_get_cached_depth(
         try:
             depth = torch.load(cache_path)
         except Exception as e:
-            _LOGGER.warning(f"Failed to load cached depth for image {image_name}: {e}")
+            _LOGGER.warning(
+                f"Failed to load cached depth for image {image_name}: {e}")
 
     # TODO: support for models that can predict points directly
     if depth is None:
@@ -95,25 +93,17 @@ def add_noise_to_point_cloud(pts: torch.Tensor, noise_std: float):
     return pts + noise
 
 
-def get_subsampler(cfg: Config):
-    if cfg.mdi.subsample_factor == "adaptive":
-        return AdaptiveDepthSubsampler(cfg.mdi.adaptive_subsampling)
-    elif isinstance(cfg.mdi.subsample_factor, int):
-        return StaticDepthSubsampler(cfg.mdi.subsample_factor)
-    else:
-        raise ValueError(f"Unsupported subsampling factor: {cfg.mdi.subsample_factor}")
-
-
+@torch.no_grad()
 def pts_and_rgb_from_monocular_depth(
     config: Config, parser: Parser, device: str = "cuda"
 ):
-    print(cuda_stats_msg(device, "Before loading model"))
+    _LOGGER.info(cuda_stats_msg(device, "Before loading model"))
     model = pick_model(config)(config, device)
-    _LOGGER.info(f"Using depth predictor model: {model.name}")
+    _LOGGER.info("Using depth predictor model: %s", model.name)
 
     dataset_name = parser.dataset_name
 
-    print(cuda_stats_msg(device, "After loading model"))
+    _LOGGER.info(cuda_stats_msg(device, "After loading model"))
 
     points_list: List[torch.Tensor] = []
     rgbs_list: List[torch.Tensor] = []
@@ -123,7 +113,8 @@ def pts_and_rgb_from_monocular_depth(
         dataset,
         desc="Calculating init points from monocular depth",
     )
-    print("Running monocular depth initialization...")
+
+    _LOGGER.info("Running monocular depth initialization...")
     for data in progress_bar:
         # Check that the image is actually 0-255
         assert data["image"].max() > 1
@@ -136,55 +127,59 @@ def pts_and_rgb_from_monocular_depth(
         )
         intrinsics = CameraIntrinsics(image.K)
 
-        with torch.no_grad():
-            predicted_depth = predict_depth_or_get_cached_depth(
-                model,
-                image.data,
-                intrinsics,
-                image.name,
-                config,
-                dataset_name,
-            )
+        predicted_depth = predict_depth_or_get_cached_depth(
+            model,
+            image.data,
+            intrinsics,
+            image.name,
+            config,
+            dataset_name,
+        )
+        assert predicted_depth.depth.device == torch.device(device)
+
+        debug_point_cloud_export_dir = (
+            Path(config.mdi.pts_output_dir) /
+            dataset_name / model.name / image.name
+            if config.mdi.pts_output_dir and config.mdi.pts_output_per_image
+            else None
+        )
 
         try:
-            debug_point_cloud_export_dir = (
-                Path(config.mdi.pts_output_dir) / dataset_name / model.name / image.name
-                if config.mdi.pts_output_dir and config.mdi.pts_output_per_image
-                else None
-            )
             points, subsampling_mask = get_pts_from_depth(
                 predicted_depth,
                 image,
                 parser,
-                get_subsampler(config),
-                config.mdi.depth_alignment_strategy,
+                config,
+                device,
                 debug_point_cloud_export_dir,
             )
-
-            if config.mdi.noise_std_scene_frac is not None:
-                points = add_noise_to_point_cloud(
-                    points, parser.scene_scale * config.mdi.noise_std_scene_frac
-                )
-
         except LowDepthAlignmentConfidenceError as e:
             _LOGGER.warning(
-                f"Low depth alignment confidence for image {image.name}: {e}"
+                "Low depth alignment confidence for image %s: {%s}", image.name, e
             )
             continue
-        progress_bar.set_description(f"Last processed '{image.name}'", refresh=True)
+
+        if config.mdi.noise_std_scene_frac is not None:
+            points = add_noise_to_point_cloud(
+                points, parser.scene_scale * config.mdi.noise_std_scene_frac
+            )
 
         rgbs = image.data.view([-1, 3])[subsampling_mask]
+
         points_list.append(points)
         rgbs_list.append(rgbs.float())
+
+        progress_bar.set_description(
+            f"Last processed '{image.name}'", refresh=True)
 
     pts = torch.cat(points_list, dim=0).float()
     rgbs = torch.cat(rgbs_list, dim=0).float()
 
-    print("Num points before postprocess:", pts.shape[0])
+    _LOGGER.info("Num points before postprocess: %d", pts.shape[0])
     pts, rgbs = postprocess_point_cloud(
-        pts, rgbs, parser.scene_scale, config.mdi.postprocess
+        pts, rgbs, parser.scene_scale, config.mdi.postprocess, device
     )
-    print("Num points after postprocess:", pts.shape[0])
+    _LOGGER.info("Num points after postprocess: %d", pts.shape[0])
 
     if config.mdi.pts_output_dir is not None:
         output_dir = Path(config.mdi.pts_output_dir) / dataset_name

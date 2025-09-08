@@ -5,6 +5,7 @@ Runs training and evaluation for multiple scenes and initialization strategies, 
 from datetime import datetime
 import os
 from pathlib import Path
+import shutil
 import subprocess
 
 import argparse
@@ -93,7 +94,7 @@ def get_dataset_scenes(dataset_id: str, exclude_list) -> list[str]:
 
 ALL_SCENES = [
     *get_dataset_scenes("mipnerf360", []),
-    *get_dataset_scenes("tanksandtemples", []),
+    # *get_dataset_scenes("tanksandtemples", []),
 ]
 
 # print(ALL_SCENES)
@@ -251,7 +252,7 @@ def output_dir_needs_overwrite(
         return True
 
     if not directory_exists_and_has_files(output_dir):
-        return False
+        return True
 
     try:
         with open(output_dir / ARGS_STR_FILENAME, "r") as f:
@@ -317,7 +318,7 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
             f"{curr_output_dir.name}_{args.run_label}"
         )
 
-    if curr_output_dir.exists() and not args.pts_only:
+    if directory_exists_and_has_files(curr_output_dir) and not args.pts_only:
         if not curr_output_dir.is_dir():
             raise ValueError(f"Output path is not a directory: {curr_output_dir}")
 
@@ -379,7 +380,7 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
     )
 
     try:
-        # shutil.rmtree(curr_output_dir / "checkpoint-30000")
+        shutil.rmtree(curr_output_dir / "checkpoint-30000")
 
         # Remove unnecessary outputs cuz I would run out of disk space...
         Path(curr_output_dir / "output.zip").unlink()

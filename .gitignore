@@ -1,5 +1,6 @@
 .venv/
 __pycache__
+.cache/
 recon_cache/
 ply_exports_*
 gs_init_compare/third_party/metric3d/weight/*.pth
@@ -14,3 +15,4 @@ __mono_depth_cache__/
 *.egg-info/
 /tmp_*/
 mono_depth_init_ply/
+compile_commands.json

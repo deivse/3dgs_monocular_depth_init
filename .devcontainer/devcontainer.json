@@ -34,5 +34,6 @@
 			]
 		}
 	},
-	"remoteUser": "root"
+	"remoteUser": "root",
+	"appPort": "2222:22"
 }

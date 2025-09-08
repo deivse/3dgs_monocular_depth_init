@@ -1,8 +1,18 @@
 from dataclasses import dataclass
 
+from enum import Enum
+
+
+class OutlierRemovalMethod(str, Enum):
+    off = "none"
+    lof = "lof"
+
 
 @dataclass
 class PointCloudPostprocessConfig:
-    voxel_subsample: bool = False
-    voxel_size_wrt_scene_extent: float = 2e-3
-    outlier_removal: bool = False
+    knn_outlier_removal: bool = True
+    outlier_removal: OutlierRemovalMethod = OutlierRemovalMethod.lof
+    octree_clustering: bool = True
+
+    def requires_descriptors(self) -> bool:
+        return False
