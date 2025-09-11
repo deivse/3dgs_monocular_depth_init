@@ -4,6 +4,7 @@ import torch
 from gs_init_compare.depth_prediction.utils.point_cloud_export import (
     export_point_cloud_to_ply,
 )
+
 from pointcloud_subsampling import subsample_pointcloud
 
 from .config import OutlierRemovalMethod, PointCloudPostprocessConfig
@@ -35,9 +36,12 @@ def get_outlier_removal_func(method: OutlierRemovalMethod):
 def postprocess_point_cloud(
     pts: torch.Tensor,
     rgbs: torch.Tensor,
-    scene_scale: float,
+    intrinsic_matrices: list[np.ndarray],
+    proj_matrices: list[np.ndarray],
+    image_sizes: np.ndarray,
+    points_to_cam_slices: list[tuple[int, int]],
     config: PointCloudPostprocessConfig,
-    device: str
+    device: str,
 ):
     if config.outlier_removal != OutlierRemovalMethod.off:
         outliers = get_outlier_removal_func(config.outlier_removal)(pts, rgbs)
@@ -57,24 +61,16 @@ def postprocess_point_cloud(
 
         pts = pts[~outliers]
         rgbs = rgbs[~outliers]
-        if config.requires_descriptors():
-            descriptors = descriptors[~outliers]
-            patches = patches[~outliers]
 
-    if config.octree_clustering:
-        pts
-    return pts.to(device), rgbs.to(device)
+    if config.nyquist_subsample:
+        pts, rgbs, _ = subsample_pointcloud(
+            pts.cpu().numpy(),
+            rgbs.cpu().numpy(),
+            intrinsic_matrices,
+            proj_matrices,
+            image_sizes,
+            points_to_cam_slices,
+            1.0,
+        )
 
-    # gc.collect()
-    # # Pickle each item separately
-    # items = {
-    #     "points": pts.cpu(),
-    #     "colors": rgbs.cpu(),
-    #     "descriptors": descriptors.cpu(),
-    #     "patches": patches.cpu(),
-    # }
-
-    # with Path("data.pkl").open("wb") as f:
-    #     pickle.dump(items, f)
-
-    # TODO: READ THIS FUCKING VIBE-CODED MESS
+    return torch.tensor(pts).to(device), torch.tensor(rgbs).to(device)

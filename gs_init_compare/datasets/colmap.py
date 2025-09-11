@@ -64,7 +64,7 @@ class Parser:
         bottom = np.array([0, 0, 0, 1]).reshape(1, 4)
         image: pycolmap.Image
         for image in reconstruction.images.values():
-            w2c_mats.append(np.vstack([image.cam_from_world.matrix(), bottom]))
+            w2c_mats.append(np.vstack([image.cam_from_world().matrix(), bottom]))
 
             # support different camera intrinsics
             camera_id = image.camera_id

@@ -5,6 +5,25 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "(gdb) Attach",
+            "type": "cppdbg",
+            "request": "attach",
+            "program": "/root/miniforge3/envs/gs_init_compare/bin/python",
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
             "name": "make_results_table",
             "type": "debugpy",
             "request": "launch",
@@ -100,7 +119,7 @@
                 "--init-type=monocular_depth",
                 "--mdi.predictor=metric3d",
                 "--mdi.metric3d.preset=vit_large",
-                "--data-dir=data/360_v2/bonsai",
+                "--data-dir=data/360_v2/garden",
                 "--mdi.pts-output-dir=mono_depth_init_ply",
                 "--mdi.subsample-factor=adaptive",
                 "--mdi.pts-only"
@@ -110,6 +129,47 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "guiEventLoop": "none",
+        },
+        {
+            "name": "(gdb) gsplat trainer metric3d vit large",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/root/miniforge3/envs/gs_init_compare/bin/python",
+            "args": [
+                "${workspaceFolder}/gs_init_compare/trainer.py",
+                "default",
+                "--init-type=monocular_depth",
+                "--mdi.predictor=metric3d",
+                "--mdi.metric3d.preset=vit_large",
+                "--data-dir=data/360_v2/garden",
+                "--mdi.pts-output-dir=mono_depth_init_ply",
+                "--mdi.subsample-factor=adaptive",
+                "--mdi.pts-only"
+                // "--mdi.pts-output-per-image",
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/gs_init_compare/",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "Python Debugger: Attach using Process Id",
+            "type": "debugpy",
+            "request": "attach",
+            "processId": "${command:pickProcess}"
         },
         {
             "name": "gsplat trainer MCMC",
@@ -129,5 +189,14 @@
             "justMyCode": false,
             "guiEventLoop": "none",
         },
+    ],
+    "compounds": [
+        {
+            "name": "Trainer + C++ Debug",
+            "configurations": [
+                "gsplat trainer metric3d vit large",
+                "(gdb) Attach"
+            ]
+        }
     ]
 }

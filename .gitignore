@@ -16,3 +16,4 @@ __mono_depth_cache__/
 /tmp_*/
 mono_depth_init_ply/
 compile_commands.json
+eigen_gdb_printer/

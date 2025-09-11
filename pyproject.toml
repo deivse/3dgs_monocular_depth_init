@@ -15,8 +15,8 @@ description = "3DGS initialized from monocular depth prediction."
 readme = "README.md"
 classifiers = ["Programming Language :: Python"]
 
-[tool.setuptools]
-packages = ["gs_init_compare"]
+[tool.setuptools.packages.find]
+where = ["."]
 
 [tool.ruff]
 line-length = 88

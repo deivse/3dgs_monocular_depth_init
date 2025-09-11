@@ -1,7 +1,10 @@
 from nerfbaselines import register
 
-from gs_init_compare.nerfbaselines_integration.make_presets import make_presets
+import sys
+from pathlib import Path
 
+sys.path.insert(0, Path(__file__).parent.parent.parent.as_posix())
+from gs_init_compare.nerfbaselines_integration.make_presets import make_presets
 
 _name = "gs-init-compare"
 

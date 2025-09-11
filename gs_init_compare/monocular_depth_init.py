@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 from typing import List, Type
 
+import numpy as np
 import torch
 from tqdm import tqdm
 
@@ -52,8 +53,7 @@ def pick_model(config: Config) -> Type[DepthPredictor]:
 
         return DepthAnythingV2
     else:
-        raise ValueError(
-            f"Unsupported monodepth model: {config.mdi.predictor}")
+        raise ValueError(f"Unsupported monodepth model: {config.mdi.predictor}")
 
 
 def predict_depth_or_get_cached_depth(
@@ -74,8 +74,7 @@ def predict_depth_or_get_cached_depth(
         try:
             depth = torch.load(cache_path)
         except Exception as e:
-            _LOGGER.warning(
-                f"Failed to load cached depth for image {image_name}: {e}")
+            _LOGGER.warning(f"Failed to load cached depth for image {image_name}: {e}")
 
     # TODO: support for models that can predict points directly
     if depth is None:
@@ -113,9 +112,14 @@ def pts_and_rgb_from_monocular_depth(
         dataset,
         desc="Calculating init points from monocular depth",
     )
+    intrinsic_matrices = []
+    proj_matrices = []
+    points_to_cam_slices = []
+    curr_num_points = 0
+    image_sizes = np.empty((len(dataset), 2), dtype=np.int32)
 
     _LOGGER.info("Running monocular depth initialization...")
-    for data in progress_bar:
+    for i, data in enumerate(progress_bar):
         # Check that the image is actually 0-255
         assert data["image"].max() > 1
 
@@ -138,14 +142,13 @@ def pts_and_rgb_from_monocular_depth(
         assert predicted_depth.depth.device == torch.device(device)
 
         debug_point_cloud_export_dir = (
-            Path(config.mdi.pts_output_dir) /
-            dataset_name / model.name / image.name
+            Path(config.mdi.pts_output_dir) / dataset_name / model.name / image.name
             if config.mdi.pts_output_dir and config.mdi.pts_output_per_image
             else None
         )
 
         try:
-            points, subsampling_mask = get_pts_from_depth(
+            points, subsampling_mask, P = get_pts_from_depth(
                 predicted_depth,
                 image,
                 parser,
@@ -169,15 +172,30 @@ def pts_and_rgb_from_monocular_depth(
         points_list.append(points)
         rgbs_list.append(rgbs.float())
 
-        progress_bar.set_description(
-            f"Last processed '{image.name}'", refresh=True)
+        points_to_cam_slices.append(
+            (curr_num_points, curr_num_points + points.shape[0])
+        )
+        curr_num_points += points.shape[0]
+
+        intrinsic_matrices.append(image.K.cpu().numpy())
+        proj_matrices.append(P.cpu().numpy())
+        image_sizes[i] = np.array(image.data.shape[:2][::-1], dtype=np.int32)
+
+        progress_bar.set_description(f"Last processed '{image.name}'", refresh=True)
 
     pts = torch.cat(points_list, dim=0).float()
     rgbs = torch.cat(rgbs_list, dim=0).float()
 
     _LOGGER.info("Num points before postprocess: %d", pts.shape[0])
     pts, rgbs = postprocess_point_cloud(
-        pts, rgbs, parser.scene_scale, config.mdi.postprocess, device
+        pts,
+        rgbs,
+        intrinsic_matrices,
+        proj_matrices,
+        image_sizes,
+        points_to_cam_slices,
+        config.mdi.postprocess,
+        device,
     )
     _LOGGER.info("Num points after postprocess: %d", pts.shape[0])
 
@@ -198,4 +216,5 @@ def pts_and_rgb_from_monocular_depth(
         if config.mdi.pts_only:
             sys.exit(0)
 
+    # TODO: try limiting initial gaussian size to some 75th percentile of avg dist to 3 nearest neighbor instead of allowing to create giant gaussians
     return pts, rgbs
