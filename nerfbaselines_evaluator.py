@@ -380,7 +380,11 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
     )
 
     try:
-        shutil.rmtree(curr_output_dir / "checkpoint-30000")
+        checkpoint_dir = curr_output_dir / f"checkpoint-{args.max_steps}"
+        splat_file = checkpoint_dir / f"splats_{args.max_steps}.ply"
+        if splat_file.exists():
+            splat_file.rename(curr_output_dir / splat_file.name)
+        shutil.rmtree(checkpoint_dir)
 
         # Remove unnecessary outputs cuz I would run out of disk space...
         Path(curr_output_dir / "output.zip").unlink()

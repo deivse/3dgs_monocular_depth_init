@@ -104,6 +104,7 @@ class Config:
     eval_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
     # Steps to save the model
     save_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
+    save_final_ply: bool = True
 
     # Initialization strategy
     init_type: Literal["sfm", "random", "monocular_depth"] = "sfm"

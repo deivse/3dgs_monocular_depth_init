@@ -70,7 +70,7 @@ def postprocess_point_cloud(
             proj_matrices,
             image_sizes,
             points_to_cam_slices,
-            1.0,
+            config.nyquist_subsample_factor,
         )
 
     return torch.tensor(pts).to(device), torch.tensor(rgbs).to(device)

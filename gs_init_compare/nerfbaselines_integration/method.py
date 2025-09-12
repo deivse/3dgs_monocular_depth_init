@@ -490,12 +490,12 @@ schedulers=self.schedulers
 
     # Save method
     save_step_body = save_step.body[4:]  # Strip saving stats
-    save_step_body.insert(0, ast.parse("cfg=self.cfg").body[0])
-    save_step_body.insert(0, ast.parse("world_size=self.world_size").body[0])
     # Change saving location
-    save_step_body[-1].value.args[1].values[0].value = ast.Name(
+    save_step_body[0].value = ast.Name(
         id="path", ctx=ast.Load(), lineno=0, col_offset=0
     )
+    save_step_body.insert(0, ast.parse("cfg=self.cfg").body[0])
+    save_step_body.insert(0, ast.parse("world_size=self.world_size").body[0])
     runner_ast.body.append(
         ast.FunctionDef(
             lineno=0,

@@ -18,6 +18,7 @@ from fused_ssim import fused_ssim
 from gsplat.compression import PngCompression
 from gsplat.rendering import rasterization
 from gsplat.strategy import DefaultStrategy, MCMCStrategy
+from gsplat.exporter import export_splats
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
@@ -600,6 +601,7 @@ class Runner:
                     "w",
                 ) as f:
                     json.dump(stats, f)
+                save_path = self.ckpt_dir
                 data = {"step": step, "splats": self.splats.state_dict()}
                 if cfg.pose_opt:
                     if world_size > 1:
@@ -611,9 +613,26 @@ class Runner:
                         data["app_module"] = self.app_module.module.state_dict()
                     else:
                         data["app_module"] = self.app_module.state_dict()
-                torch.save(
-                    data, f"{self.ckpt_dir}/ckpt_{step}_rank{self.world_rank}.pt"
-                )
+
+                if cfg.save_final_ply:
+                    means = self.splats["means"]
+                    scales = self.splats["scales"]
+                    quats = self.splats["quats"]
+                    opacities = self.splats["opacities"]
+                    sh0 = self.splats["sh0"]
+                    shN = self.splats["shN"]
+                    export_splats(
+                        means=means,
+                        scales=scales,
+                        quats=quats,
+                        opacities=opacities,
+                        sh0=sh0,
+                        shN=shN,
+                        format="ply",
+                        save_to=f"{save_path}/splats_{step}.ply",
+                    )
+
+                torch.save(data, f"{save_path}/ckpt_{step}_rank{self.world_rank}.pt")
 
             if isinstance(self.cfg.strategy, DefaultStrategy):
                 self.cfg.strategy.step_post_backward(
