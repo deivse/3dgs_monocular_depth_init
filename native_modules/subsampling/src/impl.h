@@ -24,6 +24,14 @@ struct PointCloud
 {
     py::array_t<FloatT> positions;
     py::array_t<FloatT> rgbs;
+
+    auto get_mut_unchecked() { return std::make_pair(positions.mutable_unchecked<2>(), rgbs.mutable_unchecked<2>()); }
+    auto get_unchecked() const { return std::make_pair(positions.unchecked<2>(), rgbs.unchecked<2>()); }
+
+    void resize(py::ssize_t num_points) {
+        positions.resize({num_points, py::ssize_t_cast(3)});
+        rgbs.resize({num_points, py::ssize_t_cast(3)});
+    }
 };
 
 std::vector<FloatT> compute_minimal_gaussian_extents(const py::array_t<FloatT>& points,
@@ -32,8 +40,9 @@ std::vector<FloatT> compute_minimal_gaussian_extents(const py::array_t<FloatT>& 
                                                      const py::array_t<IntT>& image_sizes,
                                                      const std::vector<std::pair<IntT, IntT>>& points_to_cam_slices);
 
-PointCloud subsample_pointcloud_impl(const PointCloud& pointcloud, const std::vector<FloatT>& min_gaussian_extents,
-                                     FloatT min_extent_mult);
+std::pair<PointCloud, PointCloud> subsample_pointcloud_impl(const PointCloud& pointcloud,
+                                                            const std::vector<FloatT>& min_gaussian_extents,
+                                                            FloatT min_extent_mult);
 
 } // namespace mdi::pointcloud
 

@@ -12,11 +12,14 @@ enum class Axis : uint8_t
 {
     X,
     Y,
-    Z
+    Z,
+    NUM_AXES
 };
 
-inline uint8_t axis_to_int(Axis axis) { return static_cast<uint8_t>(axis); }
-inline Axis axis_from_int(uint8_t axis) { return static_cast<Axis>(axis); }
+inline constexpr uint8_t axis_to_int(Axis axis) { return static_cast<uint8_t>(axis); }
+inline constexpr Axis axis_from_int(uint8_t axis) { return static_cast<Axis>(axis); }
+
+constexpr auto NumAxes = axis_to_int(Axis::NUM_AXES);
 
 struct BoundingBox
 {
@@ -43,6 +46,17 @@ struct BoundingBox
         BoundingBox box2 = *this;
         box2.min[axis_idx] = split_value;
         return {box1, box2};
+    }
+
+    Axis longest_axis() const {
+        const auto diag = diagonal();
+        if (diag.x() >= diag.y() && diag.x() >= diag.z()) {
+            return Axis::X;
+        } else if (diag.y() >= diag.x() && diag.y() >= diag.z()) {
+            return Axis::Y;
+        } else {
+            return Axis::Z;
+        }
     }
 };
 

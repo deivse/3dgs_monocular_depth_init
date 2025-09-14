@@ -12,4 +12,4 @@ class OutlierRemovalMethod(str, Enum):
 class PointCloudPostprocessConfig:
     outlier_removal: OutlierRemovalMethod = OutlierRemovalMethod.off
     nyquist_subsample: bool = True
-    nyquist_subsample_factor: float = 1.0
+    nyquist_subsample_factor: float = 1

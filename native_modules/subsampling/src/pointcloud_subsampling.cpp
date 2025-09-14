@@ -19,7 +19,7 @@ namespace mdi::pointcloud {
 using input_float_array_t = py::array_t<FloatT, py_array_packed_row_major | py::array::forcecast>;
 using input_int_array_t = py::array_t<IntT, py_array_packed_row_major | py::array::forcecast>;
 
-std::tuple<py::array_t<FloatT>, py::array_t<FloatT>, py::array_t<FloatT>>
+std::tuple<py::array_t<FloatT>, py::array_t<FloatT>, py::array_t<FloatT>, py::array_t<FloatT>, py::array_t<FloatT>>
   subsample_pointcloud(input_float_array_t points, input_float_array_t rgbs,
                        const std::vector<FMatrix3D>& intrinsic_matrices,
                        const std::vector<FMatrix3x4>& camera_2_world_matrices, input_int_array_t image_sizes,
@@ -53,12 +53,13 @@ std::tuple<py::array_t<FloatT>, py::array_t<FloatT>, py::array_t<FloatT>>
     const auto min_gaussian_extents = compute_minimal_gaussian_extents(
       points, intrinsic_matrices, camera_2_world_matrices, image_sizes, points_to_cam_slices);
 
-    PointCloud subsampled = subsample_pointcloud_impl(PointCloud{points, rgbs}, min_gaussian_extents, min_extent_mult);
+    auto&& [subsampled, debug_out]
+      = subsample_pointcloud_impl(PointCloud{points, rgbs}, min_gaussian_extents, min_extent_mult);
 
     py::array_t<FloatT, py::array::c_style> out_extents(min_gaussian_extents.size());
     std::memcpy(out_extents.mutable_data(), min_gaussian_extents.data(), min_gaussian_extents.size() * sizeof(FloatT));
 
-    return {std::move(subsampled.positions), std::move(subsampled.rgbs), std::move(out_extents)};
+    return {std::move(subsampled.positions), std::move(subsampled.rgbs), std::move(out_extents), std::move(debug_out.positions), std::move(debug_out.rgbs)};
 }
 
 PYBIND11_MODULE(_pointcloud_subsampling, m, py::mod_gil_not_used()) {

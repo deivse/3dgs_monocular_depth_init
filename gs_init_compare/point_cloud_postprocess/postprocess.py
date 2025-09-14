@@ -63,7 +63,7 @@ def postprocess_point_cloud(
         rgbs = rgbs[~outliers]
 
     if config.nyquist_subsample:
-        pts, rgbs, _ = subsample_pointcloud(
+        pts, rgbs, _, merged, mergedrgb = subsample_pointcloud(
             pts.cpu().numpy(),
             rgbs.cpu().numpy(),
             intrinsic_matrices,
@@ -71,6 +71,12 @@ def postprocess_point_cloud(
             image_sizes,
             points_to_cam_slices,
             config.nyquist_subsample_factor,
+        )
+        export_point_cloud_to_ply(
+            merged,
+            mergedrgb,
+            Path.cwd(),
+            "merged",
         )
 
     return torch.tensor(pts).to(device), torch.tensor(rgbs).to(device)
