@@ -23,7 +23,7 @@ std::tuple<py::array_t<FloatT>, py::array_t<FloatT>, py::array_t<FloatT>, py::ar
   subsample_pointcloud(input_float_array_t points, input_float_array_t rgbs,
                        const std::vector<FMatrix3D>& intrinsic_matrices,
                        const std::vector<FMatrix3x4>& camera_2_world_matrices, input_int_array_t image_sizes,
-                       const std::vector<std::pair<IntT, IntT>>& points_to_cam_slices, FloatT min_extent_mult = 1.0f) {
+                       const py::object& params) {
     constexpr auto PointsDataDim = 3;
     constexpr auto RgbsDataDim = 3;
     constexpr auto ImageSizesDataDim = 2;
@@ -50,19 +50,23 @@ std::tuple<py::array_t<FloatT>, py::array_t<FloatT>, py::array_t<FloatT>, py::ar
           "Number of intrinsic_matrices must match number of camera_2_world_matrices and image_sizes.");
     }
 
-    const auto min_gaussian_extents = compute_minimal_gaussian_extents(
-      points, intrinsic_matrices, camera_2_world_matrices, image_sizes, points_to_cam_slices);
+    const FloatT min_extent_mult = params.attr("min_extent_multiplier").cast<FloatT>();
+    const FloatT max_bbox_aspect_ratio = params.attr("max_bbox_aspect_ratio").cast<FloatT>();
 
-    auto&& [subsampled, debug_out]
-      = subsample_pointcloud_impl(PointCloud{points, rgbs}, min_gaussian_extents, min_extent_mult);
+    const auto min_gaussian_extents
+      = compute_minimal_gaussian_extents(points, intrinsic_matrices, camera_2_world_matrices, image_sizes);
+
+    auto&& [subsampled, debug_out] = subsample_pointcloud_impl(PointCloud{points, rgbs}, min_gaussian_extents,
+                                                               max_bbox_aspect_ratio, min_extent_mult);
 
     py::array_t<FloatT, py::array::c_style> out_extents(min_gaussian_extents.size());
     std::memcpy(out_extents.mutable_data(), min_gaussian_extents.data(), min_gaussian_extents.size() * sizeof(FloatT));
 
-    return {std::move(subsampled.positions), std::move(subsampled.rgbs), std::move(out_extents), std::move(debug_out.positions), std::move(debug_out.rgbs)};
+    return {std::move(subsampled.positions), std::move(subsampled.rgbs), std::move(out_extents),
+            std::move(debug_out.positions), std::move(debug_out.rgbs)};
 }
 
-PYBIND11_MODULE(_pointcloud_subsampling, m, py::mod_gil_not_used()) {
+PYBIND11_MODULE(_pointcloud_subsampling, m) {
     m.doc() = R"pbdoc(
         3DGS Monocular Depth Initialization Pointcloud Subsampling Module
         -----------------------
@@ -75,7 +79,9 @@ PYBIND11_MODULE(_pointcloud_subsampling, m, py::mod_gil_not_used()) {
            subsample_pointcloud
     )pbdoc";
 
-    m.def("subsample_pointcloud", &subsample_pointcloud);
+    m.def("subsample_pointcloud", &subsample_pointcloud, 
+          py::arg("points"), py::arg("rgbs"), py::arg("intrinsic_matrices"), 
+          py::arg("camera_2_world_matrices"), py::arg("image_sizes"), py::arg("params"));
 
 #ifdef VERSION_INFO
     m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);

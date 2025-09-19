@@ -25,7 +25,7 @@ setup(
         "pycolmap~=3.11",
         "microsoft-python-type-stubs @ git+https://github.com/microsoft/python-type-stubs.git",
         "pillow",
-        "nerfbaselines~=1.2.8",
+        "nerfbaselines==1.2.8",
         "open3d~=0.18.0",
         # Moge requirements
         "click",

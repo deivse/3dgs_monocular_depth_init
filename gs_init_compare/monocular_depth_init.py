@@ -114,8 +114,6 @@ def pts_and_rgb_from_monocular_depth(
     )
     intrinsic_matrices = []
     proj_matrices = []
-    points_to_cam_slices = []
-    curr_num_points = 0
     image_sizes = np.empty((len(dataset), 2), dtype=np.int32)
 
     _LOGGER.info("Running monocular depth initialization...")
@@ -172,11 +170,6 @@ def pts_and_rgb_from_monocular_depth(
         points_list.append(points)
         rgbs_list.append(rgbs.float())
 
-        points_to_cam_slices.append(
-            (curr_num_points, curr_num_points + points.shape[0])
-        )
-        curr_num_points += points.shape[0]
-
         intrinsic_matrices.append(image.K.cpu().numpy())
         proj_matrices.append(P.cpu().numpy())
         image_sizes[i] = np.array(image.data.shape[:2][::-1], dtype=np.int32)
@@ -193,7 +186,6 @@ def pts_and_rgb_from_monocular_depth(
         intrinsic_matrices,
         proj_matrices,
         image_sizes,
-        points_to_cam_slices,
         config.mdi.postprocess,
         device,
     )

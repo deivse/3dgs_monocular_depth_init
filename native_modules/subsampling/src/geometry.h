@@ -8,6 +8,9 @@ namespace mdi::geom {
 template<typename R, typename T>
 concept forward_range_of = std::ranges::forward_range<R> && std::same_as<std::ranges::range_value_t<R>, T>;
 
+template<typename R, typename T>
+concept random_access_range_of = std::ranges::random_access_range<R> && std::same_as<std::ranges::range_value_t<R>, T>;
+
 enum class Axis : uint8_t
 {
     X,
@@ -35,6 +38,28 @@ struct BoundingBox
             retval.max = retval.max.cwiseMax(point);
         }
         return retval;
+    }
+
+    static BoundingBox from_points(random_access_range_of<FVector3D> auto&& points,
+                                   std::ranges::forward_range auto&& indices) {
+        const auto min_val = std::numeric_limits<FVector3D::value_type>::lowest();
+        const auto max_val = std::numeric_limits<FVector3D::value_type>::max();
+        BoundingBox retval{.min = {max_val, max_val, max_val}, .max = {min_val, min_val, min_val}};
+
+        for (auto ix : indices) {
+            retval.min = retval.min.cwiseMin(points[ix]);
+            retval.max = retval.max.cwiseMax(points[ix]);
+        }
+        return retval;
+    }
+
+    static BoundingBox cube_from_points(forward_range_of<FVector3D> auto&& points) {
+        BoundingBox box = from_points(points);
+        const auto diag = box.diagonal();
+        const auto max_dim = diag.maxCoeff();
+        const auto center = (box.min + box.max) / 2.0f;
+        const auto half_size = FVector3D::Constant(max_dim / 2.0f);
+        return BoundingBox{.min = center - half_size, .max = center + half_size};
     }
 
     FVector3D diagonal() const { return max - min; }

@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 from enum import Enum
 
+from pointcloud_subsampling.subsampling_params import PointCloudSubsamplingParams
+
 
 class OutlierRemovalMethod(str, Enum):
     off = "none"
@@ -11,5 +13,6 @@ class OutlierRemovalMethod(str, Enum):
 @dataclass
 class PointCloudPostprocessConfig:
     outlier_removal: OutlierRemovalMethod = OutlierRemovalMethod.off
-    nyquist_subsample: bool = True
-    nyquist_subsample_factor: float = 1
+    lof_num_neighbors: int = 40
+    subsample: bool = False
+    subsample_params: PointCloudSubsamplingParams = PointCloudSubsamplingParams()

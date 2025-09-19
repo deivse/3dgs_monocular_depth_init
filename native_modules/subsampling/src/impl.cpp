@@ -3,6 +3,7 @@
 #include "geometry.h"
 #include "stack.h"
 #include "stat_accumulator.h"
+#include "util.h"
 
 #include <Eigen/Dense>
 #include <iostream>
@@ -12,31 +13,67 @@
 
 namespace mdi::pointcloud {
 
-std::optional<FloatT> get_point_depth_in_camera(const FVector3D& point, const FMatrix3D& K,
-                                                const FMatrix3x4& proj_matrix, const Eigen::Vector2i& image_size) {
-    const auto homogeneous_point = point.homogeneous();
-    const auto projected_point = proj_matrix * homogeneous_point;
-    const FloatT depth = projected_point.z();
+namespace {
+    std::optional<FloatT> get_point_depth_in_camera(const FVector3D& point, const FMatrix3D& K,
+                                                    const FMatrix3x4& proj_matrix, const Eigen::Vector2i& image_size) {
+        const auto homogeneous_point = point.homogeneous();
+        const auto projected_point = proj_matrix * homogeneous_point;
+        const FloatT depth = projected_point.z();
 
-    if (depth <= 0) {
-        return std::nullopt;
+        if (depth <= 0) {
+            return std::nullopt;
+        }
+
+        const auto u = projected_point.x() / depth;
+        const auto v = projected_point.y() / depth;
+
+        if (u < 0 || u >= image_size.x() || v < 0 || v >= image_size.y()) {
+            return std::nullopt;
+        }
+
+        return depth;
     }
 
-    const auto u = projected_point.x() / depth;
-    const auto v = projected_point.y() / depth;
+    struct ComputeMinGaussianExtentsStats
+    {
+        std::chrono::high_resolution_clock::time_point start_time, end_time;
+        std::chrono::duration<double> duration;
+        size_t num_points = 0;
+        size_t num_unobserved_points = 0;
 
-    if (u < 0 || u >= image_size.x() || v < 0 || v >= image_size.y()) {
-        return std::nullopt;
-    }
+        void start_timer() { start_time = std::chrono::high_resolution_clock::now(); }
+        void stop_timer() {
+            end_time = std::chrono::high_resolution_clock::now();
+            duration = end_time - start_time;
+        }
 
-    return depth;
-}
+        void add_point(bool observed) {
+            num_points++;
+            if (!observed) {
+                num_unobserved_points++;
+            }
+        }
+
+        std::string to_string() const {
+            std::ostringstream oss;
+            oss << "ComputeMinGaussianExtentsStats:\n";
+            oss << "  Time taken: " << duration.count() << " seconds\n";
+            oss << "  Number of points: " << num_points << "\n";
+            oss << "  Number of unobserved points: " << num_unobserved_points << "\n";
+            return oss.str();
+        }
+        void print() const { std::cout << to_string(); }
+        void save() const { util::dump_str_to_file("min_gaussian_extents_stats.txt", to_string()); }
+    };
+} // namespace
 
 std::vector<FloatT> compute_minimal_gaussian_extents(const py::array_t<FloatT>& points,
                                                      const std::vector<FMatrix3D>& intrinsic_matrices,
                                                      const std::vector<FMatrix3x4>& proj_matrices,
-                                                     const py::array_t<IntT>& image_sizes,
-                                                     const std::vector<std::pair<IntT, IntT>>& points_to_cam_slices) {
+                                                     const py::array_t<IntT>& image_sizes) {
+    ComputeMinGaussianExtentsStats stats{};
+    stats.start_timer();
+
     std::vector<FloatT> min_gaussian_extents(points.shape(0), std::numeric_limits<FloatT>::max());
 
     const auto num_cameras = intrinsic_matrices.size();
@@ -73,24 +110,27 @@ std::vector<FloatT> compute_minimal_gaussian_extents(const py::array_t<FloatT>& 
     }
 
     for (auto& extent : min_gaussian_extents) {
-        if (extent == std::numeric_limits<FloatT>::max()) {
+        if (extent != std::numeric_limits<FloatT>::max()) {
+            stats.add_point(true);
+        } else {
             extent = static_cast<FloatT>(-1.0); // No valid observation, set extent to -1
+            stats.add_point(false);
         }
     }
+
+    stats.stop_timer();
+    stats.print();
+    stats.save();
 
     return min_gaussian_extents;
 }
 
-// TODO: refactor and collect stats about:
-// - sizes of BB of merged points
-// - distribution of min_gaussian_extents of merged points
 namespace {
     struct SubsamplePointcloudStats
     {
         StatAccumulator bbox_aspect_ratio;
         StatAccumulator bbox_min_size;
         StatAccumulator bbox_max_size;
-        StatAccumulator bbox_biggest_dim_above_extent;
         StatAccumulator merged_min_gaussian_extent;
         StatAccumulator merged_num_points_in_leaf;
         std::chrono::high_resolution_clock::time_point start_time, end_time;
@@ -99,14 +139,14 @@ namespace {
         size_t total_fallback_splits = 0;
         size_t num_merged_points = 0;
         size_t num_unmerged_points = 0;
+        size_t initial_num_points = 0;
+        size_t final_num_points = 0;
 
-        void add_merged(const geom::BoundingBox& box, FloatT min_gaussian_extent, size_t num_points_in_leaf) {
-            const auto diag = box.diagonal();
-            const auto aspect_ratio = diag.maxCoeff() / diag.minCoeff();
-            bbox_aspect_ratio.add(aspect_ratio);
-            bbox_min_size.add(diag.minCoeff());
-            bbox_max_size.add(diag.maxCoeff());
-            bbox_biggest_dim_above_extent.add(std::max(FloatT(0), diag.maxCoeff() - min_gaussian_extent));
+        void add_merged(FloatT aspect, const FVector3D& tight_box_diag, FloatT min_gaussian_extent,
+                        size_t num_points_in_leaf) {
+            bbox_aspect_ratio.add(aspect);
+            bbox_min_size.add(tight_box_diag.minCoeff());
+            bbox_max_size.add(tight_box_diag.maxCoeff());
             merged_min_gaussian_extent.add(min_gaussian_extent);
             merged_num_points_in_leaf.add(static_cast<FloatT>(num_points_in_leaf));
             num_merged_points++;
@@ -125,35 +165,34 @@ namespace {
             total_fallback_splits += fallback_used;
         }
 
-        void print() const {
-            std::cout << "SubsamplePointcloudStats:\n";
-            std::cout << "  Merged points: " << num_merged_points << "\n";
-            std::cout << "  Unmerged points: " << num_unmerged_points << "\n";
-            std::cout << "  Time taken: " << duration.count() << " seconds\n";
+        std::string to_string() const {
+            std::ostringstream oss;
+            oss << "SubsamplePointcloudStats:\n";
+            oss << "  Subsampled from " << initial_num_points << " to " << final_num_points << " points.\n";
+            oss << "  Merged points: " << num_merged_points << "\n";
+            oss << "  Unmerged points: " << num_unmerged_points << "\n";
+            oss << "  Time taken: " << duration.count() << " seconds\n";
             if (num_merged_points > 0) {
-                std::cout << "  BBox aspect ratio: mean=" << bbox_aspect_ratio.mean()
-                          << ", stddev=" << bbox_aspect_ratio.stddev() << ", min=" << bbox_aspect_ratio.min
-                          << ", max=" << bbox_aspect_ratio.max << "\n";
-                std::cout << "  BBox min size: mean=" << bbox_min_size.mean() << ", stddev=" << bbox_min_size.stddev()
-                          << ", min=" << bbox_min_size.min << ", max=" << bbox_min_size.max << "\n";
-                std::cout << "  BBox max size: mean=" << bbox_max_size.mean() << ", stddev=" << bbox_max_size.stddev()
-                          << ", min=" << bbox_max_size.min << ", max=" << bbox_max_size.max << "\n";
-                std::cout << "  Merged min gaussian extent: mean=" << merged_min_gaussian_extent.mean()
-                          << ", stddev=" << merged_min_gaussian_extent.stddev()
-                          << ", min=" << merged_min_gaussian_extent.min << ", max=" << merged_min_gaussian_extent.max
-                          << "\n";
-                std::cout << "  Merged num points in leaf: mean=" << merged_num_points_in_leaf.mean()
-                          << ", stddev=" << merged_num_points_in_leaf.stddev()
-                          << ", min=" << merged_num_points_in_leaf.min << ", max=" << merged_num_points_in_leaf.max
-                          << "\n";
-                std::cout << "  BBox biggest dim above extent: mean=" << bbox_biggest_dim_above_extent.mean()
-                          << ", stddev=" << bbox_biggest_dim_above_extent.stddev()
-                          << ", min=" << bbox_biggest_dim_above_extent.min
-                          << ", max=" << bbox_biggest_dim_above_extent.max << "\n";
-                std::cout << "  Total splits: " << total_splits
-                          << ", of which fallback strat used in: " << total_fallback_splits << "\n";
+                oss << "  BBox aspect ratio: mean=" << bbox_aspect_ratio.mean()
+                    << ", stddev=" << bbox_aspect_ratio.stddev() << ", min=" << bbox_aspect_ratio.min
+                    << ", max=" << bbox_aspect_ratio.max << "\n";
+                oss << "  BBox min size: mean=" << bbox_min_size.mean() << ", stddev=" << bbox_min_size.stddev()
+                    << ", min=" << bbox_min_size.min << ", max=" << bbox_min_size.max << "\n";
+                oss << "  BBox max size: mean=" << bbox_max_size.mean() << ", stddev=" << bbox_max_size.stddev()
+                    << ", min=" << bbox_max_size.min << ", max=" << bbox_max_size.max << "\n";
+                oss << "  Merged min gaussian extent: mean=" << merged_min_gaussian_extent.mean()
+                    << ", stddev=" << merged_min_gaussian_extent.stddev() << ", min=" << merged_min_gaussian_extent.min
+                    << ", max=" << merged_min_gaussian_extent.max << "\n";
+                oss << "  Merged num points in leaf: mean=" << merged_num_points_in_leaf.mean()
+                    << ", stddev=" << merged_num_points_in_leaf.stddev() << ", min=" << merged_num_points_in_leaf.min
+                    << ", max=" << merged_num_points_in_leaf.max << "\n";
+                oss << "  Total splits: " << total_splits
+                    << ", of which fallback strat used in: " << total_fallback_splits << "\n";
             }
+            return oss.str();
         }
+        void save() const { util::dump_str_to_file("subsample_pointcloud_stats.txt", to_string()); }
+        void print() const { std::cout << to_string(); }
     };
 
     using IndexT = uint32_t;
@@ -197,10 +236,17 @@ namespace {
         FloatT split_value;
         std::vector<IndexT> indices_left;
         std::vector<IndexT> indices_right;
+        bool fallback_used = false;
+
+        SplitResult mark_fallback() {
+            fallback_used = true;
+            return *this;
+        }
     };
 
-    SplitResult equal_partitions(StackFrame& frame, size_t axis_idx, const std::vector<FVector3D>& positions,
-                                 FloatT /*avg_min_extent*/) {
+    // Meh
+    SplitResult equal_num_pts(StackFrame& frame, size_t axis_idx, const std::vector<FVector3D>& positions,
+                              FloatT /*avg_min_extent*/) {
         auto mid_it = frame.indices.begin() + frame.indices.size() / 2;
         std::ranges::nth_element(frame.indices, mid_it,
                                  [&](IndexT a, IndexT b) { return positions[a][axis_idx] < positions[b][axis_idx]; });
@@ -211,39 +257,7 @@ namespace {
         return {split_value, std::move(indices_left), std::move(indices_right)};
     }
 
-    SplitResult max_gap(StackFrame& frame, size_t axis_idx, const std::vector<FVector3D>& positions,
-                        FloatT avg_min_extent) {
-        FloatT dist_max = std::numeric_limits<FloatT>::lowest();
-        FloatT mean_dist = 0;
-        size_t split_idx = 0;
-        std::vector<uint32_t> indices_left, indices_right;
-        std::ranges::sort(frame.indices,
-                          [&](uint32_t a, uint32_t b) { return positions[a][axis_idx] < positions[b][axis_idx]; });
-
-        for (size_t i = frame.indices.size() / 4; i < frame.indices.size() - frame.indices.size() / 4; ++i) {
-            FloatT dist_to_prev
-              = std::abs(positions[frame.indices[i - 1]][axis_idx] - positions[frame.indices[i]][axis_idx]);
-            mean_dist += dist_to_prev;
-            if (dist_to_prev > dist_max) {
-                dist_max = dist_to_prev;
-                split_idx = i;
-            }
-        }
-        mean_dist /= static_cast<FloatT>(frame.indices.size() - 1);
-        if (dist_max < 2.0f * mean_dist) {
-            // Bad split, use median
-            split_idx = frame.indices.size() / 2;
-        }
-        FloatT split_value
-          = (positions[frame.indices[split_idx - 1]][axis_idx] + positions[frame.indices[split_idx]][axis_idx])
-            / FloatT(2);
-
-        indices_left = std::vector<uint32_t>(frame.indices.begin(), frame.indices.begin() + split_idx);
-        indices_right = std::vector<uint32_t>(frame.indices.begin() + split_idx, frame.indices.end());
-
-        return {split_value, std::move(indices_left), std::move(indices_right)};
-    }
-
+    // Works best in practice
     SplitResult spatial_median(StackFrame& frame, size_t axis_idx, const std::vector<FVector3D>& positions,
                                FloatT avg_min_extent) {
         FloatT split_value = (frame.box.min[axis_idx] + frame.box.max[axis_idx]) / FloatT(2);
@@ -259,21 +273,46 @@ namespace {
         return {split_value, std::move(indices_left), std::move(indices_right)};
     }
 
-    SplitResult first_spatial_median_and_then_nth_element(StackFrame& frame, size_t axis_idx,
-                                                          const std::vector<FVector3D>& positions,
-                                                          FloatT avg_min_extent) {
-        if (frame.box.diagonal().minCoeff() >= 20 * avg_min_extent) {
-            return spatial_median(frame, axis_idx, positions, avg_min_extent);
-        } else {
-            return equal_partitions(frame, axis_idx, positions, avg_min_extent);
-        }
-    }
+    // Doesn't really work
+    SplitResult max_gap(StackFrame& frame, size_t axis_idx, const std::vector<FVector3D>& positions,
+                        FloatT avg_min_extent) {
+        FloatT dist_max = std::numeric_limits<FloatT>::lowest();
+        FloatT mean_dist = 0;
+        size_t split_idx = 0;
+        std::vector<uint32_t> indices_left, indices_right;
+        std::ranges::sort(frame.indices, [&positions, axis_idx](uint32_t a, uint32_t b) {
+            return positions[a][axis_idx] < positions[b][axis_idx];
+        });
 
+        for (size_t i = 1; i < frame.indices.size(); ++i) {
+            FloatT dist_to_prev
+              = std::abs(positions[frame.indices[i - 1]][axis_idx] - positions[frame.indices[i]][axis_idx]);
+            mean_dist += dist_to_prev;
+            if (dist_to_prev > dist_max) {
+                dist_max = dist_to_prev;
+                split_idx = i;
+            }
+        }
+        mean_dist /= static_cast<FloatT>(frame.indices.size() - 1);
+
+        if (dist_max < 1.5 * mean_dist) {
+            // Bad split, use spatial median instead
+            return spatial_median(frame, axis_idx, positions, avg_min_extent).mark_fallback();
+        }
+        FloatT split_value
+          = (positions[frame.indices[split_idx - 1]][axis_idx] + positions[frame.indices[split_idx]][axis_idx])
+            / FloatT(2);
+
+        indices_left = std::vector<uint32_t>(frame.indices.begin(), frame.indices.begin() + split_idx);
+        indices_right = std::vector<uint32_t>(frame.indices.begin() + split_idx, frame.indices.end());
+
+        return {split_value, std::move(indices_left), std::move(indices_right)};
+    }
 } // namespace
 
 std::pair<PointCloud, PointCloud> subsample_pointcloud_impl(const PointCloud& pointcloud,
                                                             const std::vector<FloatT>& min_gaussian_extents,
-                                                            FloatT min_extent_mult) {
+                                                            FloatT max_bbox_aspect_ratio, FloatT min_extent_mult) {
     SubsamplePointcloudStats stats{};
     stats.start_timer();
 
@@ -306,43 +345,47 @@ std::pair<PointCloud, PointCloud> subsample_pointcloud_impl(const PointCloud& po
     Stack<StackFrame> stack{};
 
     const auto positions = array_to_vector(pointcloud.positions);
-    const auto tightBB = geom::BoundingBox::from_points(positions);
-    const auto squareBB
-      = geom::BoundingBox{tightBB.min, tightBB.min + FVector3D::Ones() * tightBB.diagonal().maxCoeff()};
-    stack.emplace(StackFrame{make_index_sequence(positions.size()), squareBB, geom::Axis::X});
+    stack.emplace(
+      StackFrame{make_index_sequence(positions.size()), geom::BoundingBox::cube_from_points(positions), geom::Axis::X});
 
     while (!stack.empty()) {
         auto frame = stack.pop();
         if (frame.indices.size() == 0) {
             continue;
-            // throw std::runtime_error("Empty frame in stack, this should never happen.");
+        }
+        if (frame.indices.size() == 1) {
+            auto ix = frame.indices[0];
+            stats.add_unmerged();
+            output_point(positions[ix], *reinterpret_cast<const FVector3D*>(unchecked_rgbs.data(ix, 0)));
+            continue;
         }
 
         FloatT avg_min_ext = compute_average_min_gaussian_extent(frame.indices, min_gaussian_extents);
 
-        const auto box_aspect_ratio = frame.box.diagonal().maxCoeff() / frame.box.diagonal().minCoeff();
-        const auto threshold = frame.box.diagonal().minCoeff();
-        if (box_aspect_ratio <= 2 && threshold <= min_extent_mult * avg_min_ext) {
+        const auto tight_bbox = geom::BoundingBox::from_points(positions, frame.indices);
+
+        const auto original_box_aspect_ratio = frame.box.diagonal().maxCoeff() / frame.box.diagonal().minCoeff();
+        const auto tight_box_aspect_ratio = tight_bbox.diagonal().maxCoeff() / tight_bbox.diagonal().minCoeff();
+
+        const FloatT aspect_ratio = std::min(original_box_aspect_ratio, tight_box_aspect_ratio);
+        const auto conservative_threshold = tight_bbox.diagonal().maxCoeff();
+
+        if (aspect_ratio <= max_bbox_aspect_ratio && conservative_threshold <= min_extent_mult * avg_min_ext) {
             // Merge points
             FVector3D merged_pos = FVector3D::Zero();
             FVector3D merged_rgb = FVector3D::Zero();
             for (auto ix : frame.indices) {
                 merged_pos += positions[ix];
                 merged_rgb += *reinterpret_cast<const FVector3D*>(unchecked_rgbs.data(ix, 0));
-                if (frame.indices.size() > 1) {
-                    output_debug(positions[ix], mdi::debug::get_debug_color_muted(debug_group_idx));
-                }
+
+                output_debug(positions[ix], mdi::debug::get_debug_color_muted(debug_group_idx));
             }
             merged_pos /= static_cast<FloatT>(frame.indices.size());
             merged_rgb /= static_cast<FloatT>(frame.indices.size());
 
-            stats.add_merged(frame.box, min_extent_mult * avg_min_ext, frame.indices.size());
+            stats.add_merged(aspect_ratio, tight_bbox.diagonal(), min_extent_mult * avg_min_ext, frame.indices.size());
             output_point(merged_pos, merged_rgb);
-
-            if (frame.indices.size() > 1) {
-                output_debug(merged_pos, mdi::debug::get_debug_color(debug_group_idx++));
-            }
-
+            output_debug(merged_pos, mdi::debug::get_debug_color(debug_group_idx++));
             continue;
         }
         if (frame.indices.size() <= 2) {
@@ -359,32 +402,12 @@ std::pair<PointCloud, PointCloud> subsample_pointcloud_impl(const PointCloud& po
 
         constexpr auto split_fn = &spatial_median;
 
-        auto [split_value, indices_left, indices_right] = split_fn(frame, axis_idx, positions, avg_min_ext);
-
-        bool fallback_used = false;
-        // if (indices_left.size() == 0 || indices_right.size() == 0) {
-        //     // Fallback to equal partitions
-        //     auto&& [f_split_value, f_indices_left, f_indices_right]
-        //       = equal_partitions(frame, axis_idx, positions, avg_min_ext);
-        //     split_value = f_split_value;
-        //     indices_left = std::move(f_indices_left);
-        //     indices_right = std::move(f_indices_right);
-        //     fallback_used = true;
-        // }
+        auto [split_value, indices_left, indices_right, fallback_used]
+          = split_fn(frame, axis_idx, positions, avg_min_ext);
 
         stats.add_split(fallback_used);
 
         auto [left_box, right_box] = frame.box.split(axis, split_value);
-        // for (auto ix : indices_left) {
-        //     if (left_box.max[axis_idx] < positions[ix][axis_idx]) {
-        //         left_box.max[axis_idx] = positions[ix][axis_idx];
-        //     }
-        // }
-        // for (auto ix : indices_right) {
-        //     if (right_box.min[axis_idx] > positions[ix][axis_idx]) {
-        //         right_box.min[axis_idx] = positions[ix][axis_idx];
-        //     }
-        // }
 
         stack.emplace(StackFrame{std::move(indices_left), left_box, axis});
         stack.emplace(StackFrame{std::move(indices_right), right_box, axis});
@@ -393,8 +416,11 @@ std::pair<PointCloud, PointCloud> subsample_pointcloud_impl(const PointCloud& po
     subsampled_pointcloud.resize(num_output_points);
     debug_out.resize(py::ssize_t(debug_out_idx));
 
+    stats.initial_num_points = pointcloud.positions.shape(0);
+    stats.final_num_points = subsampled_pointcloud.positions.shape(0);
     stats.stop_timer();
     stats.print();
+    stats.save();
 
     return std::make_pair(subsampled_pointcloud, debug_out);
 }

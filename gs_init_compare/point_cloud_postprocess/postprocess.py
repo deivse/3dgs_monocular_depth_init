@@ -13,17 +13,12 @@ from sklearn.neighbors import LocalOutlierFactor
 import numpy as np
 
 
-def lof_outlier_removal(pts: torch.Tensor, rgbs: torch.Tensor):
-    k = 40
-    rgbs_np = rgbs.cpu().numpy() * 2
+def lof_outlier_removal(pts: torch.Tensor, config: PointCloudPostprocessConfig):
     pts_np = pts.cpu().numpy()
-    pts_and_rgb = np.concatenate([pts_np, rgbs_np], axis=1)
 
-    clf = LocalOutlierFactor(n_neighbors=k, n_jobs=-1)
+    clf = LocalOutlierFactor(n_neighbors=config.lof_num_neighbors, n_jobs=-1)
     pred_pts_only = clf.fit_predict(pts_np)
-    pred_pts_and_rgbs = clf.fit_predict(pts_and_rgb)
     return pred_pts_only == -1
-    return pred_pts_and_rgbs == -1
 
 
 def get_outlier_removal_func(method: OutlierRemovalMethod):
@@ -39,12 +34,29 @@ def postprocess_point_cloud(
     intrinsic_matrices: list[np.ndarray],
     proj_matrices: list[np.ndarray],
     image_sizes: np.ndarray,
-    points_to_cam_slices: list[tuple[int, int]],
     config: PointCloudPostprocessConfig,
     device: str,
 ):
+    if config.subsample:
+        pts, rgbs, _, merged, mergedrgb = subsample_pointcloud(
+            pts.cpu().numpy(),
+            rgbs.cpu().numpy(),
+            intrinsic_matrices,
+            proj_matrices,
+            image_sizes,
+            params=config.subsample_params,
+        )
+        export_point_cloud_to_ply(
+            merged,
+            mergedrgb,
+            Path.cwd(),
+            "merged",
+        )
+        pts, rgbs = torch.from_numpy(pts).to(device), torch.from_numpy(rgbs).to(device)
+
+    # Perform after subsampling because more points may be considered outliers after their "duplicates" are removed
     if config.outlier_removal != OutlierRemovalMethod.off:
-        outliers = get_outlier_removal_func(config.outlier_removal)(pts, rgbs)
+        outliers = get_outlier_removal_func(config.outlier_removal)(pts, config)
 
         export_point_cloud_to_ply(
             pts[~outliers].cpu().numpy(),
@@ -62,21 +74,4 @@ def postprocess_point_cloud(
         pts = pts[~outliers]
         rgbs = rgbs[~outliers]
 
-    if config.nyquist_subsample:
-        pts, rgbs, _, merged, mergedrgb = subsample_pointcloud(
-            pts.cpu().numpy(),
-            rgbs.cpu().numpy(),
-            intrinsic_matrices,
-            proj_matrices,
-            image_sizes,
-            points_to_cam_slices,
-            config.nyquist_subsample_factor,
-        )
-        export_point_cloud_to_ply(
-            merged,
-            mergedrgb,
-            Path.cwd(),
-            "merged",
-        )
-
-    return torch.tensor(pts).to(device), torch.tensor(rgbs).to(device)
+    return pts, rgbs

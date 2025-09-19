@@ -37,12 +37,11 @@ struct PointCloud
 std::vector<FloatT> compute_minimal_gaussian_extents(const py::array_t<FloatT>& points,
                                                      const std::vector<FMatrix3D>& intrinsic_matrices,
                                                      const std::vector<FMatrix3x4>& camera_2_world_matrices,
-                                                     const py::array_t<IntT>& image_sizes,
-                                                     const std::vector<std::pair<IntT, IntT>>& points_to_cam_slices);
+                                                     const py::array_t<IntT>& image_sizes);
 
 std::pair<PointCloud, PointCloud> subsample_pointcloud_impl(const PointCloud& pointcloud,
                                                             const std::vector<FloatT>& min_gaussian_extents,
-                                                            FloatT min_extent_mult);
+                                                            FloatT max_bbox_aspect_ratio, FloatT min_extent_mult);
 
 } // namespace mdi::pointcloud
 
