@@ -197,7 +197,13 @@ class DataLoader:
 
 
 def preset_without_predictor(preset_id: str):
-    KNOWN_PREDICTOR_IDS = ["metric3d", "unidepth", "depth_anything_v2_indoor", "depth_anything_v2_outdoor", "moge"]
+    KNOWN_PREDICTOR_IDS = [
+        "metric3d",
+        "unidepth",
+        "depth_anything_v2_indoor",
+        "depth_anything_v2_outdoor",
+        "moge",
+    ]
     for predictor_id in KNOWN_PREDICTOR_IDS:
         if predictor_id in preset_id:
             return preset_id.replace(f"{predictor_id}_", "")
@@ -384,6 +390,12 @@ def main():
     parser.add_argument(
         "--scenes", nargs="+", default=None, help="Scenes to include in the table."
     )
+    parser.add_argument(
+        "--scenes-exclude",
+        nargs="+",
+        default=None,
+        help="Scenes to exclude from the table.",
+    )
     parser.add_argument("--results-dir", type=str, default="./nerfbaselines_results")
     parser.add_argument(
         "--step",
@@ -449,9 +461,11 @@ def main():
         params = args.params
 
     if args.scenes is None:
-        scenes = SCENES[args.dataset]
+        scenes = sorted(
+            list(set(SCENES[args.dataset]).difference(args.scenes_exclude or []))
+        )
     else:
-        scenes = args.scenes
+        scenes = sorted(list(set(args.scenes).difference(args.scenes_exclude or [])))
 
     data_loader = DataLoader(
         dataset_dir,
