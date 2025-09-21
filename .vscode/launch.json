@@ -45,8 +45,9 @@
             "program": "${workspaceFolder}/nerfbaselines_evaluator.py",
             "console": "integratedTerminal",
             "args": [
-                "--presets=metric3d_depth_downsample_adaptive_ransac",
-                "--run-label=lof_k=40",
+                "--configs",
+                "strategy={default, mcmc} --init-type={monocular_depth} --mdi.predictor={metric3d} --mdi.depth-alignment-strategy={ransac} --mdi.subsample-factor={adaptive} --mdi.postprocess.outlier_removal=[ALL]",
+                "--run-label=test",
                 // "--max-steps=100",
                 // "--eval-frequency=50",
                 // "--scenes=mipnerf360/bonsai",

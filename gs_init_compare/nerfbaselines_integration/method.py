@@ -1,5 +1,6 @@
+from enum import Enum
+from inspect import isclass
 import logging
-from pathlib import Path
 import pprint
 import dataclasses
 import json
@@ -88,6 +89,8 @@ def cast_value(tp, value):
         return tp(value)
     if isinstance(value, tp):
         return value
+    if isclass(tp) and issubclass(tp, Enum):
+        return tp(value)
     raise TypeError(f"Cannot cast value {value} to type {tp}")
 
 

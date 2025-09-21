@@ -2,7 +2,11 @@
 Runs training and evaluation for multiple scenes and initialization strategies, reports results.
 """
 
+from dataclasses import fields
 from datetime import datetime
+from enum import Enum
+import itertools
+from math import ceil
 import os
 from pathlib import Path
 import shutil
@@ -12,19 +16,16 @@ import argparse
 
 from itertools import product
 import sys
-from gs_init_compare.depth_alignment.config import DepthAlignmentStrategyEnum
-from gs_init_compare.nerfbaselines_integration.make_presets import (
-    ALL_NOISE_STD_SCENE_FRACTIONS,
-    ALL_PREDICTOR_NAMES,
-    for_each_monodepth_setting_combination,
-    make_preset_name,
-)
+from types import NoneType
+import typing
+from typing_extensions import Self
+from gs_init_compare.config import Config
 
 from nerfbaselines import get_dataset_spec
 from tensorboard.backend.event_processing import event_accumulator
 
 
-class ANSIEscapes:
+class ANSIEscapes(Enum):
     BLUE = "\033[94m"
     CYAN = "\033[96m"
     GREEN = "\033[92m"
@@ -39,8 +40,13 @@ class ANSIEscapes:
         return getattr(ANSIEscapes, name.upper())
 
     @staticmethod
-    def color(text: str, color: str):
-        return f"{ANSIEscapes.by_name(color)}{text}{ANSIEscapes.END_SEQUENCE}"
+    def format(text: str, escape: str | Self):
+        seq = escape if isinstance(escape, ANSIEscapes) else ANSIEscapes.by_name(escape)
+        return f"{seq.value}{text}{ANSIEscapes.END_SEQUENCE.value}"
+
+
+def ansiesc_print(value: str, escape: str | ANSIEscapes):
+    print(ANSIEscapes.format(value, escape))
 
 
 def rename_old_dir_with_timestamp(dir: Path, results_dir: Path) -> Path:
@@ -114,42 +120,6 @@ ALL_SCENES = [
 # ]
 
 
-DEFAULT_PRESETS = [
-    "sfm",
-    *[
-        make_preset_name(name, *args)
-        for name in ALL_PREDICTOR_NAMES
-        for args in for_each_monodepth_setting_combination(
-            [
-                DepthAlignmentStrategyEnum.lstsqrs,
-                DepthAlignmentStrategyEnum.ransac,
-                DepthAlignmentStrategyEnum.msac,
-            ],
-            downsample_factors=[10, 20, 30, "adaptive"],
-            mcmc=False,
-        )
-    ],
-    *[
-        make_preset_name("metric3d", *args)
-        for args in for_each_monodepth_setting_combination(
-            [
-                DepthAlignmentStrategyEnum.lstsqrs,
-                DepthAlignmentStrategyEnum.ransac,
-                DepthAlignmentStrategyEnum.msac,
-            ],
-            downsample_factors=[10, 20, 30, "adaptive"],
-            mcmc=True,
-        )
-    ],
-    "sfm_mcmc",
-]
-
-
-def print_default_presets():
-    for i, preset in enumerate(DEFAULT_PRESETS):
-        print(f"{i + 1}. {preset} [{i}]")
-
-
 def create_argument_parser():
     parser = argparse.ArgumentParser()
 
@@ -159,16 +129,17 @@ def create_argument_parser():
         parser.add_argument(*args, **kwargs)
 
     add_argument(
-        "--presets",
-        nargs="+",
-        default=DEFAULT_PRESETS,
+        "--configs",
+        nargs="*",
         help="Presets to pass to the method.",
+        default=[],
+        type=str,
     )
     add_argument(
-        "--noise-test",
-        action="store_true",
-        default=False,
-        help="If true, runs the noise ablation test.",
+        "--configs-file",
+        help="File from which to read config strings, 1 per line.",
+        type=str,
+        default=None,
     )
     add_argument(
         "--output-dir",
@@ -213,28 +184,233 @@ def create_argument_parser():
     return parser
 
 
+def get_config_strings(args: argparse.Namespace):
+    num_exclusive_options_specified = int(len(args.configs) > 0) + int(
+        args.configs_file is not None
+    )
+    if num_exclusive_options_specified == 0:
+        raise ValueError("Either --configs or --configs-file must be specified.")
+    if num_exclusive_options_specified > 1:
+        raise ValueError("Only one of  {--configs, --configs-file} may be specified.")
+
+    if args.configs_file is None:
+        return args.configs
+
+    with Path(args.configs_file).open("r", encoding="utf-8") as file:
+        return file.readlines()
+
+
+def get_all_possible_vals_of_param(name: str):
+    name = name.replace("-", "_")
+    address_parts = name.split(".")
+    curr_type = Config
+    for field_name in address_parts:
+        curr_type = {field.name: field.type for field in fields(curr_type)}[field_name]
+
+    def raise_if_empty(vals):
+        if len(vals) == 0:
+            raise RuntimeError(
+                f"List of all possible values for param {name} is empty."
+            )
+        return vals
+
+    def raise_unsupported():
+        raise ValueError(
+            f"Can't get all possible values of param {name}. Unsupported type: {curr_type}"
+        )
+
+    if typing.get_origin(curr_type) is typing.Union:
+        args = typing.get_args(curr_type)
+        if all(isinstance(x, str) for x in args):
+            return raise_if_empty(list(args))
+        if len(args) == 2 and args[1] is NoneType:
+            curr_type = args[0]
+        else:
+            raise_unsupported()
+
+    try:
+        if issubclass(curr_type, Enum):
+            return raise_if_empty([str(member.value) for member in list(curr_type)])
+    except TypeError:
+        pass
+
+    try:
+        args = typing.get_args(curr_type)
+        if all(isinstance(x, str) for x in args):
+            return raise_if_empty(list(args))
+    except Exception:
+        pass
+
+    raise_unsupported()
+
+
+ParsedConfigStr = list[tuple[str, list[str]]]
+ParamList = list[tuple[str, str]]
+
+
+def parse_config_string(config_str: str) -> list[ParamList]:
+    """
+    # Configs string example
+    {default, mcmc} --mdi.predictor={metric3d,depth_pro} --mdi.depth-alignment-strategy={ransac,dynamic} --mdi.subsample-factor={adaptive}
+    # Special value example
+    {default, mcmc} --mdi.predictor=[ALL] --mdi.depth-alignment-strategy={ransac,dynamic} --mdi.subsample-factor={adaptive}
+    """
+
+    parts: list[str] = []
+    current_part = ""
+    brace_count = 0
+    in_quotes = False
+    quote_char = None
+
+    for char in config_str:
+        if char in ('"', "'") and not in_quotes:
+            in_quotes = True
+            quote_char = char
+            current_part += char
+        elif char == quote_char and in_quotes:
+            in_quotes = False
+            quote_char = None
+            current_part += char
+        elif char == "{" and not in_quotes:
+            brace_count += 1
+            current_part += char
+        elif char == "}" and not in_quotes:
+            brace_count -= 1
+            current_part += char
+        elif char == " " and brace_count == 0 and not in_quotes:
+            if current_part:
+                parts.append(current_part)
+                current_part = ""
+        else:
+            current_part += char
+
+    if current_part:
+        parts.append(current_part)
+
+    ALL = "[ALL]"
+    special_val_handlers = {ALL: get_all_possible_vals_of_param}
+    parsed: ParsedConfigStr = []
+    for part in parts:
+        eq_pos = part.find("=")
+        if eq_pos == -1:
+            raise ValueError(
+                f"'=' not found in \"{part}\" All config string param definitions must be formatted as"
+                + "key={value1, value2, ...}"
+            )
+        name = part[:eq_pos].removeprefix("-").removeprefix("-")
+
+        found_special_val = False
+        for val, handler in special_val_handlers.items():
+            full_values_part = part[eq_pos + 1 :]
+            if full_values_part == val:
+                values = handler(name)
+                if len(values) != 0:
+                    parsed.append((name, values))
+                found_special_val = True
+                break
+        if found_special_val:
+            continue
+
+        if part[eq_pos + 1] == "{":  # List of options
+            if not part[-1] == "}":
+                raise ValueError("Invalid config string: unclosed {} at " + part)
+            values = part[eq_pos + 2 : -1].replace(" ", "").split(",")
+            parsed.append((name, values))
+            continue
+
+        if "{" in part or "}" in part:
+            raise ValueError(
+                "{} contained in part, but open brace is not on first pos: " + part
+            )
+        value = part[eq_pos + 1 :]
+        parsed.append((name, [value]))
+
+    with_param_name = []
+    for name, values in parsed:
+        with_param_name.append([(name, val) for val in values])
+    return list(itertools.product(*with_param_name))
+
+
+CONFIG_STR_FORBIDDEN_PARAM_NAMES = {
+    "max_steps",
+    "mdi.ignore_cache",
+    "mdi.cache_dir",
+    "mdi.pts_only",
+}
+
+
 def make_method_config_overrides(args: argparse.Namespace) -> dict[str, str]:
-    return {
+    retval = {
         "max_steps": str(args.max_steps),
         "mdi.ignore_cache": str(args.invalidate_mono_depth_cache),
         "mdi.cache_dir": str(Path(args.output_dir, "__mono_depth_cache__").absolute()),
         "mdi.pts_only": str(args.pts_only),
     }
+    assert CONFIG_STR_FORBIDDEN_PARAM_NAMES == set(retval.keys())
+    return retval
+
+
+IGNORED_PARAM_NAMES = {
+    "mdi.pts-output-dir",
+    "mdi.pts-output-per-image",
+    "mdi.no-pts-output-per-image",
+}
+
+
+def make_config_name(params: ParamList) -> str:
+    out = []
+    RENAMES = {
+        "mdi.predictor": None,
+        "mdi.depth-alignment-strategy": "align",
+        "mdi.subsample-factor": "subsample",
+    }
+
+    def with_tildes(n):
+        return n.replace("_", "-")
+
+    for name, value in params:
+        if name is not None and with_tildes(name) in RENAMES:
+            name = RENAMES[with_tildes(name)]
+        if name is None:
+            # NOTE: SPECIAL HANDLING FOR DEFAULT STRATEGY!
+            if value != "default":
+                out.append(value)
+            continue
+
+        name_tilde = with_tildes(name)
+        if name in IGNORED_PARAM_NAMES or name_tilde in IGNORED_PARAM_NAMES:
+            continue
+
+        if (
+            name in CONFIG_STR_FORBIDDEN_PARAM_NAMES
+            or name_tilde in CONFIG_STR_FORBIDDEN_PARAM_NAMES
+        ):
+            raise ValueError(
+                f"Parameter {name_tilde} can not be part of config string"
+                " (it's either set by evaluator automatically, or evaluator argument should be used instead of passing directly)"
+            )
+
+        name = name.removeprefix("mdi.")  # Just adds useless noise
+
+        out.append(f"{name}={value}")
+    return "|".join(out)
 
 
 def get_args_str(args: argparse.Namespace):
     args_copy = argparse.Namespace()
     args_copy.__dict__ = args.__dict__.copy()
 
-    unhashed_params = [
+    UNHASHED_PARAMS = [
         "eval_frequency",
         "output_dir",
         "scenes",
-        "presets",
+        "configs",
+        "configs_file",
         "invalidate_mono_depth_cache",
     ]
-    for param in unhashed_params:
-        delattr(args_copy, param)
+    for param in UNHASHED_PARAMS:
+        if hasattr(args_copy, param):
+            delattr(args_copy, param)
 
     return str(args_copy)
 
@@ -306,13 +482,20 @@ MCMC_GAUSSIAN_CAPS = {
 }
 
 
-def run_combination(scene, preset, args, args_str, eval_all_iters):
+def run_combination(
+    scene: str,
+    config: ParamList,
+    args: argparse.Namespace,
+    args_str: str,
+    eval_all_iters: list[int],
+):
     print(
-        ANSIEscapes.color("_" * 80, "bold"),
-        ANSIEscapes.color("=" * 80 + "\n", "blue"),
+        ANSIEscapes.format("_" * 80, "bold"),
+        ANSIEscapes.format("=" * 80 + "\n", "blue"),
         sep="\n",
     )
-    curr_output_dir = Path(args.output_dir / scene / preset)
+    config_name = make_config_name(config)
+    curr_output_dir = Path(args.output_dir / scene / config_name)
     if args.run_label:
         curr_output_dir = curr_output_dir.with_name(
             f"{curr_output_dir.name}_{args.run_label}"
@@ -326,8 +509,8 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
             curr_output_dir, args, args_str, eval_all_iters
         ):
             print(
-                ANSIEscapes.color(
-                    f"Skipping {preset} on {scene}. (Output exists and is up-to-date)",
+                ANSIEscapes.format(
+                    f"Skipping {config} on {scene}. (Output exists and is up-to-date)",
                     "green",
                 )
             )
@@ -335,7 +518,7 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
 
         new_path = rename_old_dir_with_timestamp(curr_output_dir, args.output_dir)
         print(
-            ANSIEscapes.color(
+            ANSIEscapes.format(
                 f"Detected results mismatch. Old output directory moved to: {new_path}",
                 "yellow",
             )
@@ -343,8 +526,8 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
         assert not curr_output_dir.exists()
 
     print(
-        ANSIEscapes.color(
-            f"Training {preset} on {scene}. (Outputting to: {curr_output_dir})",
+        ANSIEscapes.format(
+            f"Training {config_name} on {scene}. (Outputting to: {curr_output_dir})",
             "blue",
         )
     )
@@ -357,13 +540,22 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
     for kv_pair in make_method_config_overrides(args).items():
         overrides_cli.extend(["--set", "=".join(kv_pair)])
 
-    if "mcmc" in preset:
+    if "mcmc" in {param_name for param_name, _ in config}:
         overrides_cli.extend(
             [
                 "--set",
                 f"strategy.cap_max={MCMC_GAUSSIAN_CAPS[scene]}",
             ]
         )
+
+    for param_name, value in config:
+        param_name = param_name.replace("-", "_")
+        if param_name == "strategy":
+            if value.lower() == "default":
+                value = "DefaultStrategy"
+            elif value.lower() == "mcmc":
+                value = "MCMCStrategy"
+        overrides_cli.extend(["--set", f"{param_name}={value}"])
 
     subprocess.run(
         [
@@ -372,7 +564,6 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
             "--backend=python",
             "--method=gs-init-compare",
             f"--output={curr_output_dir}",
-            f"--presets={preset}",
             f"--data=external://{scene}",
             f"--eval-all-iters={','.join(map(str, eval_all_iters))}",
         ]
@@ -394,71 +585,82 @@ def run_combination(scene, preset, args, args_str, eval_all_iters):
             if iter not in [0, 8000, 14000, args.max_steps]:
                 Path(curr_output_dir / f"predictions-{str(iter)}.tar.gz").unlink()
     except FileNotFoundError as e:
-        print(ANSIEscapes.color(f"Error: Training output not found:\n {e}", "red"))
+        print(ANSIEscapes.format(f"Error: Training output not found:\n {e}", "red"))
+
+
+def adjust_configs_if_slurm(configs: list[ParamList]) -> list[ParamList]:
+    task_id = os.environ.get("SLURM_ARRAY_TASK_ID", None)
+    task_id_min = os.environ.get("SLURM_ARRAY_TASK_MIN", None)
+    array_size = os.environ.get("SLURM_ARRAY_TASK_COUNT", None)
+
+    if task_id is None:
+        return configs
+
+    if array_size is None or task_id_min is None:
+        raise RuntimeError(
+            "SLURM_ARRAY_TASK_ID is set, but SLURM_ARRAY_TASK_COUNT or SLURM_ARRAY_TASK_MIN is not!"
+        )
+    task_id, task_id_min, array_size = int(task_id), int(task_id_min), int(array_size)
+
+    job_ix = task_id - task_id_min
+    ansiesc_print(
+        f"Running in SLURM: {job_ix=} {array_size=} {task_id=} {task_id_min=}",
+        ANSIEscapes.YELLOW,
+    )
+
+    base_tasks_per_job = len(configs) // array_size
+    remaining_tasks = len(configs) - base_tasks_per_job * array_size
+
+    num_tasks_per_job = [base_tasks_per_job for _ in range(array_size)]
+    for i in range(remaining_tasks):
+        num_tasks_per_job[i] += 1
+
+    tasks_before_this_job = sum(num_tasks_per_job[:job_ix])
+    this_job_tasks = (
+        base_tasks_per_job + 1 if job_ix < remaining_tasks else base_tasks_per_job
+    )
+
+    ansiesc_print(
+        f"This job will run {this_job_tasks} configs - [{tasks_before_this_job}, {tasks_before_this_job + this_job_tasks - 1}]:",
+        ANSIEscapes.YELLOW,
+    )
+    return configs[tasks_before_this_job : tasks_before_this_job + this_job_tasks]
+
+
+def get_eval_it_list(args: argparse.Namespace):
+    eval_all_iters = list(range(0, args.max_steps + 1, args.eval_frequency))
+    if eval_all_iters[-1] != args.max_steps:
+        eval_all_iters.append(args.max_steps)
+    return eval_all_iters
 
 
 def main():
     sys.stdout.reconfigure(line_buffering=True)
     args = create_argument_parser().parse_args()
-
-    if args.print_default_presets:
-        print_default_presets()
-        return
-
-    slurm_array_task_id = os.environ.get("SLURM_ARRAY_TASK_ID", None)
-    if slurm_array_task_id is not None:
-        args.presets = [DEFAULT_PRESETS[int(slurm_array_task_id) - 1]]
-        print(
-            ANSIEscapes.color(
-                f"Overriding presets based on SLURM_ARRAY_TASK_ID={int(slurm_array_task_id)}: {args.presets}",
-                "yellow",
-            )
-        )
-
-    eval_all_iters = list(range(0, args.max_steps + 1, args.eval_frequency))
-    if eval_all_iters[-1] != args.max_steps:
-        eval_all_iters.append(args.max_steps)
+    configs: list[ParamList] = []
+    for config_str in get_config_strings(args):
+        configs.extend(parse_config_string(config_str))
 
     args_str = get_args_str(args)
+    eval_all_iters = get_eval_it_list(args)
+    configs = adjust_configs_if_slurm(configs)
 
-    if args.noise_test:
-        print(ANSIEscapes.color("Running noise test...", "yellow"))
-        for scene in get_dataset_scenes("mipnerf360", []):
-            slurm_array_task_id = os.environ.get("SLURM_ARRAY_TASK_ID", None)
-            if slurm_array_task_id is None:
-                fracs = ALL_NOISE_STD_SCENE_FRACTIONS
-            else:
-                # No -1 since ALL_NOISE_STD_SCENE_FRACTIONS starts with None
-                fracs = [ALL_NOISE_STD_SCENE_FRACTIONS[int(slurm_array_task_id)]]
-
-            for noise_std_frac in fracs:
-                if noise_std_frac is None:
-                    continue
-                run_combination(
-                    scene,
-                    f"metric3d_depth_downsample_adaptive_noise_{noise_std_frac}_ransac",
-                    args,
-                    args_str,
-                    eval_all_iters,
-                )
-        sys.exit(0)
-
-    combinations = list(product(args.scenes, args.presets))
+    combinations = list(product(args.scenes, configs))
     print(
-        ANSIEscapes.color("_" * 80, "bold"),
-        ANSIEscapes.color(f"Will train {len(combinations)} combinations.", "bold"),
-        ANSIEscapes.color("Settings:", "bold"),
-        f"\tOutput directory: {ANSIEscapes.color(args.output_dir, 'cyan')}",
-        f"\tMax steps: {ANSIEscapes.color(args.max_steps, 'cyan')}",
-        f"\tEvaluation frequency: {ANSIEscapes.color(args.eval_frequency, 'cyan')}",
-        f"\tPresets: {ANSIEscapes.color(args.presets, 'cyan')}",
-        f"\tScenes: {ANSIEscapes.color(args.scenes, 'cyan')}",
-        f"\tEval all iters: {ANSIEscapes.color(eval_all_iters, 'cyan')}",
+        ANSIEscapes.format("_" * 80, "bold"),
+        ANSIEscapes.format(f"Will train {len(combinations)} combinations.", "bold"),
+        ANSIEscapes.format("Settings:", "bold"),
+        f"\tOutput directory: {ANSIEscapes.format(args.output_dir, 'cyan')}",
+        f"\tMax steps: {ANSIEscapes.format(args.max_steps, 'cyan')}",
+        f"\tEvaluation frequency: {ANSIEscapes.format(args.eval_frequency, 'cyan')}",
+        f"\tConfigs: {ANSIEscapes.format([make_config_name(c) for c in configs], 'cyan')}",
+        f"\tScenes: {ANSIEscapes.format(args.scenes, 'cyan')}",
+        f"\tEval all iters: {ANSIEscapes.format(eval_all_iters, 'cyan')}",
         sep="\n",
     )
 
-    for scene, preset in combinations:
-        run_combination(scene, preset, args, args_str, eval_all_iters)
+    for scene, config in combinations:
+        run_combination(scene, config, args, args_str, eval_all_iters)
 
 
 if __name__ == "__main__":

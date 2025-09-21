@@ -63,5 +63,6 @@
         "zlim"
     ],
     "cSpell.enabled": false,
-    "editor.formatOnSave": true
+    "editor.formatOnSave": true,
+    "python.REPL.enableREPLSmartSend": false
 }
