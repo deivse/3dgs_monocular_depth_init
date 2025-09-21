@@ -197,7 +197,7 @@ def get_config_strings(args: argparse.Namespace):
         return args.configs
 
     with Path(args.configs_file).open("r", encoding="utf-8") as file:
-        return file.readlines()
+        return [line.strip() for line in file.readlines()]
 
 
 def get_all_possible_vals_of_param(name: str):
