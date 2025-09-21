@@ -197,7 +197,7 @@ def get_config_strings(args: argparse.Namespace):
         return args.configs
 
     with Path(args.configs_file).open("r", encoding="utf-8") as file:
-        return [line.strip() for line in file.readlines()]
+        return [line.strip() for line in file.readlines() if len(line.strip()) != 0]
 
 
 def get_all_possible_vals_of_param(name: str):
@@ -623,7 +623,7 @@ def adjust_combinations_if_slurm(
     )
 
     ansiesc_print(
-        f"This job will run {this_job_tasks} configs - [{tasks_before_this_job}, {tasks_before_this_job + this_job_tasks - 1}]:",
+        f"This job will run {this_job_tasks} combinations - [{tasks_before_this_job}, {tasks_before_this_job + this_job_tasks - 1}].",
         ANSIEscapes.YELLOW,
     )
     return combinations[tasks_before_this_job : tasks_before_this_job + this_job_tasks]
