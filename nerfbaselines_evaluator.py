@@ -648,6 +648,8 @@ def main():
 
     combinations = list(product(args.scenes, configs))
     combinations = adjust_combinations_if_slurm(combinations)
+    configs = {cfg for _, cfg in combinations}
+    scenes = {scene for scene, _ in combinations}
     print(
         ANSIEscapes.format("_" * 80, "bold"),
         ANSIEscapes.format(f"Will train {len(combinations)} combinations.", "bold"),
@@ -655,8 +657,8 @@ def main():
         f"\tOutput directory: {ANSIEscapes.format(args.output_dir, 'cyan')}",
         f"\tMax steps: {ANSIEscapes.format(args.max_steps, 'cyan')}",
         f"\tEvaluation frequency: {ANSIEscapes.format(args.eval_frequency, 'cyan')}",
-        f"\tConfigs: {ANSIEscapes.format([make_config_name(c) for c in configs], 'cyan')}",
-        f"\tScenes: {ANSIEscapes.format(args.scenes, 'cyan')}",
+        "\tConfigs: " + ANSIEscapes.format("\n\t          ".join(make_config_name(c)for c in configs), 'cyan'),
+        f"\tScenes: {ANSIEscapes.format(scenes, 'cyan')}",
         f"\tEval all iters: {ANSIEscapes.format(eval_all_iters, 'cyan')}",
         sep="\n",
     )
