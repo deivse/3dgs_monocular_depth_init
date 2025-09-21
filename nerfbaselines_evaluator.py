@@ -185,12 +185,12 @@ def create_argument_parser():
 
 
 def get_config_strings(args: argparse.Namespace):
-    num_eclusive_options_specified = int(len(args.configs) > 0) + int(
+    num_exclusive_options_specified = int(len(args.configs) > 0) + int(
         args.configs_file is not None
     )
-    if num_eclusive_options_specified == 0:
+    if num_exclusive_options_specified == 0:
         raise ValueError("Either --configs or --configs-file must be specified.")
-    if num_eclusive_options_specified > 1:
+    if num_exclusive_options_specified > 1:
         raise ValueError("Only one of  {--configs, --configs-file} may be specified.")
 
     if args.configs_file is None:
@@ -365,19 +365,19 @@ def make_config_name(params: ParamList) -> str:
         "mdi.subsample-factor": "subsample",
     }
 
-    def with_tildes():
-        return name.replace("_", "-")
+    def with_tildes(n):
+        return n.replace("_", "-")
 
     for name, value in params:
-        if name is not None and with_tildes() in RENAMES:
-            name = RENAMES[with_tildes()]
+        if name is not None and with_tildes(name) in RENAMES:
+            name = RENAMES[with_tildes(name)]
         if name is None:
             # NOTE: SPECIAL HANDLING FOR DEFAULT STRATEGY!
             if value != "default":
                 out.append(value)
             continue
 
-        name_tilde = with_tildes()
+        name_tilde = with_tildes(name)
         if name in IGNORED_PARAM_NAMES or name_tilde in IGNORED_PARAM_NAMES:
             continue
 
@@ -405,7 +405,8 @@ def get_args_str(args: argparse.Namespace):
         "output_dir",
         "scenes",
         "configs",
-        "configs_fileinvalidate_mono_depth_cache",
+        "configs_file",
+        "invalidate_mono_depth_cache",
     ]
     for param in UNHASHED_PARAMS:
         if hasattr(args_copy, param):
@@ -625,11 +626,13 @@ def adjust_configs_if_slurm(configs: list[ParamList]) -> list[ParamList]:
     )
     return configs[tasks_before_this_job : tasks_before_this_job + this_job_tasks]
 
+
 def get_eval_it_list(args: argparse.Namespace):
     eval_all_iters = list(range(0, args.max_steps + 1, args.eval_frequency))
     if eval_all_iters[-1] != args.max_steps:
         eval_all_iters.append(args.max_steps)
     return eval_all_iters
+
 
 def main():
     sys.stdout.reconfigure(line_buffering=True)
