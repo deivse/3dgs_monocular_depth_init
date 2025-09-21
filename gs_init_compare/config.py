@@ -44,6 +44,8 @@ class MonocularDepthInitConfig:
     adaptive_subsampling: AdaptiveSubsamplingConfig = AdaptiveSubsamplingConfig()
 
     postprocess: PointCloudPostprocessConfig = PointCloudPostprocessConfig()
+    limit_init_scale: bool = False
+    init_scale_clamp_quantile: float = 0.75
 
     # If set, point clouds from monocular depth init are saved to this directory.
     pts_output_dir: Optional[str] = None

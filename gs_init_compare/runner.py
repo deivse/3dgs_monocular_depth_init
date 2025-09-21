@@ -67,6 +67,7 @@ def create_splats_with_optimizers(
     world_rank: int = 0,
     world_size: int = 1,
 ) -> Tuple[torch.nn.ParameterDict, Dict[str, torch.optim.Optimizer]]:
+    scales = None
     if init_type == "sfm":
         points = torch.from_numpy(parser.points).float()
         rgbs = torch.from_numpy(parser.points_rgb / 255.0).float()
@@ -74,7 +75,7 @@ def create_splats_with_optimizers(
         points = init_extent * scene_scale * (torch.rand((init_num_pts, 3)) * 2 - 1)
         rgbs = torch.rand((init_num_pts, 3))
     elif init_type == "monocular_depth":
-        points, rgbs = pts_and_rgb_from_monocular_depth(config, parser, device)
+        points, rgbs, scales = pts_and_rgb_from_monocular_depth(config, parser, device)
         # Force garbage collection to free up memory
         # Without this, AppleDepthPro CUDA memory is not released
         gc.collect()
@@ -84,9 +85,10 @@ def create_splats_with_optimizers(
     print(cuda_stats_msg(device, "After loading points and rgbs"))
 
     # Initialize the GS size to be the average dist of the 3 nearest neighbors
-    dist2_avg = (knn(points, 4)[:, 1:] ** 2).mean(dim=-1)  # [N,]
-    dist_avg = torch.sqrt(dist2_avg)
-    scales = torch.log(dist_avg * init_scale).unsqueeze(-1).repeat(1, 3)  # [N, 3]
+    if scales is None:
+        dist2_avg = (knn(points, 4)[:, 1:] ** 2).mean(dim=-1)  # [N,]
+        dist_avg = torch.sqrt(dist2_avg)
+        scales = torch.log(dist_avg * init_scale).unsqueeze(-1).repeat(1, 3)  # [N, 3]
 
     # Distribute the GSs to different ranks (also works for single rank)
     points = points[world_rank::world_size]

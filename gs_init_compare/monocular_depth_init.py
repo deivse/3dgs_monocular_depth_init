@@ -23,6 +23,7 @@ from gs_init_compare.depth_prediction.points_from_depth import (
 )
 from gs_init_compare.point_cloud_postprocess.postprocess import postprocess_point_cloud
 from gs_init_compare.utils.cuda_memory import cuda_stats_msg
+from gs_init_compare.utils.runner_utils import knn
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -208,5 +209,13 @@ def pts_and_rgb_from_monocular_depth(
         if config.mdi.pts_only:
             sys.exit(0)
 
-    # TODO: try limiting initial gaussian size to some 75th percentile of avg dist to 3 nearest neighbor instead of allowing to create giant gaussians
-    return pts, rgbs
+    scales = None
+    if config.mdi.limit_init_scale:
+        dist2_avg = (knn(pts, 4)[:, 1:] ** 2).mean(dim=-1)  # [N,]
+        dist_avg = torch.sqrt(dist2_avg)
+        quantile = torch.quantile(dist_avg, config.mdi.init_scale_clamp_quantile)
+        dist_avg = torch.clamp(dist_avg, max=quantile)
+        scales = (  # [N, 3]
+            torch.log(dist_avg * config.init_scale).unsqueeze(-1).repeat(1, 3)
+        )
+    return pts, rgbs, scales
