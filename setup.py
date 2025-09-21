@@ -33,7 +33,7 @@ setup(
         "scipy==1.15.2",
         "matplotlib==3.9.2",
         "trimesh==4.4.9",
-        "filelock==3.19.1"
+        "filelock==3.19.1",
         "huggingface_hub==0.34.4",
         # utils3d is a dependency of MoGe that is included in their repo, but the imports are broken
         # so it's better to install it separately
