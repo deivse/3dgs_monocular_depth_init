@@ -588,13 +588,15 @@ def run_combination(
         print(ANSIEscapes.format(f"Error: Training output not found:\n {e}", "red"))
 
 
-def adjust_configs_if_slurm(configs: list[ParamList]) -> list[ParamList]:
+def adjust_combinations_if_slurm(
+    combinations: list[tuple[str, ParamList]],
+) -> list[tuple[str, ParamList]]:
     task_id = os.environ.get("SLURM_ARRAY_TASK_ID", None)
     task_id_min = os.environ.get("SLURM_ARRAY_TASK_MIN", None)
     array_size = os.environ.get("SLURM_ARRAY_TASK_COUNT", None)
 
     if task_id is None:
-        return configs
+        return combinations
 
     if array_size is None or task_id_min is None:
         raise RuntimeError(
@@ -608,8 +610,8 @@ def adjust_configs_if_slurm(configs: list[ParamList]) -> list[ParamList]:
         ANSIEscapes.YELLOW,
     )
 
-    base_tasks_per_job = len(configs) // array_size
-    remaining_tasks = len(configs) - base_tasks_per_job * array_size
+    base_tasks_per_job = len(combinations) // array_size
+    remaining_tasks = len(combinations) - base_tasks_per_job * array_size
 
     num_tasks_per_job = [base_tasks_per_job for _ in range(array_size)]
     for i in range(remaining_tasks):
@@ -624,7 +626,7 @@ def adjust_configs_if_slurm(configs: list[ParamList]) -> list[ParamList]:
         f"This job will run {this_job_tasks} configs - [{tasks_before_this_job}, {tasks_before_this_job + this_job_tasks - 1}]:",
         ANSIEscapes.YELLOW,
     )
-    return configs[tasks_before_this_job : tasks_before_this_job + this_job_tasks]
+    return combinations[tasks_before_this_job : tasks_before_this_job + this_job_tasks]
 
 
 def get_eval_it_list(args: argparse.Namespace):
@@ -643,9 +645,9 @@ def main():
 
     args_str = get_args_str(args)
     eval_all_iters = get_eval_it_list(args)
-    configs = adjust_configs_if_slurm(configs)
 
     combinations = list(product(args.scenes, configs))
+    combinations = adjust_combinations_if_slurm(combinations)
     print(
         ANSIEscapes.format("_" * 80, "bold"),
         ANSIEscapes.format(f"Will train {len(combinations)} combinations.", "bold"),
