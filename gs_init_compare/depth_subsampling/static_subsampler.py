@@ -17,6 +17,6 @@ class StaticDepthSubsampler(DepthSubsampler):
             torch.logical_and(
                 (pixel_coords[:, 0] % self.subsample_factor) == 0,
                 (pixel_coords[:, 1] % self.subsample_factor) == 0,
-            ),
+            ).to(mask_from_predictor.device),
             mask_from_predictor.view(-1),
         )
