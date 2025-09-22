@@ -128,7 +128,12 @@ def get_valid_sfm_pts(sfm_pts_camera, sfm_pts_camera_depth, mask, imsize):
 
 
 def align_depth(
-    sfm_points, P, imsize, depth, mask, strategy: DepthAlignmentStrategy
+    config: Config,
+    sfm_points: torch.Tensor,
+    P: torch.Tensor,
+    imsize: torch.Tensor,
+    depth: torch.Tensor,
+    mask: torch.Tensor,
 ) -> DepthAlignmentParams:
     device = sfm_points.device
 
@@ -143,7 +148,9 @@ def align_depth(
         sfm_points_camera, sfm_points_depth, mask, imsize
     )
     predicted_depth: torch.Tensor = depth[sfm_points_camera[1], sfm_points_camera[0]]
-    return strategy.estimate_alignment(predicted_depth, sfm_points_depth)
+    return config.mdi.depth_alignment_strategy.get_implementation().estimate_alignment(
+        predicted_depth, sfm_points_depth, config.mdi.ransac
+    )
 
 
 def get_subsampler(cfg: Config):
@@ -206,12 +213,12 @@ def get_pts_from_depth(
         _LOGGER.warning("Encountered infinite depths in predicted depth map.")
 
     depth_alignment = align_depth(
+        config,
         sfm_points,
         P,
         imsize,
         depth,
         mask_from_predictor,
-        config.mdi.depth_alignment_strategy.get_implementation(),
     )
     aligned_depth = depth_alignment.scale * depth + depth_alignment.shift
 
