@@ -3,6 +3,8 @@ from dataclasses import dataclass
 
 import torch
 
+from gs_init_compare.depth_alignment.config import RansacConfig
+
 
 @dataclass
 class DepthAlignmentParams:
@@ -21,7 +23,10 @@ class DepthAlignmentStrategy(abc.ABC):
     @classmethod
     @abc.abstractmethod
     def estimate_alignment(
-        cls, predicted_depth: torch.Tensor, gt_depth: torch.Tensor
+        cls,
+        predicted_depth: torch.Tensor,
+        gt_depth: torch.Tensor,
+        ransac_config: RansacConfig,
     ) -> DepthAlignmentParams:
         """
         Estimate the alignment between predicted and ground truth depth maps.

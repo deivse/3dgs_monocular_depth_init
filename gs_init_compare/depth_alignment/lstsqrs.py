@@ -22,7 +22,7 @@ def align_depth_least_squares(depth: torch.Tensor, gt_depth: torch.Tensor):
 class DepthAlignmentLstSqrs(DepthAlignmentStrategy):
     @classmethod
     def estimate_alignment(
-        cls, predicted_depth: torch.Tensor, gt_depth: torch.Tensor
+        cls, predicted_depth: torch.Tensor, gt_depth: torch, *args, **kwargs
     ) -> DepthAlignmentParams:
         return align_depth_least_squares(
             torch.vstack(

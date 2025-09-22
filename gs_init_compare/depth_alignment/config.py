@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -21,3 +22,11 @@ class DepthAlignmentStrategyEnum(str, Enum):
             return DepthAlignmentMsac
         else:
             raise NotImplementedError(f"Unknown depth alignment strategy: {self}")
+
+@dataclass
+class RansacConfig:
+    inlier_threshold: float = 0.1
+    max_iters: int = 2500
+    confidence: float = 0.99
+    min_iters: int = 0
+

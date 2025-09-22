@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, Tuple
+
+from gs_init_compare.depth_alignment.config import RansacConfig
 from .lstsqrs import align_depth_least_squares
 import math
 import torch
@@ -7,32 +9,30 @@ import torch
 from .interface import DepthAlignmentParams, DepthAlignmentStrategy
 
 
-@dataclass
-class RansacParams:
-    inlier_threshold: float
-    max_iters: int
-    confidence: float
-
-
-DEFAULT_RANSAC_PARAMS = RansacParams(
-    inlier_threshold=0.1, max_iters=2500, confidence=0.99
-)
-
-
 class DepthAlignmentRansac(DepthAlignmentStrategy):
     @classmethod
     def estimate_alignment(
-        cls, predicted_depth: torch.Tensor, gt_depth: torch.Tensor
+        cls,
+        predicted_depth: torch.Tensor,
+        gt_depth: torch.Tensor,
+        ransac_config: RansacConfig,
     ) -> DepthAlignmentParams:
-        return _align_depth_ransac_generic(predicted_depth, gt_depth, _ransac_loss)
+        return _align_depth_ransac_generic(
+            predicted_depth, gt_depth, _ransac_loss, ransac_config
+        )
 
 
 class DepthAlignmentMsac(DepthAlignmentStrategy):
     @classmethod
     def estimate_alignment(
-        cls, predicted_depth: torch.Tensor, gt_depth: torch.Tensor
+        cls,
+        predicted_depth: torch.Tensor,
+        gt_depth: torch.Tensor,
+        ransac_config: RansacConfig,
     ) -> DepthAlignmentParams:
-        return _align_depth_ransac_generic(predicted_depth, gt_depth, _msac_loss)
+        return _align_depth_ransac_generic(
+            predicted_depth, gt_depth, _msac_loss, ransac_config
+        )
 
 
 def _ransac_loss(dists: torch.Tensor, inlier_threshold: float):
@@ -79,7 +79,7 @@ def _align_depth_ransac_generic(
     depth: torch.Tensor,
     gt_depth: torch.Tensor,
     loss_func: RansacLossFunc,
-    params: RansacParams = DEFAULT_RANSAC_PARAMS,
+    config: RansacConfig,
 ) -> DepthAlignmentParams:
     SAMPLE_SIZE = 2
     num_samples = depth.shape[0]
@@ -96,7 +96,7 @@ def _align_depth_ransac_generic(
     inlier_indices_best = torch.empty_like(gt_depth, dtype=bool)
     num_inliers_best = 0
 
-    p = params
+    p = config
 
     for iteration in range(p.max_iters):
         sample_indices = torch.randint(0, num_samples, (SAMPLE_SIZE,))
@@ -120,6 +120,7 @@ def _align_depth_ransac_generic(
             _required_samples(num_inliers_best, num_samples, SAMPLE_SIZE, p.confidence)
             <= iteration
             and h_best is not None
+            and iteration >= config.min_iters
         ):
             break
 
