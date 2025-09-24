@@ -100,7 +100,7 @@ def get_dataset_scenes(dataset_id: str, exclude_list) -> list[str]:
 
 ALL_SCENES = [
     *get_dataset_scenes("mipnerf360", []),
-    # *get_dataset_scenes("tanksandtemples", []),
+    *get_dataset_scenes("tanksandtemples", []),
 ]
 
 # print(ALL_SCENES)
