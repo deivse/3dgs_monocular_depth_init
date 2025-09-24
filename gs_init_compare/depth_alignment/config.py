@@ -6,6 +6,7 @@ class DepthAlignmentStrategyEnum(str, Enum):
     lstsqrs = "lstsqrs"
     ransac = "ransac"
     msac = "msac"
+    interp = "interp"
 
     def get_implementation(self):
         if self == self.lstsqrs:
@@ -20,8 +21,13 @@ class DepthAlignmentStrategyEnum(str, Enum):
             from .ransacs import DepthAlignmentMsac
 
             return DepthAlignmentMsac
+        elif self == self.interp:
+            from .interp import DepthAlignmentInterpolate
+
+            return DepthAlignmentInterpolate
         else:
             raise NotImplementedError(f"Unknown depth alignment strategy: {self}")
+
 
 @dataclass
 class RansacConfig:
@@ -29,4 +35,4 @@ class RansacConfig:
     max_iters: int = 2500
     confidence: float = 0.99
     min_iters: int = 0
-
+    blur_predicted_depth: bool = False

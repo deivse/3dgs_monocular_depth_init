@@ -1,37 +1,46 @@
-from dataclasses import dataclass
-from typing import Callable, Tuple
+from typing import Callable
 
 from gs_init_compare.depth_alignment.config import RansacConfig
 from .lstsqrs import align_depth_least_squares
 import math
 import torch
 
-from .interface import DepthAlignmentParams, DepthAlignmentStrategy
+from .interface import DepthAlignmentStrategy
 
 
 class DepthAlignmentRansac(DepthAlignmentStrategy):
     @classmethod
-    def estimate_alignment(
+    def align(
         cls,
         predicted_depth: torch.Tensor,
-        gt_depth: torch.Tensor,
+        sfm_points_camera_coords: torch.Tensor,
+        sfm_points_depth: torch.Tensor,
         ransac_config: RansacConfig,
-    ) -> DepthAlignmentParams:
+    ) -> torch.Tensor:
         return _align_depth_ransac_generic(
-            predicted_depth, gt_depth, _ransac_loss, ransac_config
+            predicted_depth,
+            sfm_points_camera_coords,
+            sfm_points_depth,
+            _ransac_loss,
+            ransac_config,
         )
 
 
 class DepthAlignmentMsac(DepthAlignmentStrategy):
     @classmethod
-    def estimate_alignment(
+    def align(
         cls,
         predicted_depth: torch.Tensor,
-        gt_depth: torch.Tensor,
+        sfm_points_camera_coords: torch.Tensor,
+        sfm_points_depth: torch.Tensor,
         ransac_config: RansacConfig,
-    ) -> DepthAlignmentParams:
+    ) -> torch.Tensor:
         return _align_depth_ransac_generic(
-            predicted_depth, gt_depth, _msac_loss, ransac_config
+            predicted_depth,
+            sfm_points_camera_coords,
+            sfm_points_depth,
+            _msac_loss,
+            ransac_config,
         )
 
 
@@ -70,17 +79,21 @@ def _required_samples(
 
 
 def _l2_dists_squared(
-    h: DepthAlignmentParams, depth: torch.Tensor, gt_depth: torch.Tensor
+    h: tuple[float, float], depth: torch.Tensor, gt_depth: torch.Tensor
 ) -> torch.Tensor:
-    return (h.scale * depth + h.shift - gt_depth) ** 2
+    return (h[0] * depth + h[1] - gt_depth) ** 2
 
 
 def _align_depth_ransac_generic(
     depth: torch.Tensor,
+    gt_points_camera_coords: torch.Tensor,
     gt_depth: torch.Tensor,
     loss_func: RansacLossFunc,
     config: RansacConfig,
-) -> DepthAlignmentParams:
+) -> torch.Tensor:
+    full_predicted_depth = depth
+    depth = depth[gt_points_camera_coords[1], gt_points_camera_coords[0]].flatten()
+
     SAMPLE_SIZE = 2
     num_samples = depth.shape[0]
     device = depth.device
@@ -91,7 +104,7 @@ def _align_depth_ransac_generic(
         ]
     )
 
-    h_best: DepthAlignmentParams | None = None
+    h_best: tuple[float, float] | None = None
     loss_best = float("inf")
     inlier_indices_best = torch.empty_like(gt_depth, dtype=bool)
     num_inliers_best = 0
@@ -128,24 +141,18 @@ def _align_depth_ransac_generic(
         depth[:, inlier_indices_best], gt_depth[inlier_indices_best]
     )
     inlier_indices_best = (
-        torch.abs(h_best.scale * depth[0] + h_best.shift - gt_depth)
-        < p.inlier_threshold
+        torch.abs(h_best[0] * depth[0] + h_best[1] - gt_depth) < p.inlier_threshold
     )
     num_inliers_best = torch.sum(inlier_indices_best)
 
     #########################################
     h_test = align_depth_least_squares(depth, gt_depth)
     inlier_indices_test = (
-        torch.abs(h_test.scale * depth[0] + h_test.shift - gt_depth)
-        < p.inlier_threshold
+        torch.abs(h_test[0] * depth[0] + h_test[1] - gt_depth) < p.inlier_threshold
     )
     num_inliers_test = torch.sum(inlier_indices_test)
-    avg_err_best = torch.mean(
-        torch.abs(h_best.scale * depth[0] + h_best.shift - gt_depth)
-    )
-    avg_err_test = torch.mean(
-        torch.abs(h_test.scale * depth[0] + h_test.shift - gt_depth)
-    )
+    avg_err_best = torch.mean(torch.abs(h_best[0] * depth[0] + h_best[1] - gt_depth))
+    avg_err_test = torch.mean(torch.abs(h_test[0] * depth[0] + h_test[1] - gt_depth))
     print(
         f"#(iter): {iteration}, (RAN/M)SAC inliers: {num_inliers_best}, Naive inliers: {num_inliers_test}, (RAN/M)SAC Error: {avg_err_best}, Naive Error: {avg_err_test}"
     )
@@ -158,4 +165,4 @@ def _align_depth_ransac_generic(
     #     print("RANSAC alignment is better than naive")
     #     print(
     #         f"ransac inlier ratio: {num_inliers_best / num_samples}, naive inlier ratio: {num_inliers_test / num_samples}")
-    return h_best
+    return full_predicted_depth * h_best[0] + h_best[1]

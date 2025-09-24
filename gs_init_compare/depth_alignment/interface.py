@@ -1,37 +1,26 @@
 import abc
-from dataclasses import dataclass
 
 import torch
 
 from gs_init_compare.depth_alignment.config import RansacConfig
 
 
-@dataclass
-class DepthAlignmentParams:
-    h: torch.Tensor
-
-    @property
-    def scale(self):
-        return self.h[0]
-
-    @property
-    def shift(self):
-        return self.h[1]
-
-
 class DepthAlignmentStrategy(abc.ABC):
     @classmethod
     @abc.abstractmethod
-    def estimate_alignment(
+    def align(
         cls,
         predicted_depth: torch.Tensor,
-        gt_depth: torch.Tensor,
+        sfm_points_camera_coords: torch.Tensor,
+        sfm_points_depth: torch.Tensor,
         ransac_config: RansacConfig,
-    ) -> DepthAlignmentParams:
+    ) -> torch.Tensor:
         """
-        Estimate the alignment between predicted and ground truth depth maps.
+        Estimate the alignment between predicted and ground truth depth maps and return the aligned depth map.
 
         Args:
-            predicted_depth: The predicted depth map. Shape: [NumPoints]
-            gt_depth: The ground truth depth map. Shape: [NumPoints]
+            predicted_depth: The predicted depth map. Shape: [Width, Height]
+            sfm_points_camera_coords: The (y, x) (in that order!) coordinates of the SfM points in the camera frame. Shape: [2, NumPoints]
+            sfm_points_depth: The depth of the SfM points. Shape: [NumPoints]
+            ransac_config: Configuration for RANSAC (will be ignored if not applicable).
         """

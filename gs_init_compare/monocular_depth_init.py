@@ -141,7 +141,7 @@ def pts_and_rgb_from_monocular_depth(
         assert predicted_depth.depth.device == torch.device(device)
 
         debug_point_cloud_export_dir = (
-            Path(config.mdi.pts_output_dir) / dataset_name / model.name / image.name
+            Path(config.mdi.pts_output_dir) / image.name
             if config.mdi.pts_output_dir and config.mdi.pts_output_per_image
             else None
         )
@@ -206,8 +206,8 @@ def pts_and_rgb_from_monocular_depth(
         export_point_cloud_to_ply(
             parser.points, parser.points_rgb / 255.0, output_dir, "sfm"
         )
-        if config.mdi.pts_only:
-            sys.exit(0)
+    if config.mdi.pts_only:
+        sys.exit(0)
 
     scales = None
     if config.mdi.limit_init_scale:

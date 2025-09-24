@@ -421,7 +421,7 @@ ARGS_STR_FILENAME = ".nerfbaselines_evaluator_args_hash"
 def output_dir_needs_overwrite(
     output_dir: Path,
     args: argparse.Namespace,
-    args_str: str,
+    run_id: str,
     eval_all_iters: list[int],
 ) -> bool:
     if args.force_overwrite:
@@ -432,7 +432,7 @@ def output_dir_needs_overwrite(
 
     try:
         with open(output_dir / ARGS_STR_FILENAME, "r") as f:
-            old_args_str = f.read().strip()
+            old_run_id = f.read().strip()
     except FileNotFoundError:
         return True
 
@@ -443,7 +443,7 @@ def output_dir_needs_overwrite(
         if not (output_dir / f"results-{str(iter)}.json").exists():
             return True
 
-    return old_args_str != args_str
+    return old_run_id != run_id
 
 
 def read_param_from_last_tensorboard_step(file, param_name):
@@ -501,12 +501,14 @@ def run_combination(
             f"{curr_output_dir.name}_{args.run_label}"
         )
 
+    run_id = args_str + config_name + scene
+
     if directory_exists_and_has_files(curr_output_dir) and not args.pts_only:
         if not curr_output_dir.is_dir():
             raise ValueError(f"Output path is not a directory: {curr_output_dir}")
 
         if not output_dir_needs_overwrite(
-            curr_output_dir, args, args_str, eval_all_iters
+            curr_output_dir, args, run_id, eval_all_iters
         ):
             print(
                 ANSIEscapes.format(
@@ -534,7 +536,7 @@ def run_combination(
     curr_output_dir.mkdir(parents=True, exist_ok=True)
     if not args.pts_only:
         with open(curr_output_dir / ARGS_STR_FILENAME, "w") as f:
-            f.write(args_str)
+            f.write(run_id)
 
     overrides_cli = []
     for kv_pair in make_method_config_overrides(args).items():
