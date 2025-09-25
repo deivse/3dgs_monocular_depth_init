@@ -132,6 +132,7 @@ def align_depth(
     imsize: torch.Tensor,
     depth: torch.Tensor,
     mask: torch.Tensor,
+    debug_export_dir: Path | None,
 ) -> torch.Tensor:
     device = sfm_points.device
 
@@ -146,7 +147,7 @@ def align_depth(
         sfm_points_camera, sfm_points_depth, mask, imsize
     )
     return config.mdi.depth_alignment_strategy.get_implementation().align(
-        depth, sfm_points_camera, sfm_points_depth, config.mdi.ransac
+        depth, sfm_points_camera, sfm_points_depth, config, debug_export_dir
     )
 
 
@@ -165,7 +166,7 @@ def get_pts_from_depth(
     parser: Parser | NerfbaselinesParser,
     config: Config,
     device: str,
-    debug_point_cloud_export_dir: Optional[Path] = None,
+    debug_export_dir: Optional[Path] = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Returns:
@@ -210,12 +211,7 @@ def get_pts_from_depth(
         _LOGGER.warning("Encountered infinite depths in predicted depth map.")
 
     aligned_depth = align_depth(
-        config,
-        sfm_points,
-        P,
-        imsize,
-        depth,
-        mask_from_predictor,
+        config, sfm_points, P, imsize, depth, mask_from_predictor, debug_export_dir
     )
 
     # get_mask should apply mask_from_predictor as well
@@ -224,6 +220,7 @@ def get_pts_from_depth(
         .get_mask(image.data, aligned_depth, mask_from_predictor)
         .cpu()
     )
+    subsampling_mask[aligned_depth.flatten() < 0] = 0
 
     pts_camera: torch.Tensor = torch.dstack(
         [
@@ -237,7 +234,7 @@ def get_pts_from_depth(
 
     pts_world = transform_camera_to_world_space(pts_camera)
 
-    if debug_point_cloud_export_dir is not None:
+    if debug_export_dir is not None:
         debug_export_point_clouds(
             imsize,
             cam2world,
@@ -249,7 +246,7 @@ def get_pts_from_depth(
             image.name,
             subsampling_mask.cpu(),
             image.data,
-            debug_point_cloud_export_dir,
+            debug_export_dir,
         )
 
     return (pts_world.reshape([-1, 3]).float(), subsampling_mask.cpu(), P)

@@ -1,5 +1,6 @@
 from typing import Callable
 
+from gs_init_compare.config import Config
 from gs_init_compare.depth_alignment.config import RansacConfig
 from .lstsqrs import align_depth_least_squares
 import math
@@ -15,14 +16,16 @@ class DepthAlignmentRansac(DepthAlignmentStrategy):
         predicted_depth: torch.Tensor,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
-        ransac_config: RansacConfig,
+        config: Config,
+        *args,
+        **kwargs,
     ) -> torch.Tensor:
         return _align_depth_ransac_generic(
             predicted_depth,
             sfm_points_camera_coords,
             sfm_points_depth,
             _ransac_loss,
-            ransac_config,
+            config.mdi.ransac,
         )
 
 
@@ -33,14 +36,16 @@ class DepthAlignmentMsac(DepthAlignmentStrategy):
         predicted_depth: torch.Tensor,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
-        ransac_config: RansacConfig,
+        config: Config,
+        *args,
+        **kwargs,
     ) -> torch.Tensor:
         return _align_depth_ransac_generic(
             predicted_depth,
             sfm_points_camera_coords,
             sfm_points_depth,
             _msac_loss,
-            ransac_config,
+            config.mdi.ransac,
         )
 
 

@@ -1,8 +1,7 @@
 import abc
+from pathlib import Path
 
 import torch
-
-from gs_init_compare.depth_alignment.config import RansacConfig
 
 
 class DepthAlignmentStrategy(abc.ABC):
@@ -13,7 +12,8 @@ class DepthAlignmentStrategy(abc.ABC):
         predicted_depth: torch.Tensor,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
-        ransac_config: RansacConfig,
+        config,  # : Config,
+        debug_export_dir: Path | None,
     ) -> torch.Tensor:
         """
         Estimate the alignment between predicted and ground truth depth maps and return the aligned depth map.
