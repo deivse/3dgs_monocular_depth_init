@@ -3,6 +3,7 @@ import numpy as np
 import torch
 
 from gs_init_compare.config import Config
+from gs_init_compare.depth_alignment.config import InterpConfig
 from gs_init_compare.depth_alignment.lstsqrs import DepthAlignmentLstSqrs
 from .interface import DepthAlignmentStrategy
 from torchrbf import RBFInterpolator
@@ -14,6 +15,7 @@ def align_depth_interpolate(
     sfm_points_camera_coords: torch.Tensor,
     gt_depth: torch.Tensor,
     debug_export_dir: Path | None,
+    config: InterpConfig,
 ):
     """
     Args:
@@ -28,8 +30,8 @@ def align_depth_interpolate(
         interpolator = RBFInterpolator(
             coords,
             values,
-            smoothing=0.001,
-            kernel="thin_plate_spline",
+            smoothing=config.smoothing,
+            kernel=config.kernel,
             device=depth.device,
         )
 
@@ -54,15 +56,14 @@ def align_depth_interpolate(
             align_corners=True,
         )[0, 0, :, :].T
 
-    # first compute approximate offset using least squares
-    lstsqrs_aligned = DepthAlignmentLstSqrs.align(
-        predicted_depth=depth,
-        sfm_points_camera_coords=sfm_points_camera_coords,
-        sfm_points_depth=gt_depth,
-    )
-
-    if "9225" in str(debug_export_dir):
-        print("BREAK")
+    if config.lstsqrs_init:
+        unaligned = DepthAlignmentLstSqrs.align(
+            predicted_depth=depth,
+            sfm_points_camera_coords=sfm_points_camera_coords,
+            sfm_points_depth=gt_depth,
+        )
+    else:
+        unaligned = depth
 
     coords = torch.hstack(
         [
@@ -82,62 +83,69 @@ def align_depth_interpolate(
     # Compute interpolations
     rbf_scale = rbf_interpolation(
         coords,
-        gt_depth
-        / lstsqrs_aligned[sfm_points_camera_coords[1], sfm_points_camera_coords[0]],
+        gt_depth / unaligned[sfm_points_camera_coords[1], sfm_points_camera_coords[0]],
     )
 
     # TODO: somehow get ransac-like outlier rejection while keeping the "adaptive alignment"?
     # TODO: study failure cases - when does this make things worse?
-    # TODO: deal with negative depth values...
 
-    aligned_depth = rbf_scale * lstsqrs_aligned
+    # TODO: support masks from predictor
+
+    aligned_depth = rbf_scale * unaligned
 
     if debug_export_dir is not None:
         print("Saving images to dir", debug_export_dir)
 
-        vmin = min(lstsqrs_aligned.min(), aligned_depth.min()).item()
-        vmax = max(lstsqrs_aligned.max(), aligned_depth.max()).item()
+        vmin = min(unaligned.min(), aligned_depth.min()).item()
+        vmax = max(unaligned.max(), aligned_depth.max()).item()
         debug_export_dir.mkdir(parents=True, exist_ok=True)
 
         # Save pre-RBF-alignment depth map
         # Create copies for visualization with red pixels where depth < 1
-        lstsqrs_vis = lstsqrs_aligned.cpu().numpy().copy()
+        lstsqrs_vis = unaligned.cpu().numpy().copy()
         aligned_vis = aligned_depth.cpu().numpy().copy()
-        
+
         # Set pixels where depth < 1 to red (this will override the colormap)
         # We'll use a custom approach with RGB arrays
         import matplotlib.cm as cm
-        
+
         # Normalize the depth values for colormap
         norm_lstsqrs = (lstsqrs_vis - vmin) / (vmax - vmin)
         norm_aligned = (aligned_vis - vmin) / (vmax - vmin)
-        
+
         # Apply colormap
         lstsqrs_rgb = cm.plasma(norm_lstsqrs)
         aligned_rgb = cm.plasma(norm_aligned)
-        
+
         # Set red color where depth < 0
         red_mask_lstsqrs = lstsqrs_vis < 0
         red_mask_aligned = aligned_vis < 0
-        
+
         lstsqrs_rgb[red_mask_lstsqrs] = [1, 0, 0, 1]  # Red
         aligned_rgb[red_mask_aligned] = [1, 0, 0, 1]  # Red
-        
+
         # Save pre-RBF-alignment depth map with colorbar
         fig, ax = plt.subplots(figsize=(10, 8))
         im = ax.imshow(lstsqrs_rgb)
         ax.set_title("Least Squares Aligned Depth")
         # Create a colorbar with the original depth values
-        sm = plt.cm.ScalarMappable(cmap=cm.plasma, norm=plt.Normalize(vmin=vmin, vmax=vmax))
+        sm = plt.cm.ScalarMappable(
+            cmap=cm.plasma, norm=plt.Normalize(vmin=vmin, vmax=vmax)
+        )
         sm.set_array([])
         cbar = plt.colorbar(sm, ax=ax)
         cbar.set_label("Depth")
         # Add note about red pixels
-        ax.text(0.02, 0.98, "Red: depth < 0", transform=ax.transAxes, 
+        ax.text(
+            0.02,
+            0.98,
+            "Red: depth < 0",
+            transform=ax.transAxes,
             bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
-            verticalalignment='top')
+            verticalalignment="top",
+        )
         pre_rbf_path = Path(debug_export_dir) / "lstsqrs_depth.png"
-        plt.savefig(pre_rbf_path, dpi=150, bbox_inches='tight')
+        plt.savefig(pre_rbf_path, dpi=150, bbox_inches="tight")
         plt.close()
 
         # Save rbf scale with colorbar
@@ -148,7 +156,7 @@ def align_depth_interpolate(
         cbar = plt.colorbar(im, ax=ax)
         cbar.set_label("Scale Factor")
         rbf_scale_path = Path(debug_export_dir) / "rbf_scale.png"
-        plt.savefig(rbf_scale_path, dpi=150, bbox_inches='tight')
+        plt.savefig(rbf_scale_path, dpi=150, bbox_inches="tight")
         plt.close()
 
         # Save final aligned depth map with colorbar
@@ -156,16 +164,23 @@ def align_depth_interpolate(
         im = ax.imshow(aligned_rgb)
         ax.set_title("RBF Aligned Depth")
         # Create a colorbar with the original depth values
-        sm = plt.cm.ScalarMappable(cmap=cm.plasma, norm=plt.Normalize(vmin=vmin, vmax=vmax))
+        sm = plt.cm.ScalarMappable(
+            cmap=cm.plasma, norm=plt.Normalize(vmin=vmin, vmax=vmax)
+        )
         sm.set_array([])
         cbar = plt.colorbar(sm, ax=ax)
         cbar.set_label("Depth")
         # Add note about red pixels
-        ax.text(0.02, 0.98, "Red: depth < 0", transform=ax.transAxes, 
+        ax.text(
+            0.02,
+            0.98,
+            "Red: depth < 0",
+            transform=ax.transAxes,
             bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
-            verticalalignment='top')
+            verticalalignment="top",
+        )
         aligned_depth_path = Path(debug_export_dir) / "rbf_aligned_depth.png"
-        plt.savefig(aligned_depth_path, dpi=150, bbox_inches='tight')
+        plt.savefig(aligned_depth_path, dpi=150, bbox_inches="tight")
         plt.close()
 
     return aligned_depth
@@ -186,4 +201,5 @@ class DepthAlignmentInterpolate(DepthAlignmentStrategy):
             sfm_points_camera_coords,
             sfm_points_depth,
             debug_export_dir,
+            config.mdi.interp,
         )
