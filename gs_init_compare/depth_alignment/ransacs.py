@@ -13,6 +13,7 @@ class DepthAlignmentRansac(DepthAlignmentStrategy):
     @classmethod
     def align(
         cls,
+        image: torch.Tensor,
         predicted_depth: torch.Tensor,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
@@ -33,6 +34,7 @@ class DepthAlignmentMsac(DepthAlignmentStrategy):
     @classmethod
     def align(
         cls,
+        image: torch.Tensor,
         predicted_depth: torch.Tensor,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,

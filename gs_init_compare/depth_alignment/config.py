@@ -35,11 +35,14 @@ class RansacConfig:
     max_iters: int = 2500
     confidence: float = 0.99
     min_iters: int = 0
-    blur_predicted_depth: bool = False
 
 
 @dataclass
 class InterpConfig:
+    # TODO: after initial testing, change defaults to:
+    # lstsqrs_init: False
+    # smoothing: 0.0001
     lstsqrs_init: bool = True
     smoothing: float = 0.001
     kernel: str = "thin_plate_spline"  # see torch_rbf doc for options
+    segmentation: bool = False

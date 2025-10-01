@@ -1,5 +1,7 @@
 from pathlib import Path
+from matplotlib.colors import ListedColormap
 import numpy as np
+import skimage
 import torch
 
 from gs_init_compare.config import Config
@@ -10,7 +12,47 @@ from torchrbf import RBFInterpolator
 import matplotlib.pyplot as plt
 
 
+def segment_depth_regions(
+    predicted_depth: torch.Tensor, image: torch.Tensor, debug_export_dir: Path | None
+):
+    pred_depth_norm = (predicted_depth - predicted_depth.min()) / (
+        predicted_depth.max() - predicted_depth.min() + 1e-8
+    )
+    pred_depth_norm = pred_depth_norm.cpu().numpy()
+
+    compactness = 0.0001
+    num_regions = 5
+    slic_depth_regions = skimage.segmentation.slic(
+        pred_depth_norm,
+        n_segments=num_regions,
+        start_label=0,
+        compactness=compactness,
+        channel_axis=None,
+    )
+
+    if debug_export_dir is not None:
+        # overlay image with slic depth regions for visualization
+        depth_region_cmap = ListedColormap(
+            plt.cm.get_cmap("tab20").colors[: np.unique(slic_depth_regions).shape[0]]
+        )
+        depth_region_overlay = 0.5 * image.cpu().numpy()
+        depth_region_overlay = (
+            depth_region_overlay
+            + 0.5
+            * depth_region_cmap(slic_depth_regions / np.max(slic_depth_regions))[
+                :, :, :3
+            ]
+        )
+        depth_region_overlay = np.clip(depth_region_overlay, 0, 1)
+        debug_export_dir.mkdir(parents=True, exist_ok=True)
+        plt.imsave(
+            debug_export_dir / "slic_depth_regions_overlay.png", depth_region_overlay
+        )
+    return slic_depth_regions
+
+
 def align_depth_interpolate(
+    image: torch.Tensor,
     depth: torch.Tensor,
     sfm_points_camera_coords: torch.Tensor,
     gt_depth: torch.Tensor,
@@ -58,6 +100,7 @@ def align_depth_interpolate(
 
     if config.lstsqrs_init:
         unaligned = DepthAlignmentLstSqrs.align(
+            image,
             predicted_depth=depth,
             sfm_points_camera_coords=sfm_points_camera_coords,
             sfm_points_depth=gt_depth,
@@ -65,33 +108,74 @@ def align_depth_interpolate(
     else:
         unaligned = depth
 
-    coords = torch.hstack(
-        [
-            (sfm_points_camera_coords[0] / (W - 1))[:, None],
-            (sfm_points_camera_coords[1] / (H - 1))[:, None],
+    if config.segmentation:
+        region_map = torch.from_numpy(
+            segment_depth_regions(depth, image, debug_export_dir)
+        ).to(depth.device)
+        # Filter SfM points to keep only one point per depth region
+        region_ids = torch.unique(region_map)
+        region_sfm_point_indices = []
+
+        # TODO: maybe add deadzone around region boundaries
+        # (can be implemented by blurring the segmentation map, then points near boundaries will not match any integer region id)
+
+        for region in region_ids:
+            region_points = (
+                region_map[sfm_points_camera_coords[1], sfm_points_camera_coords[0]]
+                == region
+            )
+            region_sfm_point_indices.append(torch.where(region_points)[0])
+    else:
+        region_map = torch.zeros_like(depth, dtype=torch.int)
+        region_ids = torch.tensor([0], device=depth.device)
+        region_sfm_point_indices = [torch.arange(sfm_points_camera_coords.shape[1])]
+
+    final_scale_map = torch.zeros_like(depth)
+    for region in region_ids:
+        # limit number of points for RBF to avoid OOM
+        region_sfm_pts_camera_coords = sfm_points_camera_coords[
+            :, region_sfm_point_indices[region.item()]
         ]
-    )
+        region_sfm_pts_camera_coords_norm = torch.hstack(
+            [
+                (region_sfm_pts_camera_coords.float()[0] / (W - 1.0))[:, None],
+                (region_sfm_pts_camera_coords.float()[1] / (H - 1.0))[:, None],
+            ]
+        )
+        region_gt_depth = gt_depth[region_sfm_point_indices[region.item()]]
 
-    # limit number of points for RBF to avoid OOM
-    MAX_RBF_POINTS = 5000
-    if coords.shape[0] > MAX_RBF_POINTS:
-        indices = torch.randperm(coords.shape[0], device=coords.device)[:MAX_RBF_POINTS]
-        sfm_points_camera_coords = sfm_points_camera_coords[:, indices]
-        coords = coords[indices]
-        gt_depth = gt_depth[indices]
+        MAX_RBF_POINTS = 5000
+        if region_sfm_pts_camera_coords_norm.shape[0] > MAX_RBF_POINTS:
+            indices = torch.randperm(
+                region_sfm_pts_camera_coords_norm.shape[0],
+                device=depth.device,
+            )[:MAX_RBF_POINTS]
+            region_sfm_pts_camera_coords = region_sfm_pts_camera_coords[:, indices]
+            region_sfm_pts_camera_coords_norm = region_sfm_pts_camera_coords_norm[
+                indices
+            ]
+            region_gt_depth = region_gt_depth[indices]
 
-    # Compute interpolations
-    rbf_scale = rbf_interpolation(
-        coords,
-        gt_depth / unaligned[sfm_points_camera_coords[1], sfm_points_camera_coords[0]],
-    )
+        # Compute interpolations
+        region_scale_map = rbf_interpolation(
+            region_sfm_pts_camera_coords_norm,
+            region_gt_depth
+            / unaligned[
+                region_sfm_pts_camera_coords[1], region_sfm_pts_camera_coords[0]
+            ],
+        )
+        final_scale_map[region_map == region] = region_scale_map[region_map == region]
+        region_scale_map[region_sfm_pts_camera_coords[1], region_sfm_pts_camera_coords[0]] = (
+            0.0  # for visualization purposes
+        )
+        pass
 
-    # TODO: somehow get ransac-like outlier rejection while keeping the "adaptive alignment"?
-    # TODO: study failure cases - when does this make things worse?
+        # TODO: somehow get ransac-like outlier rejection while keeping the "adaptive alignment"?
+        # TODO: study failure cases - when does this make things worse?
 
-    # TODO: support masks from predictor
+        # TODO: support masks from predictor
 
-    aligned_depth = rbf_scale * unaligned
+    aligned_depth = final_scale_map * unaligned
 
     if debug_export_dir is not None:
         print("Saving images to dir", debug_export_dir)
@@ -150,11 +234,21 @@ def align_depth_interpolate(
 
         # Save rbf scale with colorbar
         fig, ax = plt.subplots(figsize=(10, 8))
-        rbf_scale_np = rbf_scale.cpu().numpy()
+        rbf_scale_np = final_scale_map.cpu().numpy()
         im = ax.imshow(rbf_scale_np, cmap="viridis")
         ax.set_title("RBF Scale Factor")
         cbar = plt.colorbar(im, ax=ax)
         cbar.set_label("Scale Factor")
+
+        # Plot SfM points as small crosses colored by their depth
+        sfm_x = sfm_points_camera_coords[0].cpu().numpy()
+        sfm_y = sfm_points_camera_coords[1].cpu().numpy()
+        sfm_depths = gt_depth.cpu().numpy()
+
+        scatter = ax.scatter(
+            sfm_x, sfm_y, marker="x", c="black", s=10, alpha=0.8, linewidths=1
+        )
+
         rbf_scale_path = Path(debug_export_dir) / "rbf_scale.png"
         plt.savefig(rbf_scale_path, dpi=150, bbox_inches="tight")
         plt.close()
@@ -190,6 +284,7 @@ class DepthAlignmentInterpolate(DepthAlignmentStrategy):
     @classmethod
     def align(
         cls,
+        image: torch.Tensor,
         predicted_depth: torch.Tensor,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
@@ -197,6 +292,7 @@ class DepthAlignmentInterpolate(DepthAlignmentStrategy):
         debug_export_dir: Path | None,
     ) -> torch.Tensor:
         return align_depth_interpolate(
+            image,
             predicted_depth,
             sfm_points_camera_coords,
             sfm_points_depth,

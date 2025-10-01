@@ -126,6 +126,7 @@ def get_valid_sfm_pts(
 
 
 def align_depth(
+    image: torch.Tensor,
     config: Config,
     sfm_points: torch.Tensor,
     P: torch.Tensor,
@@ -147,7 +148,7 @@ def align_depth(
         sfm_points_camera, sfm_points_depth, mask, imsize
     )
     return config.mdi.depth_alignment_strategy.get_implementation().align(
-        depth, sfm_points_camera, sfm_points_depth, config, debug_export_dir
+        image, depth, sfm_points_camera, sfm_points_depth, config, debug_export_dir
     )
 
 
@@ -211,7 +212,14 @@ def get_pts_from_depth(
         _LOGGER.warning("Encountered infinite depths in predicted depth map.")
 
     aligned_depth = align_depth(
-        config, sfm_points, P, imsize, depth, mask_from_predictor, debug_export_dir
+        image.data,
+        config,
+        sfm_points,
+        P,
+        imsize,
+        depth,
+        mask_from_predictor,
+        debug_export_dir,
     )
 
     # get_mask should apply mask_from_predictor as well
