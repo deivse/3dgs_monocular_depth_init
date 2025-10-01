@@ -3,6 +3,7 @@ from matplotlib.colors import ListedColormap
 import numpy as np
 import skimage
 import torch
+import logging
 
 from gs_init_compare.config import Config
 from gs_init_compare.depth_alignment.config import InterpConfig
@@ -10,6 +11,8 @@ from gs_init_compare.depth_alignment.lstsqrs import DepthAlignmentLstSqrs
 from .interface import DepthAlignmentStrategy
 from torchrbf import RBFInterpolator
 import matplotlib.pyplot as plt
+
+LOGGER = logging.getLogger(__name__)
 
 
 def segment_depth_regions(
@@ -35,14 +38,14 @@ def segment_depth_regions(
         depth_region_cmap = ListedColormap(
             plt.cm.get_cmap("tab20").colors[: np.unique(slic_depth_regions).shape[0]]
         )
-        depth_region_overlay = 0.5 * image.cpu().numpy()
-        depth_region_overlay = (
-            depth_region_overlay
-            + 0.5
-            * depth_region_cmap(slic_depth_regions / np.max(slic_depth_regions))[
-                :, :, :3
-            ]
-        )
+
+        if np.max(slic_depth_regions) != 0:
+            region_colors = depth_region_cmap(
+                slic_depth_regions / np.max(slic_depth_regions)
+            )[:, :, :3]
+        else:
+            region_colors = depth_region_cmap(slic_depth_regions)[:, :, :3]
+        depth_region_overlay = 0.5 * image.cpu().numpy() + 0.5 * region_colors
         depth_region_overlay = np.clip(depth_region_overlay, 0, 1)
         debug_export_dir.mkdir(parents=True, exist_ok=True)
         plt.imsave(
@@ -68,12 +71,15 @@ def align_depth_interpolate(
     """
     H, W = depth.shape
 
-    def rbf_interpolation(coords, values):
+    def rbf_interpolation(coords: torch.Tensor, values: torch.Tensor):
+        # Default to linear kernel if there is not enough points
+        kernel = "linear" if coords.numel() < 3 else config.kernel
+
         interpolator = RBFInterpolator(
             coords,
             values,
             smoothing=config.smoothing,
-            kernel=config.kernel,
+            kernel=kernel,
             device=depth.device,
         )
 
@@ -130,7 +136,8 @@ def align_depth_interpolate(
         region_ids = torch.tensor([0], device=depth.device)
         region_sfm_point_indices = [torch.arange(sfm_points_camera_coords.shape[1])]
 
-    final_scale_map = torch.zeros_like(depth)
+    INVALID_SCALE_VAL = -42
+    final_scale_map = torch.full_like(depth, INVALID_SCALE_VAL)
     for region in region_ids:
         # limit number of points for RBF to avoid OOM
         region_sfm_pts_camera_coords = sfm_points_camera_coords[
@@ -143,18 +150,25 @@ def align_depth_interpolate(
             ]
         )
         region_gt_depth = gt_depth[region_sfm_point_indices[region.item()]]
+        region_num_pts = region_sfm_pts_camera_coords_norm.shape[0]
 
         MAX_RBF_POINTS = 5000
-        if region_sfm_pts_camera_coords_norm.shape[0] > MAX_RBF_POINTS:
+        if region_num_pts > MAX_RBF_POINTS:
             indices = torch.randperm(
                 region_sfm_pts_camera_coords_norm.shape[0],
                 device=depth.device,
             )[:MAX_RBF_POINTS]
             region_sfm_pts_camera_coords = region_sfm_pts_camera_coords[:, indices]
+            region_gt_depth = region_gt_depth[indices]
             region_sfm_pts_camera_coords_norm = region_sfm_pts_camera_coords_norm[
                 indices
             ]
-            region_gt_depth = region_gt_depth[indices]
+        if region_num_pts == 0:
+            LOGGER.warning(
+                "No SfM points found in region %s; skipping RBF interpolation.",
+                region.item(),
+            )
+            continue
 
         # Compute interpolations
         region_scale_map = rbf_interpolation(
@@ -165,10 +179,6 @@ def align_depth_interpolate(
             ],
         )
         final_scale_map[region_map == region] = region_scale_map[region_map == region]
-        region_scale_map[region_sfm_pts_camera_coords[1], region_sfm_pts_camera_coords[0]] = (
-            0.0  # for visualization purposes
-        )
-        pass
 
         # TODO: somehow get ransac-like outlier rejection while keeping the "adaptive alignment"?
         # TODO: study failure cases - when does this make things worse?
@@ -176,6 +186,9 @@ def align_depth_interpolate(
         # TODO: support masks from predictor
 
     aligned_depth = final_scale_map * unaligned
+    aligned_depth[
+        final_scale_map == INVALID_SCALE_VAL
+    ] = -1  # Will be cleaned up later. TODO: output mask instead, this is awful code
 
     if debug_export_dir is not None:
         print("Saving images to dir", debug_export_dir)
