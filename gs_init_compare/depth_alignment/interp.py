@@ -72,14 +72,11 @@ def align_depth_interpolate(
     H, W = depth.shape
 
     def rbf_interpolation(coords: torch.Tensor, values: torch.Tensor):
-        # Default to linear kernel if there is not enough points
-        kernel = "linear" if coords.numel() < 3 else config.kernel
-
         interpolator = RBFInterpolator(
             coords,
             values,
             smoothing=config.smoothing,
-            kernel=kernel,
+            kernel=config.kernel,
             device=depth.device,
         )
 
@@ -122,8 +119,11 @@ def align_depth_interpolate(
         region_ids = torch.unique(region_map)
         region_sfm_point_indices = []
 
-        # TODO: maybe add deadzone around region boundaries
-        # (can be implemented by blurring the segmentation map, then points near boundaries will not match any integer region id)
+        # TODO: 1. Try adding deadzone around region boundaries (requires alignment step outputting mask)
+        #          Can be implemented by blurring the segmentation map, then points near boundaries will not match any integer region id)
+
+        # TODO: 2. Support masks from predictor
+        # TODO: 3. SfM point outlier rejection before rbf step
 
         for region in region_ids:
             region_points = (
@@ -163,11 +163,24 @@ def align_depth_interpolate(
             region_sfm_pts_camera_coords_norm = region_sfm_pts_camera_coords_norm[
                 indices
             ]
+
         if region_num_pts == 0:
             LOGGER.warning(
                 "No SfM points found in region %s; skipping RBF interpolation.",
                 region.item(),
             )
+            continue
+        if region_num_pts < 3:
+            LOGGER.warning(
+                "Not enough SfM points found in region %s; using avg scale instead of RBF interpolation.",
+                region.item(),
+            )
+            final_scale_map[region_map == region] = (
+                region_gt_depth
+                / unaligned[
+                    region_sfm_pts_camera_coords[1], region_sfm_pts_camera_coords[0]
+                ]
+            ).mean()
             continue
 
         # Compute interpolations
@@ -179,11 +192,6 @@ def align_depth_interpolate(
             ],
         )
         final_scale_map[region_map == region] = region_scale_map[region_map == region]
-
-        # TODO: somehow get ransac-like outlier rejection while keeping the "adaptive alignment"?
-        # TODO: study failure cases - when does this make things worse?
-
-        # TODO: support masks from predictor
 
     aligned_depth = final_scale_map * unaligned
     aligned_depth[
