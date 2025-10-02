@@ -165,33 +165,35 @@ def align_depth_interpolate(
             ]
 
         if region_num_pts == 0:
-            LOGGER.warning(
+            LOGGER.error(
                 "No SfM points found in region %s; skipping RBF interpolation.",
                 region.item(),
             )
             continue
-        if region_num_pts < 3:
+
+        try:
+            region_scale_map = rbf_interpolation(
+                region_sfm_pts_camera_coords_norm,
+                region_gt_depth
+                / unaligned[
+                    region_sfm_pts_camera_coords[1], region_sfm_pts_camera_coords[0]
+                ],
+            )
+            final_scale_map[region_map == region] = region_scale_map[
+                region_map == region
+            ]
+        except Exception as e:
             LOGGER.warning(
-                "Not enough SfM points found in region %s; using avg scale instead of RBF interpolation.",
+                "RBF interpolation failed for region %s with error %s; using median scale instead of RBF interpolation.",
                 region.item(),
+                e,
             )
             final_scale_map[region_map == region] = (
                 region_gt_depth
                 / unaligned[
                     region_sfm_pts_camera_coords[1], region_sfm_pts_camera_coords[0]
                 ]
-            ).mean()
-            continue
-
-        # Compute interpolations
-        region_scale_map = rbf_interpolation(
-            region_sfm_pts_camera_coords_norm,
-            region_gt_depth
-            / unaligned[
-                region_sfm_pts_camera_coords[1], region_sfm_pts_camera_coords[0]
-            ],
-        )
-        final_scale_map[region_map == region] = region_scale_map[region_map == region]
+            ).median()
 
     aligned_depth = final_scale_map * unaligned
     aligned_depth[
