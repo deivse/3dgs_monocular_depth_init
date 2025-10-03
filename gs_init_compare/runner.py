@@ -80,7 +80,7 @@ def create_splats_with_optimizers(
         # Without this, AppleDepthPro CUDA memory is not released
         gc.collect()
     else:
-        raise ValueError("Please specify a correct init_type: sfm or random")
+        raise ValueError("Please specify a correct init_type: sfm, random or monocular_depth")
 
     print(cuda_stats_msg(device, "After loading points and rgbs"))
 

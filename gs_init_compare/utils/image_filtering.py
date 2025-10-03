@@ -21,6 +21,13 @@ def gaussian_deriv1d(x: torch.Tensor, sigma: float) -> torch.Tensor:
     return -(x / (sigma * sigma)) * gaussian1d(x, sigma)
 
 
+def box_blur_kernel(ksize: int) -> torch.Tensor:
+    """Function that returns a box blur kernel of given size."""
+    if ksize % 2 == 0:
+        raise ValueError("Box blur kernel size must be odd.")
+    return torch.ones((ksize, ksize)) / (ksize * ksize)
+
+
 def filter2d(x: torch.Tensor, kernel: torch.Tensor) -> torch.Tensor:
     """Function that convolves a tensor with a kernel.
 
@@ -46,7 +53,7 @@ def filter2d(x: torch.Tensor, kernel: torch.Tensor) -> torch.Tensor:
     kernel = kernel.flip(0, 1)[None, None]
     kernel = kernel.repeat(x.size(1), 1, 1, 1)
 
-    return F.conv2d(padded, kernel, stride=1, groups=x.size(1))
+    return F.conv2d(padded, kernel.to(x.device), stride=1, groups=x.size(1))
 
 
 def _separable_conv(x: torch.Tensor, kernel: torch.Tensor) -> torch.Tensor:
@@ -76,6 +83,24 @@ def gaussian_filter2d(x: torch.Tensor, sigma: float) -> torch.Tensor:
     """
     kernel_1d = gaussian1d(_gaussian_input_range(sigma), sigma)
     return _separable_conv(x, kernel_1d)
+
+
+def box_blur2d(x: torch.Tensor, ksize: int) -> torch.Tensor:
+    """Function that blurs a tensor using a box blur filter.
+
+    Arguments:
+        ksize (int): the size of the kernel. Must be odd.
+
+    Returns:
+        Tensor: the blurred tensor.
+
+    Shape:
+        - Input: :math:`(B, C, H, W)`
+        - Output: :math:`(B, C, H, W)`
+
+    """
+    kernel_2d = box_blur_kernel(ksize)
+    return filter2d(x, kernel_2d)
 
 
 def spatial_gradient_first_order(x: torch.Tensor, sigma: float) -> torch.Tensor:

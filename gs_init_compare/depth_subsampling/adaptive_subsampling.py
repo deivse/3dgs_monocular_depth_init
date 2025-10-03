@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Sequence, Tuple, Union
 import torch
-from gs_init_compare.depth_prediction.utils.image_filtering import (
+from gs_init_compare.utils.image_filtering import (
     gaussian_filter2d,
     spatial_gradient_first_order,
 )
@@ -114,5 +114,6 @@ class AdaptiveDepthSubsampler(DepthSubsampler):
             self.config.factor_range[1],
         )
         return torch.logical_and(
-            get_sample_mask(factor_map.to(int), rgb.shape[:2]), mask_from_predictor.view(-1)
+            get_sample_mask(factor_map.to(int), rgb.shape[:2]),
+            mask_from_predictor.view(-1),
         )

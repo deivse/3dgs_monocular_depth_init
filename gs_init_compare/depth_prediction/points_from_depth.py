@@ -17,7 +17,7 @@ from gs_init_compare.depth_subsampling.static_subsampler import StaticDepthSubsa
 from gs_init_compare.nerfbaselines_integration.method import (
     gs_Parser as NerfbaselinesParser,
 )
-from gs_init_compare.depth_prediction.utils.point_cloud_export import (
+from gs_init_compare.utils.point_cloud_export import (
     export_point_cloud_to_ply,
 )
 from gs_init_compare.types import InputImage

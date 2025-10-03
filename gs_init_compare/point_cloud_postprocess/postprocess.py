@@ -1,7 +1,7 @@
 from pathlib import Path
 import torch
 
-from gs_init_compare.depth_prediction.utils.point_cloud_export import (
+from gs_init_compare.utils.point_cloud_export import (
     export_point_cloud_to_ply,
 )
 

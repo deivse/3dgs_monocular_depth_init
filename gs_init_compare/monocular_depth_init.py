@@ -13,7 +13,7 @@ from gs_init_compare.depth_prediction.predictors.depth_predictor_interface impor
     CameraIntrinsics,
     DepthPredictor,
 )
-from gs_init_compare.depth_prediction.utils.point_cloud_export import (
+from gs_init_compare.utils.point_cloud_export import (
     export_point_cloud_to_ply,
 )
 from gs_init_compare.depth_prediction.points_from_depth import (

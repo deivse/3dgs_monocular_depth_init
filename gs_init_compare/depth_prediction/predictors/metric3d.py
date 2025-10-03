@@ -6,7 +6,7 @@ import torch
 
 from gs_init_compare.config import Config
 from gs_init_compare.depth_prediction.configs import Metric3dPreset
-from gs_init_compare.depth_prediction.utils.download_with_tqdm import download_with_pbar
+from gs_init_compare.utils.download_with_tqdm import download_with_pbar
 from gs_init_compare.third_party.metric3d.mono.model.monodepth_model import (
     get_configured_monodepth_model,
 )

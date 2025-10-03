@@ -42,7 +42,17 @@ class InterpConfig:
     # TODO: after initial testing, change defaults to:
     # lstsqrs_init: False
     # smoothing: 0.0001
+    # kernel: "thin_plate_spline" (NOT TESTED YET)
+    # segmentation: True
+    # segmentation_region_margin: ? (10 for bonsai)
+
     lstsqrs_init: bool = True
+    """If true, first use least squares to pre-align depth including offset, and then use RBF interpolation to refine the alignment."""
     smoothing: float = 0.001
-    kernel: str = "thin_plate_spline"  # see torch_rbf doc for options
+    """RBF smoothing parameter, see torch_rbf doc"""
+    kernel: str = "thin_plate_spline"
+    """See torch_rbf doc for options"""
     segmentation: bool = False
+    """If true, use segmentation to split the image into regions and align each region separately"""
+    segmentation_region_margin: int = 0
+    """Half kernel size for box blur, 0 means no blurring"""
