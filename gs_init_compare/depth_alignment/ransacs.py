@@ -6,7 +6,7 @@ from .lstsqrs import align_depth_least_squares
 import math
 import torch
 
-from .interface import DepthAlignmentStrategy
+from .interface import DepthAlignmentResult, DepthAlignmentStrategy
 
 
 class DepthAlignmentRansac(DepthAlignmentStrategy):
@@ -20,7 +20,7 @@ class DepthAlignmentRansac(DepthAlignmentStrategy):
         config: Config,
         *args,
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> DepthAlignmentResult:
         return _align_depth_ransac_generic(
             predicted_depth,
             sfm_points_camera_coords,
@@ -41,7 +41,7 @@ class DepthAlignmentMsac(DepthAlignmentStrategy):
         config: Config,
         *args,
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> DepthAlignmentResult:
         return _align_depth_ransac_generic(
             predicted_depth,
             sfm_points_camera_coords,
@@ -97,7 +97,7 @@ def _align_depth_ransac_generic(
     gt_depth: torch.Tensor,
     loss_func: RansacLossFunc,
     config: RansacConfig,
-) -> torch.Tensor:
+) -> DepthAlignmentResult:
     full_predicted_depth = depth
     depth = depth[gt_points_camera_coords[1], gt_points_camera_coords[0]].flatten()
 
@@ -172,4 +172,7 @@ def _align_depth_ransac_generic(
     #     print("RANSAC alignment is better than naive")
     #     print(
     #         f"ransac inlier ratio: {num_inliers_best / num_samples}, naive inlier ratio: {num_inliers_test / num_samples}")
-    return full_predicted_depth * h_best[0] + h_best[1]
+    return DepthAlignmentResult(
+        aligned_depth=full_predicted_depth * h_best[0] + h_best[1],
+        mask=torch.ones_like(full_predicted_depth, dtype=torch.bool),
+    )

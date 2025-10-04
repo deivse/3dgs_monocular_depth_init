@@ -1,5 +1,5 @@
 import torch
-from .interface import DepthAlignmentStrategy
+from .interface import DepthAlignmentResult, DepthAlignmentStrategy
 
 
 def align_depth_least_squares(depth: torch.Tensor, gt_depth: torch.Tensor):
@@ -32,7 +32,7 @@ class DepthAlignmentLstSqrs(DepthAlignmentStrategy):
         sfm_points_depth: torch.Tensor,
         *args,
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> DepthAlignmentResult:
         scale, shift = align_depth_least_squares(
             torch.vstack(
                 [
@@ -44,4 +44,7 @@ class DepthAlignmentLstSqrs(DepthAlignmentStrategy):
             ),
             sfm_points_depth,
         )
-        return predicted_depth * scale + shift
+        return DepthAlignmentResult(
+            aligned_depth=predicted_depth * scale + shift,
+            mask=torch.ones_like(predicted_depth, dtype=torch.bool),
+        )

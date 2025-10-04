@@ -1,7 +1,13 @@
 import abc
 from pathlib import Path
+from typing import NamedTuple
 
 import torch
+
+
+class DepthAlignmentResult(NamedTuple):
+    aligned_depth: torch.Tensor
+    mask: torch.Tensor
 
 
 class DepthAlignmentStrategy(abc.ABC):
@@ -15,7 +21,7 @@ class DepthAlignmentStrategy(abc.ABC):
         sfm_points_depth: torch.Tensor,
         config,  # : Config,
         debug_export_dir: Path | None,
-    ) -> torch.Tensor:
+    ) -> DepthAlignmentResult:
         """
         Estimate the alignment between predicted and ground truth depth maps and return the aligned depth map.
 

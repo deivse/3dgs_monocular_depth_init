@@ -7,6 +7,7 @@ import torch
 
 from gs_init_compare.config import Config
 from gs_init_compare.datasets.colmap import Parser
+from gs_init_compare.depth_alignment.interface import DepthAlignmentResult
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
@@ -134,7 +135,7 @@ def align_depth(
     depth: torch.Tensor,
     mask: torch.Tensor,
     debug_export_dir: Path | None,
-) -> torch.Tensor:
+) -> DepthAlignmentResult:
     device = sfm_points.device
 
     sfm_points_camera = P @ torch.vstack(
@@ -211,7 +212,7 @@ def get_pts_from_depth(
     if torch.any(torch.isinf(depth[mask_from_predictor])):
         _LOGGER.warning("Encountered infinite depths in predicted depth map.")
 
-    aligned_depth = align_depth(
+    aligned_depth, mask_from_alignment = align_depth(
         image.data,
         config,
         sfm_points,
@@ -223,19 +224,18 @@ def get_pts_from_depth(
     )
 
     # get_mask should apply mask_from_predictor as well
-    subsampling_mask: torch.Tensor = (
-        get_subsampler(config)
-        .get_mask(image.data, aligned_depth, mask_from_predictor)
-        .cpu()
+    sampling_mask: torch.Tensor = get_subsampler(config).get_mask(
+        image.data, aligned_depth, mask_from_predictor
     )
-    subsampling_mask[aligned_depth.flatten() < 0] = 0
+    sampling_mask &= mask_from_alignment.flatten()
+    sampling_mask &= (aligned_depth >= 0).flatten()
 
     pts_camera: torch.Tensor = torch.dstack(
         [
             torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(device),
             aligned_depth,
         ],
-    ).reshape(-1, 3)[subsampling_mask]
+    ).reshape(-1, 3)[sampling_mask]
 
     pts_camera[:, 0] = (pts_camera[:, 0] + 0.5) * pts_camera[:, 2]
     pts_camera[:, 1] = (pts_camera[:, 1] + 0.5) * pts_camera[:, 2]
@@ -252,9 +252,9 @@ def get_pts_from_depth(
             pts_world,
             parser,
             image.name,
-            subsampling_mask.cpu(),
+            sampling_mask.cpu(),
             image.data,
             debug_export_dir,
         )
 
-    return (pts_world.reshape([-1, 3]).float(), subsampling_mask.cpu(), P)
+    return (pts_world.reshape([-1, 3]).float(), sampling_mask.cpu(), P)

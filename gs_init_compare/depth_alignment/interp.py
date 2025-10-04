@@ -9,7 +9,7 @@ from gs_init_compare.config import Config
 from gs_init_compare.depth_alignment.config import InterpConfig
 from gs_init_compare.depth_alignment.lstsqrs import DepthAlignmentLstSqrs
 from gs_init_compare.utils.image_filtering import box_blur2d, gaussian_filter2d
-from .interface import DepthAlignmentStrategy
+from .interface import DepthAlignmentResult, DepthAlignmentStrategy
 from torchrbf import RBFInterpolator
 import matplotlib.pyplot as plt
 
@@ -93,7 +93,26 @@ def rbf_interpolation(
     )[0, 0, :, :].T
 
 
-def snap_to_int(x):
+def pick_rbf_point_subset(
+    num_points,
+    max_points,
+    sfm_pts_camera_coords,
+    gt_depth,
+    sfm_pts_camera_coords_norm,
+    device,
+):
+    indices = torch.randperm(
+        num_points,
+        device=device,
+    )[:max_points]
+    return (
+        sfm_pts_camera_coords[:, indices],
+        gt_depth[indices],
+        sfm_pts_camera_coords_norm[indices],
+    )
+
+
+def snap_to_int(x: torch.Tensor):
     """
     Round values that are within `tol` of an integer,
     leave everything else unchanged.
@@ -122,19 +141,22 @@ def align_depth_interpolate(
     num_sfm_pts = sfm_points_camera_coords.shape[1]
     device = depth.device
 
+    unaligned = depth
+    out_mask = torch.ones_like(depth, dtype=torch.bool)
+
     if config.lstsqrs_init:
-        unaligned = DepthAlignmentLstSqrs.align(
+        unaligned, out_mask = DepthAlignmentLstSqrs.align(
             image,
             predicted_depth=depth,
             sfm_points_camera_coords=sfm_points_camera_coords,
             sfm_points_depth=gt_depth,
         )
-    else:
-        unaligned = depth
 
     # TODO: 1. Try adding deadzone around region boundaries (requires alignment step outputting mask)
     #          Can be implemented by blurring the segmentation map, then points near boundaries will not match any integer region id)
-    #       2. SfM point outlier rejection before rbf step
+    #          * What if we output the deadzones as a mask and also prevent unprojection of points from those regions?
+    #            Even if alignment is perfect, they will have some blur in the depth which will prevent accurate unprojection.
+    #       2. SfM point outlier rejection before rbf step? - Can still help because outliers can be inside depth regions as well (e.g. objects with holes)
     #       3. Figure out in what cases RBF fails and design a better fallback (currently just median scale)
     #       4. Support masks from predictor
 
@@ -146,6 +168,7 @@ def align_depth_interpolate(
         region_ids = torch.unique(region_map)
         region_sfm_point_indices = []
 
+        region_map_blurred = region_map
         if config.segmentation_region_margin > 0:
             # TODO: dynamic kernel size based on image size?
             kernel_size = 2 * config.segmentation_region_margin + 1
@@ -153,8 +176,8 @@ def align_depth_interpolate(
                 region_map[None, None].float(), ksize=kernel_size
             )[0, 0]
             region_map_blurred = snap_to_int(region_map_blurred)
-        else:
-            region_map_blurred = region_map
+            if config.segmentation_deadzone_mask:
+                out_mask[region_map_blurred != region_map] = False
 
         for region in region_ids:
             region_points = (
@@ -172,30 +195,32 @@ def align_depth_interpolate(
     INVALID_SCALE_VAL = -42
     final_scale_map = torch.full_like(depth, INVALID_SCALE_VAL)
     for region in region_ids:
-        region_sfm_pts_camera_coords = sfm_points_camera_coords[
+        region_sfm_coords = sfm_points_camera_coords[
             :, region_sfm_point_indices[region.item()]
         ]
-        region_sfm_pts_camera_coords_norm = torch.hstack(
+        region_sfm_coords_norm = torch.hstack(
             [
-                (region_sfm_pts_camera_coords.float()[0] / (W - 1.0))[:, None],
-                (region_sfm_pts_camera_coords.float()[1] / (H - 1.0))[:, None],
+                (region_sfm_coords.float()[0] / (W - 1.0))[:, None],
+                (region_sfm_coords.float()[1] / (H - 1.0))[:, None],
             ]
         )
         region_gt_depth = gt_depth[region_sfm_point_indices[region.item()]]
-        region_num_pts = region_sfm_pts_camera_coords_norm.shape[0]
+        region_num_pts = region_sfm_coords_norm.shape[0]
 
         # limit number of points for RBF to avoid OOM
-        MAX_RBF_POINTS = 5000
-        if region_num_pts > MAX_RBF_POINTS:
-            indices = torch.randperm(
-                region_sfm_pts_camera_coords_norm.shape[0],
-                device=device,
-            )[:MAX_RBF_POINTS]
-            region_sfm_pts_camera_coords = region_sfm_pts_camera_coords[:, indices]
-            region_gt_depth = region_gt_depth[indices]
-            region_sfm_pts_camera_coords_norm = region_sfm_pts_camera_coords_norm[
-                indices
-            ]
+        if config.max_rbf_points != -1 and region_num_pts > config.max_rbf_points:
+            (
+                region_sfm_coords,
+                region_gt_depth,
+                region_sfm_coords_norm,
+            ) = pick_rbf_point_subset(
+                region_num_pts,
+                config.max_rbf_points,
+                region_sfm_coords,
+                region_gt_depth,
+                region_sfm_coords_norm,
+                device,
+            )
 
         if region_num_pts == 0:
             LOGGER.error(
@@ -204,38 +229,29 @@ def align_depth_interpolate(
             )
             continue
 
+        region_mask = region_map == region
         try:
             region_scale_map = rbf_interpolation(
-                region_sfm_pts_camera_coords_norm,
-                region_gt_depth
-                / unaligned[
-                    region_sfm_pts_camera_coords[1], region_sfm_pts_camera_coords[0]
-                ],
+                region_sfm_coords_norm,
+                region_gt_depth / unaligned[region_sfm_coords[1], region_sfm_coords[0]],
                 config,
                 device,
                 W,
                 H,
             )
-            final_scale_map[region_map == region] = region_scale_map[
-                region_map == region
-            ]
+            final_scale_map[region_mask] = region_scale_map[region_mask]
         except Exception as e:
             LOGGER.warning(
                 "RBF interpolation failed for region %s with error %s; using median scale instead of RBF interpolation.",
                 region.item(),
                 e,
             )
-            final_scale_map[region_map == region] = (
-                region_gt_depth
-                / unaligned[
-                    region_sfm_pts_camera_coords[1], region_sfm_pts_camera_coords[0]
-                ]
+            final_scale_map[region_mask] = (
+                region_gt_depth / unaligned[region_sfm_coords[1], region_sfm_coords[0]]
             ).median()
 
     aligned_depth = final_scale_map * unaligned
-    aligned_depth[
-        final_scale_map == INVALID_SCALE_VAL
-    ] = -1  # Will be cleaned up later. TODO: output mask instead, this is awful code
+    out_mask = out_mask & (final_scale_map != INVALID_SCALE_VAL)
 
     if debug_export_dir is not None:
         print("Saving images to dir", debug_export_dir)
@@ -337,7 +353,7 @@ def align_depth_interpolate(
         plt.savefig(aligned_depth_path, dpi=150, bbox_inches="tight")
         plt.close()
 
-    return aligned_depth
+    return DepthAlignmentResult(aligned_depth, out_mask)
 
 
 class DepthAlignmentInterpolate(DepthAlignmentStrategy):

@@ -56,3 +56,10 @@ class InterpConfig:
     """If true, use segmentation to split the image into regions and align each region separately"""
     segmentation_region_margin: int = 0
     """Half kernel size for box blur, 0 means no blurring"""
+    segmentation_deadzone_mask: bool = False
+    """
+    If segmentation is used, mask out deadzones around segmentation boundaries in the output mask.
+    This can help avoid invalid reprojections around object boundaries, since the predicted depth resolution is lower than the input image resolution.
+    """
+    max_rbf_points: int = 5000
+    """Maximum number of points to use for RBF interpolation, -1 means use all points"""
