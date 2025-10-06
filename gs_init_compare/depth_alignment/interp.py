@@ -1,7 +1,10 @@
+from enum import IntEnum
 from pathlib import Path
+from typing import NamedTuple
 from matplotlib.colors import ListedColormap
 import numpy as np
 import skimage
+from sklearn.neighbors import LocalOutlierFactor, NearestNeighbors
 import torch
 import logging
 
@@ -122,6 +125,52 @@ def snap_to_int(x: torch.Tensor):
     return torch.where(mask, nearest, x)
 
 
+class OutlierType(IntEnum):
+    REGULAR = 0
+    SCALE_ONLY = 1
+    POSITION_ONLY = 2
+    BOTH = 3
+
+
+class OutlierClassification(NamedTuple):
+    scale_only_outliers: torch.Tensor
+    both_outliers: torch.Tensor
+    position_only_outliers: torch.Tensor
+    regular: torch.Tensor
+
+
+def scale_factor_outlier_removal(
+    coords: torch.Tensor, scales: torch.Tensor, debug_export_dir: Path | None
+):
+    K_lof = 10
+    clf = LocalOutlierFactor(n_neighbors=K_lof, n_jobs=-1)
+    coords_np = coords.cpu().numpy()
+    pred_pts_only = clf.fit_predict(coords_np)
+    position_outliers_np = pred_pts_only == -1
+
+    K_scale_knn = 5
+    model = NearestNeighbors(n_neighbors=K_scale_knn + 1, metric="euclidean").fit(
+        coords_np
+    )
+    knn_distances, knn_indices = model.kneighbors(coords_np)
+    knn_distances = knn_distances[:, 1:]  # remove self-distance
+    knn_indices = knn_indices[:, 1:]  # remove self-index
+
+    knn_median_scale = torch.median(scales[knn_indices], dim=1).values
+    scale_diff = torch.abs(scales - knn_median_scale)
+    scale_diff_threshold = torch.quantile(scale_diff, 0.99)  # can be tuned
+
+    scale_outliers = scale_diff > scale_diff_threshold
+    position_outliers = torch.from_numpy(position_outliers_np).to(scale_outliers)
+
+    return OutlierClassification(
+        scale_only_outliers=scale_outliers & ~position_outliers,
+        both_outliers=scale_outliers & position_outliers,
+        position_only_outliers=position_outliers & ~scale_outliers,
+        regular=~(scale_outliers | position_outliers),
+    )
+
+
 def align_depth_interpolate(
     image: torch.Tensor,
     depth: torch.Tensor,
@@ -192,6 +241,7 @@ def align_depth_interpolate(
         region_ids = torch.tensor([0], device=device)
         region_sfm_point_indices = [torch.arange(num_sfm_pts)]
 
+    global_outlier_type = torch.zeros(num_sfm_pts, dtype=torch.int, device=device)
     INVALID_SCALE_VAL = -42
     final_scale_map = torch.full_like(depth, INVALID_SCALE_VAL)
     for region in region_ids:
@@ -223,6 +273,7 @@ def align_depth_interpolate(
             )
 
         if region_num_pts == 0:
+            # TODO: is it better to skip or use global least squares scale for the whole depth map
             LOGGER.error(
                 "No SfM points found in region %s; skipping RBF interpolation.",
                 region.item(),
@@ -230,10 +281,44 @@ def align_depth_interpolate(
             continue
 
         region_mask = region_map == region
+
         try:
+            scale_factors = (
+                region_gt_depth / unaligned[region_sfm_coords[1], region_sfm_coords[0]]
+            )
+            if config.scale_outlier_removal:
+                outlier_type = scale_factor_outlier_removal(
+                    region_sfm_coords.T, scale_factors, debug_export_dir
+                )
+                outlier_mask = outlier_type.scale_only_outliers
+                if outlier_mask.sum() > 0:
+                    LOGGER.info(
+                        "Removed %d/%d points as outliers from region %s using LOF",
+                        outlier_mask.sum().item(),
+                        region_num_pts,
+                        region.item(),
+                    )
+                # TODO: UNCOMMENTT!!!
+                scale_factors = scale_factors[~outlier_mask]
+                region_sfm_coords_norm = region_sfm_coords_norm[~outlier_mask]
+                global_outlier_type[
+                    region_sfm_point_indices[region][outlier_type.scale_only_outliers]
+                ] = OutlierType.SCALE_ONLY
+                global_outlier_type[
+                    region_sfm_point_indices[region][outlier_type.both_outliers]
+                ] = OutlierType.BOTH
+                global_outlier_type[
+                    region_sfm_point_indices[region][
+                        outlier_type.position_only_outliers
+                    ]
+                ] = OutlierType.POSITION_ONLY
+                global_outlier_type[
+                    region_sfm_point_indices[region][outlier_type.regular]
+                ] = OutlierType.REGULAR
+
             region_scale_map = rbf_interpolation(
                 region_sfm_coords_norm,
-                region_gt_depth / unaligned[region_sfm_coords[1], region_sfm_coords[0]],
+                scale_factors,
                 config,
                 device,
                 W,
@@ -311,19 +396,64 @@ def align_depth_interpolate(
         # Save rbf scale with colorbar
         fig, ax = plt.subplots(figsize=(10, 8))
         rbf_scale_np = final_scale_map.cpu().numpy()
-        im = ax.imshow(rbf_scale_np, cmap="viridis")
+        ax.imshow(image.cpu().numpy())
+        im = ax.imshow(rbf_scale_np, cmap="viridis", alpha=0.75)
         ax.set_title("RBF Scale Factor")
         cbar = plt.colorbar(im, ax=ax)
         cbar.set_label("Scale Factor")
 
-        # Plot SfM points as small crosses colored by their depth
         sfm_x = sfm_points_camera_coords[0].cpu().numpy()
         sfm_y = sfm_points_camera_coords[1].cpu().numpy()
-        sfm_depths = gt_depth.cpu().numpy()
 
-        scatter = ax.scatter(
-            sfm_x, sfm_y, marker="x", c="black", s=10, alpha=0.8, linewidths=1
-        )
+        # Visualize SfM points with different styles depending on outlier type
+        try:
+            # Helper to scatter a subset
+            def _scatter(mask, color, marker, label, z):
+                if mask.numel() == 0 or mask.sum() == 0:
+                    return
+                ax.scatter(
+                    sfm_x[mask.cpu().numpy()],
+                    sfm_y[mask.cpu().numpy()],
+                    marker=marker,
+                    c=color,
+                    s=18,
+                    alpha=0.9,
+                    linewidths=0.8,
+                    label=label,
+                    zorder=z,
+                )
+
+            _scatter(
+                global_outlier_type == OutlierType.REGULAR, "black", "x", "regular", 5
+            )
+            _scatter(
+                global_outlier_type == OutlierType.SCALE_ONLY,
+                "red",
+                "o",
+                "scale outlier",
+                6,
+            )
+            _scatter(
+                global_outlier_type == OutlierType.POSITION_ONLY,
+                "orange",
+                "s",
+                "pos outlier",
+                7,
+            )
+            _scatter(
+                global_outlier_type == OutlierType.BOTH,
+                "magenta",
+                "D",
+                "both outlier",
+                8,
+            )
+
+            ax.legend(loc="upper right", fontsize=8)
+        except Exception:
+            # Fallback: single-style scatter if anything goes wrong
+            ax.scatter(
+                sfm_x, sfm_y, marker="x", c="black", s=10, alpha=0.8, linewidths=1
+            )
 
         rbf_scale_path = Path(debug_export_dir) / "rbf_scale.png"
         plt.savefig(rbf_scale_path, dpi=150, bbox_inches="tight")

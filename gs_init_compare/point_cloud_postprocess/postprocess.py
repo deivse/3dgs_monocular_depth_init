@@ -16,6 +16,7 @@ import numpy as np
 def lof_outlier_removal(pts: torch.Tensor, config: PointCloudPostprocessConfig):
     pts_np = pts.cpu().numpy()
 
+    # TODO: what about scanning through possible K values as the paper suggests? https://www.dbs.ifi.lmu.de/Publikationen/Papers/LOF.pdf
     clf = LocalOutlierFactor(n_neighbors=config.lof_num_neighbors, n_jobs=-1)
     pred_pts_only = clf.fit_predict(pts_np)
     return pred_pts_only == -1

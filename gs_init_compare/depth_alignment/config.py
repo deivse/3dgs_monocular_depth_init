@@ -41,10 +41,11 @@ class RansacConfig:
 class InterpConfig:
     # TODO: after initial testing, change defaults to:
     # lstsqrs_init: False
-    # smoothing: 0.0001
+    # smoothing: 0.0001 for tanksandtemples, 0.001 for mipnerf360 - middle ground 0.0005?
     # kernel: "thin_plate_spline" (NOT TESTED YET)
     # segmentation: True
     # segmentation_region_margin: ? (10 for bonsai)
+    # segmentation_deadzone_mask: False
 
     lstsqrs_init: bool = True
     """If true, first use least squares to pre-align depth including offset, and then use RBF interpolation to refine the alignment."""
@@ -63,3 +64,5 @@ class InterpConfig:
     """
     max_rbf_points: int = 5000
     """Maximum number of points to use for RBF interpolation, -1 means use all points"""
+    scale_outlier_removal: bool = False
+    """If true, use Local Outlier Factor to remove outliers in scale factors before RBF interpolation"""
