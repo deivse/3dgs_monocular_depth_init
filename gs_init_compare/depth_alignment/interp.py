@@ -302,11 +302,15 @@ def align_depth_interpolate(
         region_num_pts = region_sfm_coords.shape[1]
 
         # limit number of points for RBF to avoid OOM
-        if config.max_rbf_points != -1 and region_num_pts > config.max_rbf_points:
+        if (
+            config.method == "rbf"
+            and config.max_rbf_points != -1
+            and region_num_pts > config.max_rbf_points
+        ):
             (
                 region_sfm_coords,
                 region_gt_depth,
-                region_sfm_point_indices[region.item()]
+                region_sfm_point_indices[region.item()],
             ) = pick_rbf_point_subset(
                 region_num_pts,
                 config.max_rbf_points,
