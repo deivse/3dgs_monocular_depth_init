@@ -115,8 +115,12 @@ def linear_interpolation(
     coords_np = coords.T.cpu().numpy()
     values_np = values.cpu().numpy()
     # add values at the corners to stabilize interpolation
+
+    # TODO: corners can be handled better (only use visible nearby points)
     corner_coords = np.array([[0, 0], [0, H - 1], [W - 1, 0], [W - 1, H - 1]])
-    nn = NearestNeighbors(n_neighbors=10).fit(coords_np)
+
+    k = min(5, len(coords_np))
+    nn = NearestNeighbors(n_neighbors=k).fit(coords_np)
     _, indices = nn.kneighbors(corner_coords)
     indices = indices[:, 1:]  # remove self-index
     corner_values = np.median(values_np[indices], axis=1)
@@ -193,24 +197,35 @@ def scale_factor_outlier_removal(
     coords: torch.Tensor, scales: torch.Tensor, debug_export_dir: Path | None
 ):
     K_lof = 10
+    K_scale_knn = 5
+
+    num_pts = coords.shape[0]
+    if num_pts < min(K_lof + 1, K_scale_knn + 1):
+        return OutlierClassification(
+            scale_only_outliers=torch.zeros(num_pts, dtype=torch.bool),
+            both_outliers=torch.zeros(num_pts, dtype=torch.bool),
+            position_only_outliers=torch.zeros(num_pts, dtype=torch.bool),
+            regular=torch.ones(num_pts, dtype=torch.bool),
+        )
+
     clf = LocalOutlierFactor(n_neighbors=K_lof, n_jobs=-1)
     coords_np = coords.cpu().numpy()
     pred_pts_only = clf.fit_predict(coords_np)
     position_outliers_np = pred_pts_only == -1
 
-    K_scale_knn = 5
     model = NearestNeighbors(n_neighbors=K_scale_knn + 1, metric="euclidean").fit(
         coords_np
     )
     knn_distances, knn_indices = model.kneighbors(coords_np)
-    knn_distances = knn_distances[:, 1:]  # remove self-distance
-    knn_indices = knn_indices[:, 1:]  # remove self-index
 
+    # remove self-distance/index (first column)
+    knn_distances = knn_distances[:, 1:]
+    knn_indices = knn_indices[:, 1:]
     knn_median_scale = torch.median(scales[knn_indices], dim=1).values
     scale_diff = torch.abs(scales - knn_median_scale)
     scale_diff_threshold = torch.quantile(scale_diff, 0.99)
-
     scale_outliers = scale_diff > scale_diff_threshold
+
     position_outliers = torch.from_numpy(position_outliers_np).to(scale_outliers)
 
     return OutlierClassification(
