@@ -4,6 +4,7 @@ from typing import NamedTuple
 from matplotlib.colors import ListedColormap
 import numpy as np
 import skimage
+from scipy.interpolate import LinearNDInterpolator
 from sklearn.neighbors import LocalOutlierFactor, NearestNeighbors
 import torch
 import logging
@@ -66,8 +67,15 @@ def rbf_interpolation(
     W: int,
     H: int,
 ) -> torch.Tensor:
+    coords_norm = torch.hstack(
+        [
+            (coords.float()[0] / (W - 1.0))[:, None],
+            (coords.float()[1] / (H - 1.0))[:, None],
+        ]
+    )
+
     interpolator = RBFInterpolator(
-        coords,
+        coords_norm,
         values,
         smoothing=config.smoothing,
         kernel=config.kernel,
@@ -96,12 +104,53 @@ def rbf_interpolation(
     )[0, 0, :, :].T
 
 
+def linear_interpolation(
+    coords: torch.Tensor,
+    values: torch.Tensor,
+    config: InterpConfig,
+    device: torch.device,
+    W: int,
+    H: int,
+) -> torch.Tensor:
+    coords_np = coords.T.cpu().numpy()
+    values_np = values.cpu().numpy()
+    # add values at the corners to stabilize interpolation
+    corner_coords = np.array([[0, 0], [0, H - 1], [W - 1, 0], [W - 1, H - 1]])
+    nn = NearestNeighbors(n_neighbors=10).fit(coords_np)
+    _, indices = nn.kneighbors(corner_coords)
+    indices = indices[:, 1:]  # remove self-index
+    corner_values = np.median(values_np[indices], axis=1)
+    coords_np = np.vstack((coords_np, corner_coords))
+    values_np = np.hstack((values_np, corner_values))
+
+    X = np.linspace(0, W - 1, W)
+    Y = np.linspace(0, H - 1, H)
+    X, Y = np.meshgrid(X, Y)
+    interp = LinearNDInterpolator(coords_np, values_np, fill_value=np.median(values_np))
+    return torch.from_numpy(interp(X, Y)).to(values)
+
+
+def interpolate_scale(
+    coords: torch.Tensor,
+    values: torch.Tensor,
+    config: InterpConfig,
+    device: torch.device,
+    W: int,
+    H: int,
+) -> torch.Tensor:
+    if config.method == "rbf":
+        return rbf_interpolation(coords, values, config, device, W, H)
+    elif config.method == "linear":
+        return linear_interpolation(coords, values, config, device, W, H)
+    else:
+        raise ValueError(f"Unknown interpolation method: {config.method}")
+
+
 def pick_rbf_point_subset(
     num_points,
     max_points,
     sfm_pts_camera_coords,
     gt_depth,
-    sfm_pts_camera_coords_norm,
     device,
 ):
     indices = torch.randperm(
@@ -111,7 +160,6 @@ def pick_rbf_point_subset(
     return (
         sfm_pts_camera_coords[:, indices],
         gt_depth[indices],
-        sfm_pts_camera_coords_norm[indices],
     )
 
 
@@ -158,7 +206,7 @@ def scale_factor_outlier_removal(
 
     knn_median_scale = torch.median(scales[knn_indices], dim=1).values
     scale_diff = torch.abs(scales - knn_median_scale)
-    scale_diff_threshold = torch.quantile(scale_diff, 0.99)  # can be tuned
+    scale_diff_threshold = torch.quantile(scale_diff, 0.99)
 
     scale_outliers = scale_diff > scale_diff_threshold
     position_outliers = torch.from_numpy(position_outliers_np).to(scale_outliers)
@@ -248,27 +296,19 @@ def align_depth_interpolate(
         region_sfm_coords = sfm_points_camera_coords[
             :, region_sfm_point_indices[region.item()]
         ]
-        region_sfm_coords_norm = torch.hstack(
-            [
-                (region_sfm_coords.float()[0] / (W - 1.0))[:, None],
-                (region_sfm_coords.float()[1] / (H - 1.0))[:, None],
-            ]
-        )
         region_gt_depth = gt_depth[region_sfm_point_indices[region.item()]]
-        region_num_pts = region_sfm_coords_norm.shape[0]
+        region_num_pts = region_sfm_coords.shape[1]
 
         # limit number of points for RBF to avoid OOM
         if config.max_rbf_points != -1 and region_num_pts > config.max_rbf_points:
             (
                 region_sfm_coords,
                 region_gt_depth,
-                region_sfm_coords_norm,
             ) = pick_rbf_point_subset(
                 region_num_pts,
                 config.max_rbf_points,
                 region_sfm_coords,
                 region_gt_depth,
-                region_sfm_coords_norm,
                 device,
             )
 
@@ -282,42 +322,39 @@ def align_depth_interpolate(
 
         region_mask = region_map == region
 
-        try:
-            scale_factors = (
-                region_gt_depth / unaligned[region_sfm_coords[1], region_sfm_coords[0]]
+        scale_factors = (
+            region_gt_depth / unaligned[region_sfm_coords[1], region_sfm_coords[0]]
+        )
+        if config.scale_outlier_removal:
+            outlier_type = scale_factor_outlier_removal(
+                region_sfm_coords.T, scale_factors, debug_export_dir
             )
-            if config.scale_outlier_removal:
-                outlier_type = scale_factor_outlier_removal(
-                    region_sfm_coords.T, scale_factors, debug_export_dir
+            outlier_mask = outlier_type.scale_only_outliers
+            if outlier_mask.sum() > 0:
+                LOGGER.info(
+                    "Removed %d/%d points as outliers from region %s using LOF",
+                    outlier_mask.sum().item(),
+                    region_num_pts,
+                    region.item(),
                 )
-                outlier_mask = outlier_type.scale_only_outliers
-                if outlier_mask.sum() > 0:
-                    LOGGER.info(
-                        "Removed %d/%d points as outliers from region %s using LOF",
-                        outlier_mask.sum().item(),
-                        region_num_pts,
-                        region.item(),
-                    )
-                # TODO: UNCOMMENTT!!!
-                scale_factors = scale_factors[~outlier_mask]
-                region_sfm_coords_norm = region_sfm_coords_norm[~outlier_mask]
-                global_outlier_type[
-                    region_sfm_point_indices[region][outlier_type.scale_only_outliers]
-                ] = OutlierType.SCALE_ONLY
-                global_outlier_type[
-                    region_sfm_point_indices[region][outlier_type.both_outliers]
-                ] = OutlierType.BOTH
-                global_outlier_type[
-                    region_sfm_point_indices[region][
-                        outlier_type.position_only_outliers
-                    ]
-                ] = OutlierType.POSITION_ONLY
-                global_outlier_type[
-                    region_sfm_point_indices[region][outlier_type.regular]
-                ] = OutlierType.REGULAR
+            scale_factors = scale_factors[~outlier_mask]
+            region_sfm_coords = region_sfm_coords[:, ~outlier_mask]
+            global_outlier_type[
+                region_sfm_point_indices[region][outlier_type.scale_only_outliers]
+            ] = OutlierType.SCALE_ONLY
+            global_outlier_type[
+                region_sfm_point_indices[region][outlier_type.both_outliers]
+            ] = OutlierType.BOTH
+            global_outlier_type[
+                region_sfm_point_indices[region][outlier_type.position_only_outliers]
+            ] = OutlierType.POSITION_ONLY
+            global_outlier_type[
+                region_sfm_point_indices[region][outlier_type.regular]
+            ] = OutlierType.REGULAR
 
-            region_scale_map = rbf_interpolation(
-                region_sfm_coords_norm,
+        try:
+            region_scale_map = interpolate_scale(
+                region_sfm_coords,
                 scale_factors,
                 config,
                 device,
@@ -327,13 +364,11 @@ def align_depth_interpolate(
             final_scale_map[region_mask] = region_scale_map[region_mask]
         except Exception as e:
             LOGGER.warning(
-                "RBF interpolation failed for region %s with error %s; using median scale instead of RBF interpolation.",
+                "Interpolation failed for region %s with error %s; using median scale instead of interpolation.",
                 region.item(),
                 e,
             )
-            final_scale_map[region_mask] = (
-                region_gt_depth / unaligned[region_sfm_coords[1], region_sfm_coords[0]]
-            ).median()
+            final_scale_map[region_mask] = scale_factors.median()
 
     aligned_depth = final_scale_map * unaligned
     out_mask = out_mask & (final_scale_map != INVALID_SCALE_VAL)

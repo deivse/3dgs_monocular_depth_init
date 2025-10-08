@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 
 class DepthAlignmentStrategyEnum(str, Enum):
@@ -46,7 +47,8 @@ class InterpConfig:
     # segmentation: True
     # segmentation_region_margin: ? (10 for bonsai)
     # segmentation_deadzone_mask: False
-
+    method: Literal["rbf", "linear"] = "rbf"
+    """Interpolation method."""
     lstsqrs_init: bool = True
     """If true, first use least squares to pre-align depth including offset, and then use RBF interpolation to refine the alignment."""
     smoothing: float = 0.001
