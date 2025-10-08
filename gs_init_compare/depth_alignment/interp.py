@@ -150,7 +150,8 @@ def pick_rbf_point_subset(
     num_points,
     max_points,
     sfm_pts_camera_coords,
-    gt_depth,
+    sfm_depth,
+    sfm_indices,
     device,
 ):
     indices = torch.randperm(
@@ -159,7 +160,8 @@ def pick_rbf_point_subset(
     )[:max_points]
     return (
         sfm_pts_camera_coords[:, indices],
-        gt_depth[indices],
+        sfm_depth[indices],
+        sfm_indices[indices],
     )
 
 
@@ -304,11 +306,13 @@ def align_depth_interpolate(
             (
                 region_sfm_coords,
                 region_gt_depth,
+                region_sfm_point_indices[region.item()]
             ) = pick_rbf_point_subset(
                 region_num_pts,
                 config.max_rbf_points,
                 region_sfm_coords,
                 region_gt_depth,
+                region_sfm_point_indices[region.item()],
                 device,
             )
 
