@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Callable
 
 from gs_init_compare.config import Config
@@ -18,6 +19,7 @@ class DepthAlignmentRansac(DepthAlignmentStrategy):
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
         config: Config,
+        debug_export_dir: Path | None = None,
         *args,
         **kwargs,
     ) -> DepthAlignmentResult:
@@ -27,6 +29,7 @@ class DepthAlignmentRansac(DepthAlignmentStrategy):
             sfm_points_depth,
             _ransac_loss,
             config.mdi.ransac,
+            debug_export_dir,
         )
 
 
@@ -39,6 +42,7 @@ class DepthAlignmentMsac(DepthAlignmentStrategy):
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
         config: Config,
+        debug_export_dir: Path | None = None,
         *args,
         **kwargs,
     ) -> DepthAlignmentResult:
@@ -48,6 +52,7 @@ class DepthAlignmentMsac(DepthAlignmentStrategy):
             sfm_points_depth,
             _msac_loss,
             config.mdi.ransac,
+            debug_export_dir,
         )
 
 
@@ -97,11 +102,11 @@ def _align_depth_ransac_generic(
     gt_depth: torch.Tensor,
     loss_func: RansacLossFunc,
     config: RansacConfig,
+    debug_export_dir: Path | None = None,
 ) -> DepthAlignmentResult:
     full_predicted_depth = depth
     depth = depth[gt_points_camera_coords[1], gt_points_camera_coords[0]].flatten()
 
-    SAMPLE_SIZE = 2
     num_samples = depth.shape[0]
     device = depth.device
     depth = torch.vstack(
@@ -119,7 +124,7 @@ def _align_depth_ransac_generic(
     p = config
 
     for iteration in range(p.max_iters):
-        sample_indices = torch.randint(0, num_samples, (SAMPLE_SIZE,))
+        sample_indices = torch.randint(0, num_samples, (config.sample_size,))
         h = align_depth_least_squares(
             depth[:, sample_indices], gt_depth[sample_indices]
         )
@@ -137,7 +142,9 @@ def _align_depth_ransac_generic(
             num_inliers_best = torch.sum(inlier_indices_best)
 
         if (
-            _required_samples(num_inliers_best, num_samples, SAMPLE_SIZE, p.confidence)
+            _required_samples(
+                num_inliers_best, num_samples, config.sample_size, p.confidence
+            )
             <= iteration
             and h_best is not None
             and iteration >= config.min_iters
@@ -152,26 +159,25 @@ def _align_depth_ransac_generic(
     )
     num_inliers_best = torch.sum(inlier_indices_best)
 
-    #########################################
-    h_test = align_depth_least_squares(depth, gt_depth)
-    inlier_indices_test = (
-        torch.abs(h_test[0] * depth[0] + h_test[1] - gt_depth) < p.inlier_threshold
-    )
-    num_inliers_test = torch.sum(inlier_indices_test)
-    avg_err_best = torch.mean(torch.abs(h_best[0] * depth[0] + h_best[1] - gt_depth))
-    avg_err_test = torch.mean(torch.abs(h_test[0] * depth[0] + h_test[1] - gt_depth))
-    print(
-        f"#(iter): {iteration}, (RAN/M)SAC inliers: {num_inliers_best}, Naive inliers: {num_inliers_test}, (RAN/M)SAC Error: {avg_err_best}, Naive Error: {avg_err_test}"
-    )
-    ###########################################
-    # if avg_err_test < avg_err_best:
-    #     print("Naive alignment is better than RANSAC")
-    #     print(
-    #         f"ransac inlier ratio: {num_inliers_best / num_samples}, naive inlier ratio: {num_inliers_test / num_samples}")
-    # else:
-    #     print("RANSAC alignment is better than naive")
-    #     print(
-    #         f"ransac inlier ratio: {num_inliers_best / num_samples}, naive inlier ratio: {num_inliers_test / num_samples}")
+    if debug_export_dir is not None:
+        h_test = align_depth_least_squares(depth, gt_depth)
+        inlier_indices_test = (
+            torch.abs(h_test[0] * depth[0] + h_test[1] - gt_depth) < p.inlier_threshold
+        )
+        num_inliers_test = torch.sum(inlier_indices_test)
+        avg_err_best = torch.mean(
+            torch.abs(h_best[0] * depth[0] + h_best[1] - gt_depth)
+        )
+        avg_err_test = torch.mean(
+            torch.abs(h_test[0] * depth[0] + h_test[1] - gt_depth)
+        )
+
+        debug_export_dir.mkdir(parents=True, exist_ok=True)
+        with open(debug_export_dir / "ransac_log.txt", "a") as f:
+            f.write(
+                f"#(iter): {iteration}, (RAN/M)SAC inliers: {num_inliers_best}, Naive inliers: {num_inliers_test}, (RAN/M)SAC Error: {avg_err_best}, Naive Error: {avg_err_test}\n"
+            )
+
     return DepthAlignmentResult(
         aligned_depth=full_predicted_depth * h_best[0] + h_best[1],
         mask=torch.ones_like(full_predicted_depth, dtype=torch.bool),

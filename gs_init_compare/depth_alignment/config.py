@@ -35,6 +35,7 @@ class RansacConfig:
     inlier_threshold: float = 0.1
     max_iters: int = 2500
     confidence: float = 0.99
+    sample_size: int = 2
     min_iters: int = 0
 
 
@@ -49,7 +50,8 @@ class InterpConfig:
     # segmentation_deadzone_mask: False
     method: Literal["rbf", "linear"] = "rbf"
     """Interpolation method."""
-    lstsqrs_init: bool = True
+    init: Literal["lstsqrs", "ransac"] | None = None
+    ransac_init: bool = False
     """If true, first use least squares to pre-align depth including offset, and then use RBF interpolation to refine the alignment."""
     smoothing: float = 0.001
     """RBF smoothing parameter, see torch_rbf doc"""

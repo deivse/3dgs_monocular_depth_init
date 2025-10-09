@@ -5,6 +5,7 @@ from matplotlib.colors import ListedColormap
 import numpy as np
 import skimage
 from scipy.interpolate import LinearNDInterpolator
+from scipy.spatial import Delaunay
 from sklearn.neighbors import LocalOutlierFactor, NearestNeighbors
 import torch
 import logging
@@ -12,6 +13,7 @@ import logging
 from gs_init_compare.config import Config
 from gs_init_compare.depth_alignment.config import InterpConfig
 from gs_init_compare.depth_alignment.lstsqrs import DepthAlignmentLstSqrs
+from gs_init_compare.depth_alignment.ransacs import DepthAlignmentRansac
 from gs_init_compare.utils.image_filtering import box_blur2d, gaussian_filter2d
 from .interface import DepthAlignmentResult, DepthAlignmentStrategy
 from torchrbf import RBFInterpolator
@@ -114,23 +116,30 @@ def linear_interpolation(
 ) -> torch.Tensor:
     coords_np = coords.T.cpu().numpy()
     values_np = values.cpu().numpy()
+
     # add values at the corners to stabilize interpolation
-
-    # TODO: corners can be handled better (only use visible nearby points)
     corner_coords = np.array([[0, 0], [0, H - 1], [W - 1, 0], [W - 1, H - 1]])
-
-    k = min(5, len(coords_np))
-    nn = NearestNeighbors(n_neighbors=k).fit(coords_np)
-    _, indices = nn.kneighbors(corner_coords)
-    indices = indices[:, 1:]  # remove self-index
-    corner_values = np.median(values_np[indices], axis=1)
+    corner_indices = np.arange(coords_np.shape[0], coords_np.shape[0] + 4)
     coords_np = np.vstack((coords_np, corner_coords))
-    values_np = np.hstack((values_np, corner_values))
+    values_np = np.hstack((values_np, np.empty(4, dtype=values_np.dtype)))
+
+    dt = Delaunay(coords_np)
+    for corner_ix in corner_indices:
+        indptr, indices = dt.vertex_neighbor_vertices
+        neighbors = indices[indptr[corner_ix] : indptr[corner_ix + 1]]
+        neighbors = np.setdiff1d(neighbors, corner_indices)  # exclude other corners
+        distances = np.linalg.norm(coords_np[neighbors] - coords_np[corner_ix], axis=1)
+        weights = 1.0 / (distances + 1e-8)
+        weights /= np.sum(weights)
+        corner_value = np.sum(values_np[neighbors] * weights)
+        if np.isnan(corner_value):
+            corner_value = np.median(values_np[neighbors])
+        values_np[corner_ix] = corner_value
 
     X = np.linspace(0, W - 1, W)
     Y = np.linspace(0, H - 1, H)
     X, Y = np.meshgrid(X, Y)
-    interp = LinearNDInterpolator(coords_np, values_np, fill_value=np.median(values_np))
+    interp = LinearNDInterpolator(dt, values_np, fill_value=np.median(values_np))
     return torch.from_numpy(interp(X, Y)).to(values)
 
 
@@ -236,13 +245,37 @@ def scale_factor_outlier_removal(
     )
 
 
+def init_alignment(
+    image: torch.Tensor,
+    depth: torch.Tensor,
+    sfm_points_camera_coords: torch.Tensor,
+    gt_depth: torch.Tensor,
+    config: Config,
+    debug_export_dir: Path | None = None,
+):
+    if config.mdi.interp.init is None:
+        return depth, torch.ones_like(depth, dtype=torch.bool)
+    if config.mdi.interp.init == "lstsqrs":
+        return DepthAlignmentLstSqrs.align(
+            image, depth, sfm_points_camera_coords, gt_depth, config, debug_export_dir
+        )
+    elif config.mdi.interp.init == "ransac":
+        return DepthAlignmentRansac.align(
+            image, depth, sfm_points_camera_coords, gt_depth, config, debug_export_dir
+        )
+    else:
+        raise ValueError(
+            f"Unknown interp alignment init method: {config.mdi.interp.init}"
+        )
+
+
 def align_depth_interpolate(
     image: torch.Tensor,
     depth: torch.Tensor,
     sfm_points_camera_coords: torch.Tensor,
     gt_depth: torch.Tensor,
+    config: Config,
     debug_export_dir: Path | None,
-    config: InterpConfig,
 ):
     """
     Args:
@@ -254,17 +287,11 @@ def align_depth_interpolate(
     H, W = depth.shape
     num_sfm_pts = sfm_points_camera_coords.shape[1]
     device = depth.device
+    interp_config = config.mdi.interp
 
-    unaligned = depth
-    out_mask = torch.ones_like(depth, dtype=torch.bool)
-
-    if config.lstsqrs_init:
-        unaligned, out_mask = DepthAlignmentLstSqrs.align(
-            image,
-            predicted_depth=depth,
-            sfm_points_camera_coords=sfm_points_camera_coords,
-            sfm_points_depth=gt_depth,
-        )
+    unaligned, out_mask = init_alignment(
+        image, depth, sfm_points_camera_coords, gt_depth, config, debug_export_dir
+    )
 
     # TODO: DONE 1. Try adding deadzone around region boundaries (requires alignment step outputting mask)
     #          Can be implemented by blurring the segmentation map, then points near boundaries will not match any integer region id)
@@ -274,7 +301,7 @@ def align_depth_interpolate(
     #       3. Figure out in what cases RBF fails and design a better fallback (currently just median scale)
     #       4. Support masks from predictor
 
-    if config.segmentation:
+    if interp_config.segmentation:
         region_map = torch.from_numpy(
             segment_depth_regions(depth, image, debug_export_dir)
         ).to(device)
@@ -283,14 +310,14 @@ def align_depth_interpolate(
         region_sfm_point_indices = []
 
         region_map_blurred = region_map
-        if config.segmentation_region_margin > 0:
+        if interp_config.segmentation_region_margin > 0:
             # TODO: dynamic kernel size based on image size?
-            kernel_size = 2 * config.segmentation_region_margin + 1
+            kernel_size = 2 * interp_config.segmentation_region_margin + 1
             region_map_blurred = box_blur2d(
                 region_map[None, None].float(), ksize=kernel_size
             )[0, 0]
             region_map_blurred = snap_to_int(region_map_blurred)
-            if config.segmentation_deadzone_mask:
+            if interp_config.segmentation_deadzone_mask:
                 out_mask[region_map_blurred != region_map] = False
 
         for region in region_ids:
@@ -318,9 +345,9 @@ def align_depth_interpolate(
 
         # limit number of points for RBF to avoid OOM
         if (
-            config.method == "rbf"
-            and config.max_rbf_points != -1
-            and region_num_pts > config.max_rbf_points
+            interp_config.method == "rbf"
+            and interp_config.max_rbf_points != -1
+            and region_num_pts > interp_config.max_rbf_points
         ):
             (
                 region_sfm_coords,
@@ -328,7 +355,7 @@ def align_depth_interpolate(
                 region_sfm_point_indices[region.item()],
             ) = pick_rbf_point_subset(
                 region_num_pts,
-                config.max_rbf_points,
+                interp_config.max_rbf_points,
                 region_sfm_coords,
                 region_gt_depth,
                 region_sfm_point_indices[region.item()],
@@ -348,7 +375,7 @@ def align_depth_interpolate(
         scale_factors = (
             region_gt_depth / unaligned[region_sfm_coords[1], region_sfm_coords[0]]
         )
-        if config.scale_outlier_removal:
+        if interp_config.scale_outlier_removal:
             outlier_type = scale_factor_outlier_removal(
                 region_sfm_coords.T, scale_factors, debug_export_dir
             )
@@ -379,7 +406,7 @@ def align_depth_interpolate(
             region_scale_map = interpolate_scale(
                 region_sfm_coords,
                 scale_factors,
-                config,
+                interp_config,
                 device,
                 W,
                 H,
@@ -560,6 +587,6 @@ class DepthAlignmentInterpolate(DepthAlignmentStrategy):
             predicted_depth,
             sfm_points_camera_coords,
             sfm_points_depth,
+            config,
             debug_export_dir,
-            config.mdi.interp,
         )
