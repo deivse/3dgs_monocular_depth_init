@@ -266,11 +266,11 @@ def align_depth_interpolate(
             sfm_points_depth=gt_depth,
         )
 
-    # TODO: 1. Try adding deadzone around region boundaries (requires alignment step outputting mask)
+    # TODO: DONE 1. Try adding deadzone around region boundaries (requires alignment step outputting mask)
     #          Can be implemented by blurring the segmentation map, then points near boundaries will not match any integer region id)
     #          * What if we output the deadzones as a mask and also prevent unprojection of points from those regions?
     #            Even if alignment is perfect, they will have some blur in the depth which will prevent accurate unprojection.
-    #       2. SfM point outlier rejection before rbf step? - Can still help because outliers can be inside depth regions as well (e.g. objects with holes)
+    #       DONE 2. SfM point outlier rejection before rbf step? - Can still help because outliers can be inside depth regions as well (e.g. objects with holes)
     #       3. Figure out in what cases RBF fails and design a better fallback (currently just median scale)
     #       4. Support masks from predictor
 
@@ -304,7 +304,7 @@ def align_depth_interpolate(
     else:
         region_map = torch.zeros_like(depth, dtype=torch.int)
         region_ids = torch.tensor([0], device=device)
-        region_sfm_point_indices = [torch.arange(num_sfm_pts)]
+        region_sfm_point_indices = [torch.arange(num_sfm_pts, device=device)]
 
     global_outlier_type = torch.zeros(num_sfm_pts, dtype=torch.int, device=device)
     INVALID_SCALE_VAL = -42
