@@ -4,6 +4,10 @@ from typing import NamedTuple
 
 import torch
 
+from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
+    PredictedDepth,
+)
+
 
 class DepthAlignmentResult(NamedTuple):
     aligned_depth: torch.Tensor
@@ -16,7 +20,7 @@ class DepthAlignmentStrategy(abc.ABC):
     def align(
         cls,
         image: torch.Tensor,
-        predicted_depth: torch.Tensor,
+        predicted_depth: PredictedDepth,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
         config,  # : Config,

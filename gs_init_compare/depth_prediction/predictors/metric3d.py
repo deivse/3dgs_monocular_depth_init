@@ -121,4 +121,4 @@ class Metric3d(DepthPredictor):
         # pred_normal = pred_normal.permute(1, 2, 0)
         # pred_normal = pred_normal.cpu().numpy()
 
-        return PredictedDepth(pred_depth, None)
+        return PredictedDepth(pred_depth, torch.ones_like(pred_depth, dtype=torch.bool))

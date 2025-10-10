@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Tuple
 
 
 @dataclass
@@ -9,4 +8,5 @@ class AdaptiveSubsamplingConfig:
     """
 
     # Range of subsample factors to choose from.
-    factor_range: Tuple[int, int] = (5, 15)
+    factor_range_min: int = 5
+    factor_range_max: int = 15

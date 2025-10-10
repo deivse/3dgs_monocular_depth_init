@@ -41,32 +41,31 @@ class RansacConfig:
 
 @dataclass
 class InterpConfig:
-    # TODO: after initial testing, change defaults to:
-    # lstsqrs_init: False
-    # smoothing: 0.0001 for tanksandtemples, 0.001 for mipnerf360 - middle ground 0.0005?
-    # kernel: "thin_plate_spline" (NOT TESTED YET)
-    # segmentation: True
-    # segmentation_region_margin: ? (10 for bonsai)
-    # segmentation_deadzone_mask: False
-    method: Literal["rbf", "linear"] = "rbf"
+    method: Literal["rbf", "linear"] = "linear"
     """Interpolation method."""
-    init: Literal["lstsqrs", "ransac"] | None = None
-    ransac_init: bool = False
-    """If true, first use least squares to pre-align depth including offset, and then use RBF interpolation to refine the alignment."""
-    smoothing: float = 0.001
-    """RBF smoothing parameter, see torch_rbf doc"""
-    kernel: str = "thin_plate_spline"
-    """See torch_rbf doc for options"""
-    segmentation: bool = False
-    """If true, use segmentation to split the image into regions and align each region separately"""
-    segmentation_region_margin: int = 0
-    """Half kernel size for box blur, 0 means no blurring"""
+    init: Literal["lstsqrs", "ransac"] | None = "ransac"
+    """If set, use this method to get an initial estimate of scale and shift before scale factor interpolation."""
+
+    segmentation: bool = True
+    """If true, use depth segmentation to split the image into regions without large depth discontinuities and align each region separately"""
+    segmentation_region_margin: int = 10
+    """
+    Pixels closer than this distance from the depth segmentation boundary are ignored when interpolating scale factors. 
+    Helps avoid issues at object boundaries. The value is normalized for image size, for an image of size (H, W), the actual margin is:
+        margin = int(segmentation_region_margin * min(H, W) / 480)
+    """
     segmentation_deadzone_mask: bool = False
     """
     If segmentation is used, mask out deadzones around segmentation boundaries in the output mask.
-    This can help avoid invalid reprojections around object boundaries, since the predicted depth resolution is lower than the input image resolution.
     """
-    max_rbf_points: int = 5000
-    """Maximum number of points to use for RBF interpolation, -1 means use all points"""
+
     scale_outlier_removal: bool = False
     """If true, use Local Outlier Factor to remove outliers in scale factors before RBF interpolation"""
+
+    # RBF-specific parameters
+    smoothing: float = 0.001
+    """RBF smoothing parameter, see torch_rbf doc"""
+    kernel: str = "thin_plate_spline"
+    """RBF kernel type, see torch_rbf doc"""
+    max_rbf_points: int = 5000
+    """Maximum number of points to use for RBF interpolation, -1 means use all points"""

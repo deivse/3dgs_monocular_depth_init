@@ -3,6 +3,9 @@ from typing import Callable
 
 from gs_init_compare.config import Config
 from gs_init_compare.depth_alignment.config import RansacConfig
+from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
+    PredictedDepth,
+)
 from .lstsqrs import align_depth_least_squares
 import math
 import torch
@@ -15,7 +18,7 @@ class DepthAlignmentRansac(DepthAlignmentStrategy):
     def align(
         cls,
         image: torch.Tensor,
-        predicted_depth: torch.Tensor,
+        predicted_depth: PredictedDepth,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
         config: Config,
@@ -38,7 +41,7 @@ class DepthAlignmentMsac(DepthAlignmentStrategy):
     def align(
         cls,
         image: torch.Tensor,
-        predicted_depth: torch.Tensor,
+        predicted_depth: PredictedDepth,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
         config: Config,
@@ -97,15 +100,17 @@ def _l2_dists_squared(
 
 
 def _align_depth_ransac_generic(
-    depth: torch.Tensor,
+    predicted_depth: PredictedDepth,
     gt_points_camera_coords: torch.Tensor,
     gt_depth: torch.Tensor,
     loss_func: RansacLossFunc,
     config: RansacConfig,
     debug_export_dir: Path | None = None,
 ) -> DepthAlignmentResult:
-    full_predicted_depth = depth
-    depth = depth[gt_points_camera_coords[1], gt_points_camera_coords[0]].flatten()
+    full_predicted_depth = predicted_depth.depth
+    depth = predicted_depth.depth[
+        gt_points_camera_coords[1], gt_points_camera_coords[0]
+    ].flatten()
 
     num_samples = depth.shape[0]
     device = depth.device
@@ -180,5 +185,5 @@ def _align_depth_ransac_generic(
 
     return DepthAlignmentResult(
         aligned_depth=full_predicted_depth * h_best[0] + h_best[1],
-        mask=torch.ones_like(full_predicted_depth, dtype=torch.bool),
+        mask=predicted_depth.mask,
     )

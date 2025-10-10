@@ -132,8 +132,7 @@ def align_depth(
     sfm_points: torch.Tensor,
     P: torch.Tensor,
     imsize: torch.Tensor,
-    depth: torch.Tensor,
-    mask: torch.Tensor,
+    predicted_depth: PredictedDepth,
     debug_export_dir: Path | None,
 ) -> DepthAlignmentResult:
     device = sfm_points.device
@@ -146,10 +145,15 @@ def align_depth(
 
     sfm_points_camera = torch.round(sfm_points_camera).to(int)
     sfm_points_camera, sfm_points_depth = get_valid_sfm_pts(
-        sfm_points_camera, sfm_points_depth, mask, imsize
+        sfm_points_camera, sfm_points_depth, predicted_depth.mask, imsize
     )
     return config.mdi.depth_alignment_strategy.get_implementation().align(
-        image, depth, sfm_points_camera, sfm_points_depth, config, debug_export_dir
+        image,
+        predicted_depth,
+        sfm_points_camera,
+        sfm_points_depth,
+        config,
+        debug_export_dir,
     )
 
 
@@ -176,14 +180,7 @@ def get_pts_from_depth(
         subsample_mask: torch.Tensor on cpu of shape [N] where N is the number of points in the world space
         P: torch.Tensor on device of shape [3, 4] the projection matrix
     """
-    depth = predicted_depth.depth.float()
-    if predicted_depth.mask is not None:
-        mask_from_predictor = predicted_depth.mask
-    else:
-        mask_from_predictor = torch.ones_like(predicted_depth.depth, dtype=bool)
-
-    depth = predicted_depth.depth.float()
-    imsize = depth.T.shape
+    imsize = predicted_depth.depth.T.shape
 
     R = image.cam2world[:3, :3].T
     C = image.cam2world[:3, 3]
@@ -199,6 +196,36 @@ def get_pts_from_depth(
     P = P.to(device).float()
     K = image.K.to(device).float()
 
+    if torch.any(torch.isinf(predicted_depth.depth[predicted_depth.mask])):
+        _LOGGER.warning("Encountered infinite depths in predicted depth map.")
+
+    aligned_depth, mask = align_depth(
+        image.data,
+        config,
+        sfm_points,
+        P,
+        imsize,
+        predicted_depth,
+        debug_export_dir,
+    )
+
+    if torch.any(torch.isinf(aligned_depth[mask])):
+        _LOGGER.warning("Encountered negative depths in aligned depth map.")
+
+    # NOTE: get_mask applies the passed in mask as well
+    mask = get_subsampler(config).get_mask(image.data, aligned_depth, mask)
+    mask &= (aligned_depth >= 0).flatten()
+
+    pts_camera: torch.Tensor = torch.dstack(
+        [
+            torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(device),
+            aligned_depth,
+        ],
+    ).reshape(-1, 3)[mask]
+
+    pts_camera[:, 0] = (pts_camera[:, 0] + 0.5) * pts_camera[:, 2]
+    pts_camera[:, 1] = (pts_camera[:, 1] + 0.5) * pts_camera[:, 2]
+
     def transform_camera_to_world_space(camera_homo: torch.Tensor) -> torch.Tensor:
         dense_world = torch.linalg.inv(K) @ camera_homo.reshape((-1, 3)).T
         dense_world = (
@@ -208,37 +235,6 @@ def get_pts_from_depth(
             )
         )[:3].T
         return dense_world
-
-    if torch.any(torch.isinf(depth[mask_from_predictor])):
-        _LOGGER.warning("Encountered infinite depths in predicted depth map.")
-
-    aligned_depth, mask_from_alignment = align_depth(
-        image.data,
-        config,
-        sfm_points,
-        P,
-        imsize,
-        depth,
-        mask_from_predictor,
-        debug_export_dir,
-    )
-
-    # get_mask should apply mask_from_predictor as well
-    sampling_mask: torch.Tensor = get_subsampler(config).get_mask(
-        image.data, aligned_depth, mask_from_predictor
-    )
-    sampling_mask &= mask_from_alignment.flatten()
-    sampling_mask &= (aligned_depth >= 0).flatten()
-
-    pts_camera: torch.Tensor = torch.dstack(
-        [
-            torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(device),
-            aligned_depth,
-        ],
-    ).reshape(-1, 3)[sampling_mask]
-
-    pts_camera[:, 0] = (pts_camera[:, 0] + 0.5) * pts_camera[:, 2]
-    pts_camera[:, 1] = (pts_camera[:, 1] + 0.5) * pts_camera[:, 2]
 
     pts_world = transform_camera_to_world_space(pts_camera)
 
@@ -252,9 +248,9 @@ def get_pts_from_depth(
             pts_world,
             parser,
             image.name,
-            sampling_mask.cpu(),
+            mask.cpu(),
             image.data,
             debug_export_dir,
         )
 
-    return (pts_world.reshape([-1, 3]).float(), sampling_mask.cpu(), P)
+    return (pts_world.reshape([-1, 3]).float(), mask.cpu(), P)

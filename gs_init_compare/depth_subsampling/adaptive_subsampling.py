@@ -102,18 +102,21 @@ def get_depth_multipler_map(depth: torch.Tensor, mask: torch.Tensor):
 class AdaptiveDepthSubsampler(DepthSubsampler):
     config: AdaptiveSubsamplingConfig
 
-    def get_mask(self, rgb, depth, mask_from_predictor):
-        multiplier_map = get_depth_multipler_map(depth, mask_from_predictor)
+    def get_mask(self, rgb, depth, mask):
+        multiplier_map = get_depth_multipler_map(depth, mask)
         factor_map = torch.clamp(
             _map_to_range(
                 multiplier_map,
-                output_range=self.config.factor_range,
+                output_range=(
+                    self.config.factor_range_min,
+                    self.config.factor_range_max,
+                ),
                 input_range=(0.0, 1.0),
             ),
-            self.config.factor_range[0],
-            self.config.factor_range[1],
+            self.config.factor_range_min,
+            self.config.factor_range_max,
         )
         return torch.logical_and(
             get_sample_mask(factor_map.to(int), rgb.shape[:2]),
-            mask_from_predictor.view(-1),
+            mask.view(-1),
         )

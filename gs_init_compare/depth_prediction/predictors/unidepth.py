@@ -37,8 +37,10 @@ class UniDepth(DepthPredictor):
 
     def predict_depth(self, img: torch.Tensor, intrinsics: CameraIntrinsics):
         result = self.__predict(img, intrinsics)
-        return PredictedDepth(result["depth"].squeeze(), None)
+        depth = result["depth"].squeeze()
+        return PredictedDepth(depth, torch.ones_like(depth, dtype=torch.bool))
 
     def predict_points(self, img: torch.Tensor, intrinsics: CameraIntrinsics):
         result = self.__predict(img, intrinsics)
-        return PredictedPoints(result["points"].squeeze(), None)
+        points = result["points"].squeeze()
+        return PredictedPoints(points, torch.ones_like(points, dtype=torch.bool))

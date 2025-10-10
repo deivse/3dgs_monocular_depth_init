@@ -1,4 +1,8 @@
 import torch
+
+from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
+    PredictedDepth,
+)
 from .interface import DepthAlignmentResult, DepthAlignmentStrategy
 
 
@@ -27,24 +31,25 @@ class DepthAlignmentLstSqrs(DepthAlignmentStrategy):
     def align(
         cls,
         image: torch.Tensor,
-        predicted_depth: torch.Tensor,
+        predicted_depth: PredictedDepth,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
         *args,
         **kwargs,
     ) -> DepthAlignmentResult:
+        depth = predicted_depth.depth
         scale, shift = align_depth_least_squares(
             torch.vstack(
                 [
-                    predicted_depth[
+                    depth[
                         sfm_points_camera_coords[1], sfm_points_camera_coords[0]
                     ].flatten(),
-                    torch.ones(sfm_points_depth.numel(), device=predicted_depth.device),
+                    torch.ones(sfm_points_depth.numel(), device=depth.device),
                 ]
             ),
             sfm_points_depth,
         )
         return DepthAlignmentResult(
-            aligned_depth=predicted_depth * scale + shift,
-            mask=torch.ones_like(predicted_depth, dtype=torch.bool),
+            aligned_depth=depth * scale + shift,
+            mask=predicted_depth.mask,
         )

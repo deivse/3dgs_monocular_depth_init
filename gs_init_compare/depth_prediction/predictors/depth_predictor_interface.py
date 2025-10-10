@@ -7,7 +7,7 @@ import torch
 class PredictedDepth(NamedTuple):
     depth: torch.Tensor
     """ Float tensor of shape (H, W) """
-    mask: Optional[torch.Tensor]
+    mask: torch.Tensor
     """ Bool tensor indicating valid pixels. (H, W) """
 
 

@@ -14,6 +14,9 @@ from gs_init_compare.config import Config
 from gs_init_compare.depth_alignment.config import InterpConfig
 from gs_init_compare.depth_alignment.lstsqrs import DepthAlignmentLstSqrs
 from gs_init_compare.depth_alignment.ransacs import DepthAlignmentRansac
+from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
+    PredictedDepth,
+)
 from gs_init_compare.utils.image_filtering import box_blur2d, gaussian_filter2d
 from .interface import DepthAlignmentResult, DepthAlignmentStrategy
 from torchrbf import RBFInterpolator
@@ -23,7 +26,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 def segment_depth_regions(
-    predicted_depth: torch.Tensor, image: torch.Tensor, debug_export_dir: Path | None
+    predicted_depth: torch.Tensor,
+    mask: torch.Tensor,
+    image: torch.Tensor,
+    debug_export_dir: Path | None,
 ):
     pred_depth_norm = (predicted_depth - predicted_depth.min()) / (
         predicted_depth.max() - predicted_depth.min() + 1e-8
@@ -38,6 +44,7 @@ def segment_depth_regions(
         start_label=0,
         compactness=compactness,
         channel_axis=None,
+        mask=mask.cpu().numpy().astype(bool),
     )
 
     if debug_export_dir is not None:
@@ -245,23 +252,33 @@ def scale_factor_outlier_removal(
     )
 
 
-def init_alignment(
+def initial_alignment(
     image: torch.Tensor,
-    depth: torch.Tensor,
+    predicted_depth: PredictedDepth,
     sfm_points_camera_coords: torch.Tensor,
     gt_depth: torch.Tensor,
     config: Config,
     debug_export_dir: Path | None = None,
-):
+) -> DepthAlignmentResult:
     if config.mdi.interp.init is None:
-        return depth, torch.ones_like(depth, dtype=torch.bool)
+        return predicted_depth.depth, predicted_depth.mask
     if config.mdi.interp.init == "lstsqrs":
         return DepthAlignmentLstSqrs.align(
-            image, depth, sfm_points_camera_coords, gt_depth, config, debug_export_dir
+            image,
+            predicted_depth,
+            sfm_points_camera_coords,
+            gt_depth,
+            config,
+            debug_export_dir,
         )
     elif config.mdi.interp.init == "ransac":
         return DepthAlignmentRansac.align(
-            image, depth, sfm_points_camera_coords, gt_depth, config, debug_export_dir
+            image,
+            predicted_depth,
+            sfm_points_camera_coords,
+            gt_depth,
+            config,
+            debug_export_dir,
         )
     else:
         raise ValueError(
@@ -271,7 +288,7 @@ def init_alignment(
 
 def align_depth_interpolate(
     image: torch.Tensor,
-    depth: torch.Tensor,
+    predicted_depth: PredictedDepth,
     sfm_points_camera_coords: torch.Tensor,
     gt_depth: torch.Tensor,
     config: Config,
@@ -284,35 +301,39 @@ def align_depth_interpolate(
                 where N is the number of points, the first row is y and the second row is x.
         gt_depth: torch.Tensor of shape (N,)
     """
-    H, W = depth.shape
+    H, W = predicted_depth.depth.shape
     num_sfm_pts = sfm_points_camera_coords.shape[1]
-    device = depth.device
+    device = predicted_depth.depth.device
     interp_config = config.mdi.interp
 
-    unaligned, out_mask = init_alignment(
-        image, depth, sfm_points_camera_coords, gt_depth, config, debug_export_dir
+    unaligned, out_mask = initial_alignment(
+        image,
+        predicted_depth,
+        sfm_points_camera_coords,
+        gt_depth,
+        config,
+        debug_export_dir,
     )
-
-    # TODO: DONE 1. Try adding deadzone around region boundaries (requires alignment step outputting mask)
-    #          Can be implemented by blurring the segmentation map, then points near boundaries will not match any integer region id)
-    #          * What if we output the deadzones as a mask and also prevent unprojection of points from those regions?
-    #            Even if alignment is perfect, they will have some blur in the depth which will prevent accurate unprojection.
-    #       DONE 2. SfM point outlier rejection before rbf step? - Can still help because outliers can be inside depth regions as well (e.g. objects with holes)
-    #       3. Figure out in what cases RBF fails and design a better fallback (currently just median scale)
-    #       4. Support masks from predictor
+    out_mask = out_mask & predicted_depth.mask
 
     if interp_config.segmentation:
         region_map = torch.from_numpy(
-            segment_depth_regions(depth, image, debug_export_dir)
+            segment_depth_regions(unaligned, out_mask, image, debug_export_dir)
         ).to(device)
         # Filter SfM points to keep only one point per depth region
-        region_ids = torch.unique(region_map)
+        region_ids = torch.unique(region_map[out_mask])
         region_sfm_point_indices = []
 
         region_map_blurred = region_map
         if interp_config.segmentation_region_margin > 0:
-            # TODO: dynamic kernel size based on image size?
-            kernel_size = 2 * interp_config.segmentation_region_margin + 1
+            KERNEL_REFERENCE_IMSIZE = 1297
+            adjusted_region_margin = int(
+                interp_config.segmentation_region_margin
+                * max(H, W)
+                / KERNEL_REFERENCE_IMSIZE
+            )
+            kernel_size = 2 * adjusted_region_margin + 1
+
             region_map_blurred = box_blur2d(
                 region_map[None, None].float(), ksize=kernel_size
             )[0, 0]
@@ -329,13 +350,13 @@ def align_depth_interpolate(
             )
             region_sfm_point_indices.append(torch.where(region_points)[0])
     else:
-        region_map = torch.zeros_like(depth, dtype=torch.int)
+        region_map = torch.zeros_like(unaligned, dtype=torch.int)
         region_ids = torch.tensor([0], device=device)
         region_sfm_point_indices = [torch.arange(num_sfm_pts, device=device)]
 
     global_outlier_type = torch.zeros(num_sfm_pts, dtype=torch.int, device=device)
     INVALID_SCALE_VAL = -42
-    final_scale_map = torch.full_like(depth, INVALID_SCALE_VAL)
+    final_scale_map = torch.full_like(unaligned, INVALID_SCALE_VAL)
     for region in region_ids:
         region_sfm_coords = sfm_points_camera_coords[
             :, region_sfm_point_indices[region.item()]
@@ -382,7 +403,7 @@ def align_depth_interpolate(
             outlier_mask = outlier_type.scale_only_outliers
             if outlier_mask.sum() > 0:
                 LOGGER.info(
-                    "Removed %d/%d points as outliers from region %s using LOF",
+                    "Removed %d/%d scale outlier points from region %s",
                     outlier_mask.sum().item(),
                     region_num_pts,
                     region.item(),
@@ -576,12 +597,12 @@ class DepthAlignmentInterpolate(DepthAlignmentStrategy):
     def align(
         cls,
         image: torch.Tensor,
-        predicted_depth: torch.Tensor,
+        predicted_depth: PredictedDepth,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
         config: Config,
         debug_export_dir: Path | None,
-    ) -> torch.Tensor:
+    ) -> DepthAlignmentResult:
         return align_depth_interpolate(
             image,
             predicted_depth,
