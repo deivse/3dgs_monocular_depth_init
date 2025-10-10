@@ -28,7 +28,7 @@ class MonocularDepthInitConfig:
 
     # Which monocular depth prediction model to use.
     predictor: Optional[
-        Literal["metric3d", "depth_pro", "moge", "unidepth", "depth_anything_v2"]
+        Literal["metric3d", "moge", "unidepth", "depth_anything_v2"]
     ] = "metric3d"
 
     metric3d: Metric3dV2Config = Metric3dV2Config()

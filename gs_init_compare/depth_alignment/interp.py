@@ -31,8 +31,9 @@ def segment_depth_regions(
     image: torch.Tensor,
     debug_export_dir: Path | None,
 ):
-    pred_depth_norm = (predicted_depth - predicted_depth.min()) / (
-        predicted_depth.max() - predicted_depth.min() + 1e-8
+    valid_pred_depth = predicted_depth[mask]
+    pred_depth_norm = (predicted_depth - valid_pred_depth.min()) / (
+        valid_pred_depth.max() - valid_pred_depth.min() + 1e-8
     )
     pred_depth_norm = pred_depth_norm.cpu().numpy()
 
@@ -447,8 +448,17 @@ def align_depth_interpolate(
     if debug_export_dir is not None:
         print("Saving images to dir", debug_export_dir)
 
-        vmin = min(unaligned.min(), aligned_depth.min()).item()
-        vmax = max(unaligned.max(), aligned_depth.max()).item()
+        vmin = min(
+            unaligned[out_mask].min(),
+            aligned_depth[out_mask].min(),
+        ).item()
+        vmax = max(
+            unaligned[out_mask].max(),
+            aligned_depth[out_mask].max(),
+        ).item()
+
+        unaligned[~predicted_depth.mask] = 0
+        aligned_depth[~out_mask] = 0
         debug_export_dir.mkdir(parents=True, exist_ok=True)
 
         # Save pre-RBF-alignment depth map
