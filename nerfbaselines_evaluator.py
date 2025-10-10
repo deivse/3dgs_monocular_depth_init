@@ -328,7 +328,8 @@ def parse_config_string(config_str: str) -> list[ParamList]:
     with_param_name = []
     for name, values in parsed:
         with_param_name.append([(name, val) for val in values])
-    return list(itertools.product(*with_param_name))
+    # Pass through set to deduplicate
+    return list(set(itertools.product(*with_param_name)))
 
 
 CONFIG_STR_FORBIDDEN_PARAM_NAMES = {
