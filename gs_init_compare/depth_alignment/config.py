@@ -59,7 +59,7 @@ class InterpConfig:
     If segmentation is used, mask out deadzones around segmentation boundaries in the output mask.
     """
 
-    scale_outlier_removal: bool = False
+    scale_outlier_removal: bool = True
     """If true, use Local Outlier Factor to remove outliers in scale factors before RBF interpolation"""
 
     # RBF-specific parameters
