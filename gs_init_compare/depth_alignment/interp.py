@@ -387,7 +387,7 @@ def align_depth_interpolate(
         if region_num_pts == 0:
             # TODO: is it better to skip or use global least squares scale for the whole depth map
             LOGGER.error(
-                "No SfM points found in region %s; skipping RBF interpolation.",
+                "No SfM points found in region %s; skipping depth scale interpolation.",
                 region.item(),
             )
             continue
@@ -488,7 +488,7 @@ def align_depth_interpolate(
         # Save pre-RBF-alignment depth map with colorbar
         fig, ax = plt.subplots(figsize=(10, 8))
         im = ax.imshow(lstsqrs_rgb)
-        ax.set_title("Least Squares Aligned Depth")
+        ax.set_title("Initial Depth")
         # Create a colorbar with the original depth values
         sm = plt.cm.ScalarMappable(
             cmap=cm.plasma, norm=plt.Normalize(vmin=vmin, vmax=vmax)
@@ -505,7 +505,7 @@ def align_depth_interpolate(
             bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
             verticalalignment="top",
         )
-        pre_rbf_path = Path(debug_export_dir) / "lstsqrs_depth.png"
+        pre_rbf_path = Path(debug_export_dir) / "init_depth.png"
         plt.savefig(pre_rbf_path, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -514,7 +514,7 @@ def align_depth_interpolate(
         rbf_scale_np = final_scale_map.cpu().numpy()
         ax.imshow(image.cpu().numpy())
         im = ax.imshow(rbf_scale_np, cmap="viridis", alpha=0.75)
-        ax.set_title("RBF Scale Factor")
+        ax.set_title("Scale Factor")
         cbar = plt.colorbar(im, ax=ax)
         cbar.set_label("Scale Factor")
 
@@ -571,14 +571,14 @@ def align_depth_interpolate(
                 sfm_x, sfm_y, marker="x", c="black", s=10, alpha=0.8, linewidths=1
             )
 
-        rbf_scale_path = Path(debug_export_dir) / "rbf_scale.png"
+        rbf_scale_path = Path(debug_export_dir) / "interp_scale.png"
         plt.savefig(rbf_scale_path, dpi=150, bbox_inches="tight")
         plt.close()
 
         # Save final aligned depth map with colorbar
         fig, ax = plt.subplots(figsize=(10, 8))
         im = ax.imshow(aligned_rgb)
-        ax.set_title("RBF Aligned Depth")
+        ax.set_title("Interp Aligned Depth")
         # Create a colorbar with the original depth values
         sm = plt.cm.ScalarMappable(
             cmap=cm.plasma, norm=plt.Normalize(vmin=vmin, vmax=vmax)
@@ -595,7 +595,7 @@ def align_depth_interpolate(
             bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
             verticalalignment="top",
         )
-        aligned_depth_path = Path(debug_export_dir) / "rbf_aligned_depth.png"
+        aligned_depth_path = Path(debug_export_dir) / "interp_aligned_depth.png"
         plt.savefig(aligned_depth_path, dpi=150, bbox_inches="tight")
         plt.close()
 
