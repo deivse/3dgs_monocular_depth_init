@@ -112,7 +112,8 @@ class DepthAnythingV2(DepthPredictor):
         # `infer_image` expects image in BGR and in range [0, 255]
         input_image = cv2.cvtColor(img.cpu().numpy(), cv2.COLOR_BGR2RGB) * 255
         depth = self.model.infer_image(input_image)
+        depth = torch.from_numpy(depth).to(self.device)
         return PredictedDepth(
-            torch.from_numpy(depth).to(self.device),
+            depth,
             torch.ones_like(depth, dtype=torch.bool),
         )
