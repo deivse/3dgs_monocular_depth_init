@@ -9,15 +9,12 @@ class PredictedDepth(NamedTuple):
     """ Float tensor of shape (H, W) """
     mask: torch.Tensor
     """ Bool tensor indicating valid pixels. (H, W) """
-
-
-class PredictedPoints(NamedTuple):
-    points: torch.Tensor
-    """ Float tensor of shape (H, W, 3) """
-    mask: Optional[torch.Tensor]
-    """
-    Bool tensor indicating valid pixels. (H, W)
-    """
+    depth_confidence: Optional[torch.Tensor] = None
+    """ Optional float tensor indicating confidence of each pixel. (H, W) """
+    normal: Optional[torch.Tensor] = None
+    """ Optional float tensor of shape (H, W, 3) """
+    normal_confidence: Optional[torch.Tensor] = None
+    """ Optional float tensor indicating confidence of each normal vector. (H, W, 3) """
 
 
 class CameraIntrinsics(NamedTuple):
@@ -41,20 +38,13 @@ class CameraIntrinsics(NamedTuple):
 
 
 if torch.__version__ >= "2.4.0":
-    torch.serialization.add_safe_globals([PredictedDepth, PredictedPoints])
+    torch.serialization.add_safe_globals([PredictedDepth])
 
 
 class DepthPredictor(metaclass=ABCMeta):
     @abstractmethod
     def __init__(self, config, device):
         pass
-
-    @abstractmethod
-    def can_predict_points_directly(self) -> bool:
-        """
-        Returns whether the predictor can predict 3D points directly or only depth.
-        """
-        raise NotImplementedError
 
     @property
     @abstractmethod
@@ -75,19 +65,5 @@ class DepthPredictor(metaclass=ABCMeta):
 
         Returns:
             Depth map.
-        """
-        raise NotImplementedError
-
-    def predict_points(self, img, intrinsics: CameraIntrinsics) -> PredictedPoints:
-        """
-        Predict 3D point cloud from a single image.
-
-        Args:
-            img: Image.
-            intrinsics: Camera intrinsics from sparse reconstruction.
-
-        Returns:
-            points: 3D points in the camera coordinate system.
-            valid_point_indices: Indices of valid points.
         """
         raise NotImplementedError

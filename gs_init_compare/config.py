@@ -16,6 +16,7 @@ from .depth_subsampling.config import AdaptiveSubsamplingConfig
 from .depth_prediction.configs import (
     Metric3dV2Config,
     DepthAnythingV2Config,
+    MogeConfig,
     UnidepthConfig,
 )
 
@@ -28,12 +29,13 @@ class MonocularDepthInitConfig:
 
     # Which monocular depth prediction model to use.
     predictor: Optional[
-        Literal["metric3d", "moge", "unidepth", "depth_anything_v2"]
+        Literal["metric3d", "moge", "unidepth", "depth_anything_v2", "depth_pro"]
     ] = "metric3d"
 
     metric3d: Metric3dV2Config = Metric3dV2Config()
     unidepth: UnidepthConfig = UnidepthConfig()
     depthanything: DepthAnythingV2Config = DepthAnythingV2Config()
+    moge: MogeConfig = MogeConfig()
 
     # Strategy to align predicted depth to depth of known SfM points.
     depth_alignment_strategy: DepthAlignmentStrategyEnum = (

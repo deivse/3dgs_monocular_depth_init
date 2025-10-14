@@ -1,22 +1,22 @@
 import torch
 
-from gs_init_compare.third_party.MoGe.moge.model import MoGeModel
+from gs_init_compare.third_party.MoGe.moge.model.v2 import MoGeModel
 from gs_init_compare.config import Config
-from .depth_predictor_interface import DepthPredictor, PredictedDepth, PredictedPoints
+from .depth_predictor_interface import DepthPredictor, PredictedDepth
 
 
 class MoGe(DepthPredictor):
     def __init__(self, config: Config, device: str):
         # Load the model from huggingface
         self.__device = device
-        self.__model = MoGeModel.from_pretrained("Ruicheng/moge-vitl").to(device)
-
-    def can_predict_points_directly(self) -> bool:
-        return True
+        self.__model = MoGeModel.from_pretrained(
+            f"Ruicheng/moge-2-{config.mdi.moge.backbone}-normal"
+        ).to(device)
+        self.__name = f"MoGe_{config.mdi.moge.backbone.value}"
 
     @property
     def name(self) -> str:
-        return "MoGe"
+        return self.__name
 
     def __preprocess(self, img: torch.Tensor):
         assert img.ndim == 3
@@ -24,8 +24,10 @@ class MoGe(DepthPredictor):
 
     def predict_depth(self, img: torch.Tensor, *_):
         result = self.__model.infer(self.__preprocess(img))
-        return PredictedDepth(result["depth"], result["mask"])
-
-    def predict_points(self, img: torch.Tensor, *_):
-        result = self.__model.infer(self.__preprocess(img))
-        return PredictedPoints(result["points"], result["mask"])
+        return PredictedDepth(
+            depth=result["depth"],
+            mask=result["mask"],
+            depth_confidence=None,
+            normal=result["normal"],
+            normal_confidence=None,
+        )

@@ -1,124 +1,139 @@
 import logging
-from pathlib import Path
-from typing import Tuple
 
+import cv2
+import numpy as np
 import torch
 
 from gs_init_compare.config import Config
-from gs_init_compare.depth_prediction.configs import Metric3dPreset
-from gs_init_compare.utils.download_with_tqdm import download_with_pbar
-from gs_init_compare.third_party.metric3d.mono.model.monodepth_model import (
-    get_configured_monodepth_model,
-)
-from gs_init_compare.third_party.metric3d.mono.utils.do_test import (
-    get_prediction,
-    transform_test_data_scalecano,
-)
-from gs_init_compare.third_party.metric3d.mono.utils.running import load_ckpt
+from gs_init_compare.depth_prediction.configs import Metric3dBackbone
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     CameraIntrinsics,
     DepthPredictor,
     PredictedDepth,
 )
 
-try:
-    from mmcv.utils import Config as Metric3dConfig
-except ImportError:
-    from mmengine import Config as Metric3dConfig
-
 _LOGGER = logging.getLogger(__name__)
-
-
-def weights_url_by_name(name):
-    return f"https://huggingface.co/spaces/JUGGHM/Metric3D/resolve/main/weight/{name}?download=true"
-
-
-def get_config_and_weights_name_by_preset(config: Config) -> Tuple[Path, str]:
-    PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
-    CONFIG_FILENAMES = {
-        Metric3dPreset.vit_large: "vit.raft5.large.py",
-        Metric3dPreset.vit_small: "vit.raft5.small.py",
-    }
-    WEIGHTS_FILENAMES = {
-        Metric3dPreset.vit_large: "metric_depth_vit_large_800k.pth",
-        Metric3dPreset.vit_small: "metric_depth_vit_small_800k.pth",
-    }
-    preset = config.mdi.metric3d.preset
-    config = (
-        PROJECT_ROOT
-        / "third_party/metric3d/mono/configs/HourglassDecoder"
-        / CONFIG_FILENAMES[preset]
-    )
-
-    return config, WEIGHTS_FILENAMES[preset]
 
 
 class Metric3d(DepthPredictor):
     def __init__(self, config: Config, device: str):
-        config_path, weights_filename = get_config_and_weights_name_by_preset(config)
-
-        weights_path = Path(config.mdi.cache_dir) / "checkpoints" / weights_filename
-
-        if not weights_path.exists():
-            # Download the checkpoint if it doesn't exist
-            url = weights_url_by_name(weights_filename)
-            weights_path.parent.mkdir(parents=True, exist_ok=True)
-            _LOGGER.info(
-                f"Downloading Metric3dV2 checkpoint from {url} to {str(weights_path)}"
-            )
-            download_with_pbar(url, weights_path)
-
-        self.__name = f"Metric3d_{config_path.name.split('.')[-2]}"
-        self.__cfg = Metric3dConfig.fromfile(config_path)
-        self.__model, _, _, _ = load_ckpt(
-            weights_path,
-            get_configured_monodepth_model(
-                self.__cfg,
-            ),
-            strict_match=False,
+        m3d_preset_to_checkpoint = {
+            Metric3dBackbone.vits: "metric3d_vit_small",
+            Metric3dBackbone.vitl: "metric3d_vit_large",
+            Metric3dBackbone.vitg: "metric3d_vit_giant2",
+        }
+        checkpoint = m3d_preset_to_checkpoint[config.mdi.metric3d.backbone]
+        self.__name = f"Metric3d_{config.mdi.metric3d.backbone.value}"
+        self.__model = torch.hub.load(
+            "yvanyin/metric3d",
+            checkpoint,
+            pretrain=True,
         )
-        self.__model.eval()
-        self.__model.to(device)
+        self.__model.to(device).eval()
 
     @property
     def name(self) -> str:
         return self.__name
 
-    def can_predict_points_directly(self) -> bool:
-        return False
-
     def predict_depth(
         self, img: torch.Tensor, intrinsics: CameraIntrinsics
     ) -> PredictedDepth:
-        img = img.cpu().numpy() * 255.0
+        #### prepare data
         intrinsic = [intrinsics.fx, intrinsics.fy, intrinsics.cx, intrinsics.cy]
-        rgb_input, cam_models_stacks, pad, label_scale_factor = (
-            transform_test_data_scalecano(img, intrinsic, self.__cfg.data_basic)
+        rgb_origin = (img * 255.0).cpu().numpy().astype(np.uint8)[:, :, ::-1]
+
+        #### ajust input size to fit pretrained model
+        # keep ratio resize
+        input_size = (616, 1064)  # for vit model
+        h, w = rgb_origin.shape[:2]
+        scale = min(input_size[0] / h, input_size[1] / w)
+        rgb = cv2.resize(
+            rgb_origin, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LINEAR
         )
+        # remember to scale intrinsic, hold depth
+        intrinsic = [
+            intrinsic[0] * scale,
+            intrinsic[1] * scale,
+            intrinsic[2] * scale,
+            intrinsic[3] * scale,
+        ]
+        # padding to input_size
+        padding = [123.675, 116.28, 103.53]
+        h, w = rgb.shape[:2]
+        pad_h = input_size[0] - h
+        pad_w = input_size[1] - w
+        pad_h_half = pad_h // 2
+        pad_w_half = pad_w // 2
+        rgb = cv2.copyMakeBorder(
+            rgb,
+            pad_h_half,
+            pad_h - pad_h_half,
+            pad_w_half,
+            pad_w - pad_w_half,
+            cv2.BORDER_CONSTANT,
+            value=padding,
+        )
+        pad_info = [pad_h_half, pad_h - pad_h_half, pad_w_half, pad_w - pad_w_half]
 
+        #### normalize
+        mean = torch.tensor([123.675, 116.28, 103.53]).float()[:, None, None]
+        std = torch.tensor([58.395, 57.12, 57.375]).float()[:, None, None]
+        rgb = torch.from_numpy(rgb.transpose((2, 0, 1))).float()
+        rgb = torch.div((rgb - mean), std)
+        rgb = rgb[None, :, :, :].cuda()
+
+        ###################### canonical camera space ######################
+        # inference
         with torch.no_grad():
-            pred_depth, pred_depth_scale, scale, output, confidence = get_prediction(
-                model=self.__model,
-                input=rgb_input,
-                cam_model=cam_models_stacks,
-                pad_info=pad,
-                scale_info=label_scale_factor,
-                gt_depth=None,
-                normalize_scale=self.__cfg.data_basic.depth_range[1],
-                ori_shape=[img.shape[0], img.shape[1]],
-            )
+            pred_depth, confidence, output_dict = self.__model.inference({"input": rgb})
+        pred_normal = output_dict["prediction_normal"][
+            :, :3, :, :
+        ]  # only available for Metric3Dv2 i.e., ViT models
+        normal_confidence = output_dict["prediction_normal"][
+            :, 3, :, :
+        ]  # see https://arxiv.org/abs/2109.09881 for details
 
-            pred_normal = output["normal_out_list"][0][:, :3, :, :]
-            H, W = pred_normal.shape[2:]
-            pred_normal = pred_normal[:, :, pad[0] : H - pad[1], pad[2] : W - pad[3]]
+        def to_og_size(tensor, pad_info, rgb_origin):
+            # un pad
+            tensor = tensor.squeeze()
+            has_data_dim = len(tensor.shape) == 3
+            if has_data_dim:
+                tensor = tensor[
+                    :,
+                    pad_info[0] : tensor.shape[1] - pad_info[1],
+                    pad_info[2] : tensor.shape[2] - pad_info[3],
+                ]
+                tensor = torch.nn.functional.interpolate(
+                    tensor[None], rgb_origin.shape[:2], mode="bilinear"
+                ).squeeze()
+            else:
+                tensor = tensor[
+                    pad_info[0] : tensor.shape[0] - pad_info[1],
+                    pad_info[2] : tensor.shape[1] - pad_info[3],
+                ]
+                tensor = torch.nn.functional.interpolate(
+                    tensor[None, None], rgb_origin.shape[:2], mode="bilinear"
+                ).squeeze()
+            return tensor
 
-        pred_depth = pred_depth.squeeze()
-        pred_depth[pred_depth < 0] = 0
+        # un pad and upsample to original size
+        pred_depth = to_og_size(pred_depth, pad_info, rgb_origin)
+        confidence = to_og_size(confidence, pad_info, rgb_origin)
+        pred_normal = to_og_size(pred_normal, pad_info, rgb_origin).permute(1, 2, 0)
+        normal_confidence = to_og_size(normal_confidence, pad_info, rgb_origin)
+        ###################### canonical camera space ######################
 
-        # pred_normal = torch.nn.functional.interpolate(
-        #     pred_normal, [img.shape[0], img.shape[1]], mode="bilinear"
-        # ).squeeze()
-        # pred_normal = pred_normal.permute(1, 2, 0)
-        # pred_normal = pred_normal.cpu().numpy()
+        #### de-canonical transform
+        canonical_to_real_scale = (
+            intrinsic[0] / 1000.0
+        )  # 1000.0 is the focal length of canonical camera
+        pred_depth = pred_depth * canonical_to_real_scale  # now the depth is metric
+        pred_depth = torch.clamp(pred_depth, 0, 300)
 
-        return PredictedDepth(pred_depth, torch.ones_like(pred_depth, dtype=torch.bool))
+        return PredictedDepth(
+            depth=pred_depth,
+            mask=torch.ones_like(pred_depth, dtype=torch.bool),
+            confidence=confidence,
+            normal=pred_normal,
+            normal_confidence=normal_confidence,
+        )

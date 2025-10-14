@@ -197,7 +197,11 @@ def get_config_strings(args: argparse.Namespace):
         return args.configs
 
     with Path(args.configs_file).open("r", encoding="utf-8") as file:
-        return [line.strip() for line in file.readlines() if len(line.strip()) != 0]
+        return [
+            line.strip()
+            for line in file.readlines()
+            if len(line.strip()) != 0 and not line.strip().startswith("#")
+        ]
 
 
 def get_all_possible_vals_of_param(name: str):
@@ -660,7 +664,10 @@ def main():
         f"\tOutput directory: {ANSIEscapes.format(args.output_dir, 'cyan')}",
         f"\tMax steps: {ANSIEscapes.format(args.max_steps, 'cyan')}",
         f"\tEvaluation frequency: {ANSIEscapes.format(args.eval_frequency, 'cyan')}",
-        "\tConfigs: " + ANSIEscapes.format("\n\t          ".join(make_config_name(c)for c in configs), 'cyan'),
+        "\tConfigs: "
+        + ANSIEscapes.format(
+            "\n\t          ".join(make_config_name(c) for c in configs), "cyan"
+        ),
         f"\tScenes: {ANSIEscapes.format(scenes, 'cyan')}",
         f"\tEval all iters: {ANSIEscapes.format(eval_all_iters, 'cyan')}",
         sep="\n",

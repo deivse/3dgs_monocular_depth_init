@@ -77,7 +77,6 @@ def predict_depth_or_get_cached_depth(
         except Exception as e:
             _LOGGER.warning(f"Failed to load cached depth for image {image_name}: {e}")
 
-    # TODO: support for models that can predict points directly
     if depth is None:
         depth = model.predict_depth(image, intrinsics)
         try:
