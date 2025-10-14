@@ -46,8 +46,8 @@ class InterpConfig:
     init: Literal["lstsqrs", "ransac"] | None = "ransac"
     """If set, use this method to get an initial estimate of scale and shift before scale factor interpolation."""
 
-    segmentation: bool = True
-    """If true, use depth segmentation to split the image into regions without large depth discontinuities and align each region separately"""
+    segmentation: Literal["slic", "sam"] | None = "slic"
+    """If not None, use depth segmentation to split the image into regions without large depth discontinuities and align each region separately"""
     segmentation_region_margin: int = 10
     """
     Pixels closer than this distance from the depth segmentation boundary are ignored when interpolating scale factors. 

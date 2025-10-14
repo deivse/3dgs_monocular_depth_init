@@ -17,15 +17,17 @@ from gs_init_compare.depth_alignment.ransacs import DepthAlignmentRansac
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
+from gs_init_compare.utils.download_with_tqdm import download_with_pbar
 from gs_init_compare.utils.image_filtering import box_blur2d, gaussian_filter2d
 from .interface import DepthAlignmentResult, DepthAlignmentStrategy
 from torchrbf import RBFInterpolator
 import matplotlib.pyplot as plt
 
+
 LOGGER = logging.getLogger(__name__)
 
 
-def segment_depth_regions(
+def segment_depth_regions_slic(
     predicted_depth: torch.Tensor,
     mask: torch.Tensor,
     image: torch.Tensor,
@@ -66,7 +68,84 @@ def segment_depth_regions(
         plt.imsave(
             debug_export_dir / "slic_depth_regions_overlay.png", depth_region_overlay
         )
-    return slic_depth_regions
+    return torch.from_numpy(slic_depth_regions).to(
+        predicted_depth.device
+    ), torch.ones_like(predicted_depth, dtype=float)
+
+
+def segment_depth_regions_sam(
+    predicted_depth: torch.Tensor,
+    mask: torch.Tensor,
+    image: torch.Tensor,
+    checkpoint_dir: Path,
+    debug_export_dir: Path | None,
+):
+    from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
+
+    checkpoint_path = checkpoint_dir / "sam_vit_h_4b8939.pth"
+    download_with_pbar(
+        "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
+        checkpoint_path,
+    )
+
+    sam = sam_model_registry["vit_h"](checkpoint=checkpoint_path)
+    sam.to(predicted_depth.device)
+    mask_generator = SamAutomaticMaskGenerator(sam)
+    masks = mask_generator.generate((image * 255.0).cpu().numpy().astype(np.uint8))
+
+    masks_sorted_indices = torch.tensor([mask["area"] for mask in masks]).sort()[1]
+    segmentation = torch.zeros_like(predicted_depth, dtype=torch.int)
+    for i in masks_sorted_indices:
+        mask = torch.from_numpy(masks[i]["segmentation"]).to(predicted_depth.device)
+
+        overlapping_masks = torch.unique(segmentation[mask & (segmentation != 0)])
+
+        overlap_areas = torch.tensor(
+            [(segmentation[mask] == m).sum().item() for m in overlapping_masks],
+            dtype=torch.int,
+        )
+
+        for area_ix, area_id in enumerate(overlapping_masks):
+            overlap_area = overlap_areas[area_ix]
+            total_area = (segmentation == area_id).sum()
+            if overlap_area / total_area > 0.9:
+                segmentation[segmentation == area_id] = i + 1
+            if overlap_area / mask.sum() > 0.9:
+                segmentation[mask & segmentation == area_id] = i + 1
+
+        segmentation[mask & (segmentation == 0)] = i + 1  # 0 is unassigned
+
+    # TODO: what to do with unassigned pixels? Need to merge with existing regions somehow.
+
+    pass
+
+
+def segment_depth_regions(
+    predicted_depth: torch.Tensor,
+    mask: torch.Tensor,
+    image: torch.Tensor,
+    debug_export_dir: Path | None,
+    config: Config,
+):
+    if config.mdi.interp.segmentation == "slic":
+        return segment_depth_regions_slic(
+            predicted_depth,
+            mask,
+            image,
+            debug_export_dir,
+        )
+    elif config.mdi.interp.segmentation == "sam":
+        return segment_depth_regions_sam(
+            predicted_depth,
+            mask,
+            image,
+            Path(config.mdi.cache_dir) / "checkpoints",
+            debug_export_dir,
+        )
+    else:
+        raise ValueError(
+            f"Unknown segmentation method: {config.mdi.interp.segmentation}"
+        )
 
 
 def rbf_interpolation(
@@ -210,9 +289,7 @@ class OutlierClassification(NamedTuple):
     regular: torch.Tensor
 
 
-def scale_factor_outlier_removal(
-    coords: torch.Tensor, scales: torch.Tensor, debug_export_dir: Path | None
-):
+def scale_factor_outlier_removal(coords: torch.Tensor, scales: torch.Tensor):
     K_lof = 10
     K_scale_knn = 5
 
@@ -287,76 +364,26 @@ def initial_alignment(
         )
 
 
-def align_depth_interpolate(
-    image: torch.Tensor,
-    predicted_depth: PredictedDepth,
-    sfm_points_camera_coords: torch.Tensor,
-    gt_depth: torch.Tensor,
-    config: Config,
-    debug_export_dir: Path | None,
+INVALID_SCALE_VAL = -42
+
+
+def interp_scale_map_for_regions(
+    image,
+    unaligned,
+    region_map,
+    region_ids,
+    region_sfm_point_indices,
+    sfm_points_camera_coords,
+    gt_depth,
+    interp_config,
+    device,
+    debug_export_dir,
+    debug_prefix,
 ):
-    """
-    Args:
-        depth: torch.Tensor of shape (Width, Height)
-        sfm_points_camera_coords: torch.Tensor of shape (2, N)
-                where N is the number of points, the first row is y and the second row is x.
-        gt_depth: torch.Tensor of shape (N,)
-    """
-    H, W = predicted_depth.depth.shape
+    H, W = unaligned.shape
+
     num_sfm_pts = sfm_points_camera_coords.shape[1]
-    device = predicted_depth.depth.device
-    interp_config = config.mdi.interp
-
-    unaligned, out_mask = initial_alignment(
-        image,
-        predicted_depth,
-        sfm_points_camera_coords,
-        gt_depth,
-        config,
-        debug_export_dir,
-    )
-    out_mask = out_mask & predicted_depth.mask
-
-    if interp_config.segmentation:
-        region_map = torch.from_numpy(
-            segment_depth_regions(unaligned, out_mask, image, debug_export_dir)
-        ).to(device)
-        # Filter SfM points to keep only one point per depth region
-        region_ids = torch.unique(region_map[out_mask])
-        region_sfm_point_indices = []
-
-        region_map_blurred = region_map
-        if interp_config.segmentation_region_margin > 0:
-            KERNEL_REFERENCE_IMSIZE = 1297
-            adjusted_region_margin = int(
-                interp_config.segmentation_region_margin
-                * max(H, W)
-                / KERNEL_REFERENCE_IMSIZE
-            )
-            kernel_size = 2 * adjusted_region_margin + 1
-
-            region_map_blurred = box_blur2d(
-                region_map[None, None].float(), ksize=kernel_size
-            )[0, 0]
-            region_map_blurred = snap_to_int(region_map_blurred)
-            if interp_config.segmentation_deadzone_mask:
-                out_mask[region_map_blurred != region_map] = False
-
-        for region in region_ids:
-            region_points = (
-                region_map_blurred[
-                    sfm_points_camera_coords[1], sfm_points_camera_coords[0]
-                ]
-                == region
-            )
-            region_sfm_point_indices.append(torch.where(region_points)[0])
-    else:
-        region_map = torch.zeros_like(unaligned, dtype=torch.int)
-        region_ids = torch.tensor([0], device=device)
-        region_sfm_point_indices = [torch.arange(num_sfm_pts, device=device)]
-
     global_outlier_type = torch.zeros(num_sfm_pts, dtype=torch.int, device=device)
-    INVALID_SCALE_VAL = -42
     final_scale_map = torch.full_like(unaligned, INVALID_SCALE_VAL)
     for region in region_ids:
         region_sfm_coords = sfm_points_camera_coords[
@@ -442,6 +469,183 @@ def align_depth_interpolate(
             )
             final_scale_map[region_mask] = scale_factors.median()
 
+    if debug_export_dir is not None:
+        # Save rbf scale with colorbar
+        fig, ax = plt.subplots(figsize=(10, 8))
+        rbf_scale_np = final_scale_map.cpu().numpy()
+        ax.imshow(image.cpu().numpy())
+        im = ax.imshow(rbf_scale_np, cmap="viridis", alpha=0.75)
+        ax.set_title("Scale Factor")
+        cbar = plt.colorbar(im, ax=ax)
+        cbar.set_label("Scale Factor")
+
+        sfm_x = sfm_points_camera_coords[0].cpu().numpy()
+        sfm_y = sfm_points_camera_coords[1].cpu().numpy()
+
+        # Visualize SfM points with different styles depending on outlier type
+        try:
+            # Helper to scatter a subset
+            def _scatter(mask, color, marker, label, z):
+                if mask.numel() == 0 or mask.sum() == 0:
+                    return
+                ax.scatter(
+                    sfm_x[mask.cpu().numpy()],
+                    sfm_y[mask.cpu().numpy()],
+                    marker=marker,
+                    c=color,
+                    s=18,
+                    alpha=0.9,
+                    linewidths=0.8,
+                    label=label,
+                    zorder=z,
+                )
+
+            _scatter(
+                global_outlier_type == OutlierType.REGULAR, "black", "x", "regular", 5
+            )
+            _scatter(
+                global_outlier_type == OutlierType.SCALE_ONLY,
+                "red",
+                "o",
+                "scale outlier",
+                6,
+            )
+            _scatter(
+                global_outlier_type == OutlierType.POSITION_ONLY,
+                "orange",
+                "s",
+                "pos outlier",
+                7,
+            )
+            _scatter(
+                global_outlier_type == OutlierType.BOTH,
+                "magenta",
+                "D",
+                "both outlier",
+                8,
+            )
+
+            ax.legend(loc="upper right", fontsize=8)
+        except Exception:
+            # Fallback: single-style scatter if anything goes wrong
+            ax.scatter(
+                sfm_x, sfm_y, marker="x", c="black", s=10, alpha=0.8, linewidths=1
+            )
+
+        rbf_scale_path = Path(debug_export_dir) / f"{debug_prefix}_interp_scale.png"
+        plt.savefig(rbf_scale_path, dpi=150, bbox_inches="tight")
+        plt.close()
+
+    return final_scale_map, global_outlier_type
+
+
+def align_depth_interpolate(
+    image: torch.Tensor,
+    predicted_depth: PredictedDepth,
+    sfm_points_camera_coords: torch.Tensor,
+    gt_depth: torch.Tensor,
+    config: Config,
+    debug_export_dir: Path | None,
+):
+    """
+    Args:
+        depth: torch.Tensor of shape (Width, Height)
+        sfm_points_camera_coords: torch.Tensor of shape (2, N)
+                where N is the number of points, the first row is y and the second row is x.
+        gt_depth: torch.Tensor of shape (N,)
+    """
+    H, W = predicted_depth.depth.shape
+    device = predicted_depth.depth.device
+    interp_config = config.mdi.interp
+
+    unaligned, out_mask = initial_alignment(
+        image,
+        predicted_depth,
+        sfm_points_camera_coords,
+        gt_depth,
+        config,
+        debug_export_dir,
+    )
+    out_mask = out_mask & predicted_depth.mask
+
+    if interp_config.segmentation:
+        region_map, region_interp_mask = segment_depth_regions(
+            unaligned, out_mask, image, debug_export_dir, config
+        )
+        # Filter SfM points to keep only one point per depth region
+        region_ids = torch.unique(region_map[out_mask])
+        region_sfm_point_indices = []
+
+        region_map_blurred = region_map
+        if interp_config.segmentation_region_margin > 0:
+            KERNEL_REFERENCE_IMSIZE = 1297
+            adjusted_region_margin = int(
+                interp_config.segmentation_region_margin
+                * max(H, W)
+                / KERNEL_REFERENCE_IMSIZE
+            )
+            kernel_size = 2 * adjusted_region_margin + 1
+
+            region_map_blurred = box_blur2d(
+                region_map[None, None].float(), ksize=kernel_size
+            )[0, 0]
+            region_map_blurred = snap_to_int(region_map_blurred)
+            if interp_config.segmentation_deadzone_mask:
+                out_mask[region_map_blurred != region_map] = False
+
+        for region in region_ids:
+            region_points = (
+                region_map_blurred[
+                    sfm_points_camera_coords[1], sfm_points_camera_coords[0]
+                ]
+                == region
+            )
+            region_sfm_point_indices.append(torch.where(region_points)[0])
+    else:
+        region_interp_mask = torch.ones_like(unaligned, dtype=float)
+        region_map = torch.zeros_like(unaligned, dtype=torch.int)
+        region_ids = torch.tensor([0], device=device)
+        region_sfm_point_indices = [
+            torch.arange(sfm_points_camera_coords.shape[1], device=device)
+        ]
+
+    non_boundary_sfm_indices = torch.cat(region_sfm_point_indices, dim=0)
+    sfm_points_camera_coords = sfm_points_camera_coords[:, non_boundary_sfm_indices]
+    gt_depth = gt_depth[non_boundary_sfm_indices]
+
+    per_region_interp_scales = interp_scale_map_for_regions(
+        image,
+        unaligned,
+        region_map,
+        region_ids,
+        region_sfm_point_indices,
+        sfm_points_camera_coords,
+        gt_depth,
+        interp_config,
+        device,
+        debug_export_dir,
+        "per_region" if interp_config.segmentation else "global",
+    )
+    final_scale_map = per_region_interp_scales
+    if not torch.allclose(region_interp_mask, 1):
+        global_interp_scales = interp_scale_map_for_regions(
+            image,
+            unaligned,
+            torch.zeros_like(unaligned, dtype=torch.int),
+            torch.tensor([0], device=device),
+            torch.arange(sfm_points_camera_coords.shape[1], device=device)[None, :],
+            sfm_points_camera_coords,
+            gt_depth,
+            interp_config,
+            device,
+            debug_export_dir,
+            "global",
+        )
+        final_scale_map = (
+            per_region_interp_scales * region_interp_mask
+            + global_interp_scales * (1 - region_interp_mask)
+        )
+
     aligned_depth = final_scale_map * unaligned
     out_mask = out_mask & (final_scale_map != INVALID_SCALE_VAL)
 
@@ -507,72 +711,6 @@ def align_depth_interpolate(
         )
         pre_rbf_path = Path(debug_export_dir) / "init_depth.png"
         plt.savefig(pre_rbf_path, dpi=150, bbox_inches="tight")
-        plt.close()
-
-        # Save rbf scale with colorbar
-        fig, ax = plt.subplots(figsize=(10, 8))
-        rbf_scale_np = final_scale_map.cpu().numpy()
-        ax.imshow(image.cpu().numpy())
-        im = ax.imshow(rbf_scale_np, cmap="viridis", alpha=0.75)
-        ax.set_title("Scale Factor")
-        cbar = plt.colorbar(im, ax=ax)
-        cbar.set_label("Scale Factor")
-
-        sfm_x = sfm_points_camera_coords[0].cpu().numpy()
-        sfm_y = sfm_points_camera_coords[1].cpu().numpy()
-
-        # Visualize SfM points with different styles depending on outlier type
-        try:
-            # Helper to scatter a subset
-            def _scatter(mask, color, marker, label, z):
-                if mask.numel() == 0 or mask.sum() == 0:
-                    return
-                ax.scatter(
-                    sfm_x[mask.cpu().numpy()],
-                    sfm_y[mask.cpu().numpy()],
-                    marker=marker,
-                    c=color,
-                    s=18,
-                    alpha=0.9,
-                    linewidths=0.8,
-                    label=label,
-                    zorder=z,
-                )
-
-            _scatter(
-                global_outlier_type == OutlierType.REGULAR, "black", "x", "regular", 5
-            )
-            _scatter(
-                global_outlier_type == OutlierType.SCALE_ONLY,
-                "red",
-                "o",
-                "scale outlier",
-                6,
-            )
-            _scatter(
-                global_outlier_type == OutlierType.POSITION_ONLY,
-                "orange",
-                "s",
-                "pos outlier",
-                7,
-            )
-            _scatter(
-                global_outlier_type == OutlierType.BOTH,
-                "magenta",
-                "D",
-                "both outlier",
-                8,
-            )
-
-            ax.legend(loc="upper right", fontsize=8)
-        except Exception:
-            # Fallback: single-style scatter if anything goes wrong
-            ax.scatter(
-                sfm_x, sfm_y, marker="x", c="black", s=10, alpha=0.8, linewidths=1
-            )
-
-        rbf_scale_path = Path(debug_export_dir) / "interp_scale.png"
-        plt.savefig(rbf_scale_path, dpi=150, bbox_inches="tight")
         plt.close()
 
         # Save final aligned depth map with colorbar
