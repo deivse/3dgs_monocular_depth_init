@@ -133,7 +133,7 @@ class Metric3d(DepthPredictor):
         return PredictedDepth(
             depth=pred_depth,
             mask=torch.ones_like(pred_depth, dtype=torch.bool),
-            confidence=confidence,
+            depth_confidence=confidence,
             normal=pred_normal,
             normal_confidence=normal_confidence,
         )
