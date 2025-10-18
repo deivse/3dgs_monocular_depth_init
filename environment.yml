@@ -30,4 +30,5 @@ dependencies:
   - torchmetrics
   - scikit-learn
   - tensorly
+  - gxx=11.3.0
 

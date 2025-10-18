@@ -7,7 +7,7 @@ NATIVE_MODULES_PATH = Path(__file__).parent / "native_modules"
 
 setup(
     install_requires=[
-        f"pointcloud_subsampling @ {(NATIVE_MODULES_PATH / 'subsampling').as_uri()}",
+        f"mdi_native_modules @ {NATIVE_MODULES_PATH.as_uri()}",
         f"depth_pro @ {(THIRD_PARTY_PATH / 'apple_depth_pro').as_uri()}",
         "mmcv@https://download.openmmlab.com/mmcv/dist/cu121/torch2.4.0/mmcv-2.2.0-cp310-cp310-manylinux1_x86_64.whl",
         "fused_ssim@git+https://github.com/rahul-goel/fused-ssim@30fb258c8a38fe61e640c382f891f14b2e8b0b5a",

@@ -1,12 +1,12 @@
-#ifndef NATIVE_MODULES_SUBSAMPLING_SRC_PY_OUTPUT_ARRAY
-#define NATIVE_MODULES_SUBSAMPLING_SRC_PY_OUTPUT_ARRAY
+#ifndef NATIVE_MODULES_COMMON_SRC_PY_OUTPUT_ARRAY
+#define NATIVE_MODULES_COMMON_SRC_PY_OUTPUT_ARRAY
 
 #include <pybind11/numpy.h>
 
 namespace py = pybind11;
 
-namespace mdi::pointcloud {
-    
+namespace mdi::common {
+
 template<typename ElementT, size_t DataDimension>
 class py_output_array
 {
@@ -17,12 +17,13 @@ class py_output_array
 
 public:
     py_output_array(size_t size) : _data(py_array_t({size, DataDimension})) {}
-    
 
     void push_back(const ElementT* const item_ptr) {
         std::memcpy(_mut_ref.mutable_data(_write_index, 0), item_ptr, DataDimension * sizeof(ElementT));
         _write_index++;
     }
+
+    auto push_back(ElementT item) requires (DataDimension == 1) { push_back(&item); }
 
     void push_back(const std::array<ElementT, DataDimension>& item) { push_back(item.data()); }
 
@@ -31,6 +32,7 @@ public:
         return std::move(_data);
     }
 };
-} // namespace mdi::pointcloud
 
-#endif /* NATIVE_MODULES_SUBSAMPLING_SRC_PY_OUTPUT_ARRAY */
+} // namespace mdi::common
+
+#endif /* NATIVE_MODULES_COMMON_SRC_PY_OUTPUT_ARRAY */

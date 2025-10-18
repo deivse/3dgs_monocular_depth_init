@@ -5,7 +5,7 @@
 
 #include <Eigen/Core>
 
-#include "py_output_array.h"
+#include <common/py_output_array.h>
 #include "impl.h"
 
 namespace py = pybind11;
@@ -79,9 +79,8 @@ PYBIND11_MODULE(_pointcloud_subsampling, m) {
            subsample_pointcloud
     )pbdoc";
 
-    m.def("subsample_pointcloud", &subsample_pointcloud, 
-          py::arg("points"), py::arg("rgbs"), py::arg("intrinsic_matrices"), 
-          py::arg("camera_2_world_matrices"), py::arg("image_sizes"), py::arg("params"));
+    m.def("subsample_pointcloud", &subsample_pointcloud, py::arg("points"), py::arg("rgbs"),
+          py::arg("intrinsic_matrices"), py::arg("camera_2_world_matrices"), py::arg("image_sizes"), py::arg("params"));
 
 #ifdef VERSION_INFO
     m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);

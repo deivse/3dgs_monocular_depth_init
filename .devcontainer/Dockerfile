@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/python:1-3.10-bullseye
+FROM mcr.microsoft.com/devcontainers/python:1-3.10-bookworm
 
 ARG CUDA_VERSION=12.1
 

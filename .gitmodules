@@ -7,6 +7,3 @@
 [submodule "gs_init_compare/third_party/Depth-Anything-V2"]
 	path = gs_init_compare/third_party/depth_anything_v2
 	url = https://github.com/DepthAnything/Depth-Anything-V2
-[submodule "native_modules/subsampling/third-party/eigen"]
-	path = native_modules/subsampling/third-party/eigen
-	url = https://gitlab.com/libeigen/eigen.git

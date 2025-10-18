@@ -17,6 +17,7 @@ from gs_init_compare.depth_alignment.ransacs import DepthAlignmentRansac
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
+from scale_factor_interpolation import interpolate_scale_factors
 from gs_init_compare.utils.image_filtering import box_blur2d, gaussian_filter2d
 from .interface import DepthAlignmentResult, DepthAlignmentStrategy
 from torchrbf import RBFInterpolator
@@ -51,7 +52,8 @@ def segment_depth_regions(
     if debug_export_dir is not None:
         # overlay image with slic depth regions for visualization
         depth_region_cmap = ListedColormap(
-            plt.cm.get_cmap("tab20").colors[: np.unique(slic_depth_regions).shape[0]]
+            plt.cm.get_cmap("tab20").colors[: np.unique(
+                slic_depth_regions).shape[0]]
         )
 
         if np.max(slic_depth_regions) != 0:
@@ -105,7 +107,8 @@ def rbf_interpolation(
 
     # Query RBF on grid points
     interpolated = interpolator(grid_points)
-    interpolated = interpolated.reshape(query_width, query_height)[None, None, :, :]
+    interpolated = interpolated.reshape(query_width, query_height)[
+        None, None, :, :]
     return torch.nn.functional.interpolate(
         interpolated,
         size=(W, H),
@@ -134,9 +137,11 @@ def linear_interpolation(
     dt = Delaunay(coords_np)
     for corner_ix in corner_indices:
         indptr, indices = dt.vertex_neighbor_vertices
-        neighbors = indices[indptr[corner_ix] : indptr[corner_ix + 1]]
-        neighbors = np.setdiff1d(neighbors, corner_indices)  # exclude other corners
-        distances = np.linalg.norm(coords_np[neighbors] - coords_np[corner_ix], axis=1)
+        neighbors = indices[indptr[corner_ix]: indptr[corner_ix + 1]]
+        # exclude other corners
+        neighbors = np.setdiff1d(neighbors, corner_indices)
+        distances = np.linalg.norm(
+            coords_np[neighbors] - coords_np[corner_ix], axis=1)
         weights = 1.0 / (distances + 1e-8)
         weights /= np.sum(weights)
         corner_value = np.sum(values_np[neighbors] * weights)
@@ -147,8 +152,12 @@ def linear_interpolation(
     X = np.linspace(0, W - 1, W)
     Y = np.linspace(0, H - 1, H)
     X, Y = np.meshgrid(X, Y)
-    interp = LinearNDInterpolator(dt, values_np, fill_value=np.median(values_np))
-    return torch.from_numpy(interp(X, Y)).to(values)
+    interp = LinearNDInterpolator(
+        dt, values_np, fill_value=np.median(values_np))
+    interp_old = interp(X, Y)
+
+    interpolated = interpolate_scale_factors(coords_np, values_np, W, H)
+    return torch.from_numpy(interpolated).to(values)
 
 
 def interpolate_scale(
@@ -243,7 +252,8 @@ def scale_factor_outlier_removal(
     scale_diff_threshold = torch.quantile(scale_diff, 0.99)
     scale_outliers = scale_diff > scale_diff_threshold
 
-    position_outliers = torch.from_numpy(position_outliers_np).to(scale_outliers)
+    position_outliers = torch.from_numpy(
+        position_outliers_np).to(scale_outliers)
 
     return OutlierClassification(
         scale_only_outliers=scale_outliers & ~position_outliers,
@@ -355,7 +365,8 @@ def align_depth_interpolate(
         region_ids = torch.tensor([0], device=device)
         region_sfm_point_indices = [torch.arange(num_sfm_pts, device=device)]
 
-    global_outlier_type = torch.zeros(num_sfm_pts, dtype=torch.int, device=device)
+    global_outlier_type = torch.zeros(
+        num_sfm_pts, dtype=torch.int, device=device)
     INVALID_SCALE_VAL = -42
     final_scale_map = torch.full_like(unaligned, INVALID_SCALE_VAL)
     for region in region_ids:
@@ -395,7 +406,8 @@ def align_depth_interpolate(
         region_mask = region_map == region
 
         scale_factors = (
-            region_gt_depth / unaligned[region_sfm_coords[1], region_sfm_coords[0]]
+            region_gt_depth /
+            unaligned[region_sfm_coords[1], region_sfm_coords[0]]
         )
         if interp_config.scale_outlier_removal:
             outlier_type = scale_factor_outlier_removal(
@@ -595,7 +607,8 @@ def align_depth_interpolate(
             bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
             verticalalignment="top",
         )
-        aligned_depth_path = Path(debug_export_dir) / "interp_aligned_depth.png"
+        aligned_depth_path = Path(debug_export_dir) / \
+            "interp_aligned_depth.png"
         plt.savefig(aligned_depth_path, dpi=150, bbox_inches="tight")
         plt.close()
 

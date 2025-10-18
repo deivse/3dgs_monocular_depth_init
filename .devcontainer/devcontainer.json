@@ -30,7 +30,10 @@
 				"ms-toolsai.jupyter",
 				"charliermarsh.ruff",
 				"ms-toolsai.tensorboard",
-				"eamodio.gitlens"
+				"eamodio.gitlens",
+				"elazarcoh.simply-view-image-for-python-debugging",
+				"ms-vscode.cpptools",
+				"llvm-vs-code-extensions.vscode-clangd"
 			]
 		}
 	},
