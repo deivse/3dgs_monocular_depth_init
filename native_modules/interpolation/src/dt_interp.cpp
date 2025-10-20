@@ -1,9 +1,41 @@
 #include "dt_interp.h"
+#include "raster_utils.h"
+
+#include <CGAL/Barycentric_coordinates_2/triangle_coordinates_2.h>
+
+#include <fmt/format.h>
 
 namespace mdi {
 
-DelaunayInterpolator2D::DelaunayInterpolator2D(const py::array_t<FloatT>& points, const py::array_t<FloatT>& values)
-  : m_triangulation(std::make_unique<Delaunay_2>()) {
+namespace {
+    std::tuple<bool, bool, bool> check_vertex_visibility(const auto& unchecked_boundary, IntT x, IntT y,
+                                                         const FVector2D& v0, const FVector2D& v1,
+                                                         const FVector2D& v2) {
+        auto is_visible = [&](const FVector2D& v) {
+            IVector2D v_int(static_cast<IntT>(std::round(v.x())), static_cast<IntT>(std::round(v.y())));
+            return raster::for_each_line_pixel(IVector2D(x, y), v_int,
+                                               [&](IntT lx, IntT ly) { return !unchecked_boundary(ly, lx); });
+        };
+        return std::make_tuple(is_visible(v0), is_visible(v1), is_visible(v2));
+    };
+
+    std::array<FloatT, 3> compute_barycentric_coords(const std::array<FVector2D, 3>& triangle_points,
+                                                     const FVector2D& p) {
+        Point cgal_points[3] = {Point(triangle_points[0].x(), triangle_points[0].y()),
+                                Point(triangle_points[1].x(), triangle_points[1].y()),
+                                Point(triangle_points[2].x(), triangle_points[2].y())};
+        Point cgal_query(p.x(), p.y());
+
+        std::array<FloatT, 3> out;
+        CGAL::Barycentric_coordinates::triangle_coordinates_2(cgal_points[0], cgal_points[1], cgal_points[2],
+                                                              cgal_query, out.data());
+        return out;
+    }
+} // namespace
+
+Interpolator2D::Interpolator2D(const py::array_t<FloatT>& points, const py::array_t<FloatT>& values,
+                               py::array_t<bool> boundary_map)
+  : _triangulation(std::make_unique<Delaunay_2>()), _boundary_map(std::move(boundary_map)) {
     if (points.shape(0) != values.shape(0)) {
         throw std::invalid_argument("Points and values arrays must have the same number of elements");
     }
@@ -13,71 +45,146 @@ DelaunayInterpolator2D::DelaunayInterpolator2D(const py::array_t<FloatT>& points
     if (values.ndim() != 1) {
         throw std::invalid_argument("Values array must be one-dimensional");
     }
-
+    if (_boundary_map.ndim() != 2) {
+        throw std::invalid_argument("Boundary map must be two-dimensional (determines output grid size)");
+    }
     const auto unchecked_pts = points.unchecked<2>();
     const auto unchecked_vals = values.unchecked<1>();
 
     for (size_t i = 0; i < points.shape(0); ++i) {
-        Vertex_handle vh = m_triangulation->insert({unchecked_pts(i, 0), unchecked_pts(i, 1)});
+        Vertex_handle vh = _triangulation->insert({unchecked_pts(i, 0), unchecked_pts(i, 1)});
         vh->info() = unchecked_vals(i);
     }
+
+    const auto unchecked_boundary = _boundary_map.unchecked<2>();
+    _triangle_has_boundary.resize(_triangulation->number_of_faces());
+    // Iterate over each triangle
+    size_t tri_index = 0;
+    for (auto fit = _triangulation->finite_faces_begin(); fit != _triangulation->finite_faces_end(); ++fit) {
+        _triangle_has_boundary[tri_index] = !raster::for_each_triangle_pixel(
+          FVector2D(fit->vertex(0)->point().x(), fit->vertex(0)->point().y()),
+          FVector2D(fit->vertex(1)->point().x(), fit->vertex(1)->point().y()),
+          FVector2D(fit->vertex(2)->point().x(), fit->vertex(2)->point().y()), [&](IntT x, IntT y) {
+              // Check boundary map
+              if (y < 0 || y >= static_cast<IntT>(_boundary_map.shape(0)) || x < 0
+                  || x >= static_cast<IntT>(_boundary_map.shape(1))) {
+                  throw std::out_of_range(fmt::format("Triangle pixel ({}, {}) is out of boundary map range ({}, {})",
+                                                      x, y, _boundary_map.shape(1), _boundary_map.shape(0)));
+              }
+
+              return !unchecked_boundary(y, x); // Stop if boundary pixel is found
+          });
+        ++tri_index;
+    }
 }
 
-py::array_t<FloatT> DelaunayInterpolator2D::interpolate_regular_grid(FloatT x_min, FloatT x_max, int nx, FloatT y_min,
-                                                                     FloatT y_max, int ny) const {
-    common::py_output_array<FloatT, 1> grid(ny * nx);
+py::array_t<FloatT> Interpolator2D::interpolate() const {
+    const auto&& [width, height] = std::tuple{_boundary_map.shape(1), _boundary_map.shape(0)};
+    py::array_t<FloatT, py::array::c_style> out_array({height, width});
+    auto out = out_array.mutable_unchecked<2>();
 
-    FloatT dx = (nx > 1) ? (x_max - x_min) / (nx - 1) : 0.0;
-    FloatT dy = (ny > 1) ? (y_max - y_min) / (ny - 1) : 0.0;
+    const auto unchecked_boundary = _boundary_map.unchecked<2>();
 
-    for (int j = 0; j < ny; ++j) {
-        FloatT y = y_min + j * dy;
-        for (int i = 0; i < nx; ++i) {
-            FloatT x = x_min + i * dx;
-            grid.push_back(interpolate(x, y));
+    // Iterate over each triangle
+    size_t tri_index = 0;
+    for (auto tri = _triangulation->finite_faces_begin(); tri != _triangulation->finite_faces_end(); ++tri) {
+        const FVector2D v0 = FVector2D(tri->vertex(0)->point().x(), tri->vertex(0)->point().y());
+        const FVector2D v1 = FVector2D(tri->vertex(1)->point().x(), tri->vertex(1)->point().y());
+        const FVector2D v2 = FVector2D(tri->vertex(2)->point().x(), tri->vertex(2)->point().y());
+
+        if (!_triangle_has_boundary[tri_index]) {
+            raster::for_each_triangle_pixel(v0, v1, v2, [&](IntT x, IntT y) {
+                const auto barycentric_coords = compute_barycentric_coords({v0, v1, v2}, {x, y});
+                out(y, x) = barycentric_coords[0] * tri->vertex(0)->info()
+                            + barycentric_coords[1] * tri->vertex(1)->info()
+                            + barycentric_coords[2] * tri->vertex(2)->info();
+                return true;
+            });
+        } else {
+            raster::for_each_triangle_pixel(v0, v1, v2, [&](IntT x, IntT y) {
+                auto [vis0, vis1, vis2] = check_vertex_visibility(unchecked_boundary, x, y, v0, v1, v2);
+                FloatT num_visible = static_cast<FloatT>(vis0 + vis1 + vis2);
+
+                auto barycentric_coords = compute_barycentric_coords({v0, v1, v2}, {x, y});
+
+                FloatT sum_bar_visible
+                  = vis0 * barycentric_coords[0] + vis1 * barycentric_coords[1] + vis2 * barycentric_coords[2];
+
+                if (sum_bar_visible == 0) {
+                    if (num_visible == 1) {
+                        // Point must lie on edge between 2 invisible vertices, third one is visible
+                        // Only one will be used, but set all to 1 for simplicity
+                        barycentric_coords = {FloatT(1), FloatT(1), FloatT(1)};
+                        sum_bar_visible = FloatT(1);
+                    } else if (num_visible == 0) {
+                        // All vertices are invisible, fallback to using all vertices
+                        vis0 = vis1 = vis2 = true;
+                        num_visible = 3;
+                        sum_bar_visible = barycentric_coords[0] + barycentric_coords[1] + barycentric_coords[2];
+                    } else if (barycentric_coords[0] < 0 || barycentric_coords[1] < 0 || barycentric_coords[2] < 0) {
+                        // Point is very close to boundary, so computation is inaccurate, use all vertices
+                        vis0 = vis1 = vis2 = true;
+                        num_visible = 3;
+                        sum_bar_visible = barycentric_coords[0] + barycentric_coords[1] + barycentric_coords[2];
+                        if (sum_bar_visible <= 0) {
+                            const auto debug_str = fmt::format(
+                              "Non-positive sum_bar_visible ({}) at pixel ({}, {}) with barycentric coords "
+                              "({}, {}, {}) and visibility ({}, {}, {})",
+                              sum_bar_visible, x, y, barycentric_coords[0], barycentric_coords[1],
+                              barycentric_coords[2], vis0, vis1, vis2);
+                            fmt::print(stderr, "{}\n", debug_str);
+                            throw std::runtime_error(debug_str);
+                        }
+                    } else {
+                        // This should not happen
+                        const auto debug_str = fmt::format(
+                          "No visible vertices but sum_bar_visible == 0 at pixel ({}, {}) with barycentric coords "
+                          "({}, {}, {}) and visibility ({}, {}, {})",
+                          x, y, barycentric_coords[0], barycentric_coords[1], barycentric_coords[2], vis0, vis1, vis2);
+                        fmt::print(stderr, "{}\n", debug_str);
+                        throw std::runtime_error(debug_str);
+                    }
+                }
+
+                FloatT val = (barycentric_coords[0] * tri->vertex(0)->info() * vis0
+                              + barycentric_coords[1] * tri->vertex(1)->info() * vis1
+                              + barycentric_coords[2] * tri->vertex(2)->info() * vis2)
+                             / sum_bar_visible;
+
+                out(y, x) = val;
+
+                // Check if NaN
+                if (std::isnan(val) || !std::isfinite(val)) {
+                    // print all info we have for debugging
+                    const auto debug_str = fmt::format("{} encountered at pixel ({}, {}) with barycentric coords "
+                                                       "({}, {}, {}) and visibility ({}, {}, {})",
+                                                       val, x, y, barycentric_coords[0], barycentric_coords[1],
+                                                       barycentric_coords[2], vis0, vis1, vis2);
+                    fmt::print(stderr, "{}\n", debug_str);
+                    throw std::runtime_error(debug_str);
+                }
+
+                return true;
+            });
         }
+        ++tri_index;
     }
 
-    return std::move(grid).finalize();
+    for (IntT x = 0; x < static_cast<IntT>(width); ++x) {
+        out(height - 1, x) = interpolate(x, height - 1);
+    }
+
+    return std::move(out_array);
 }
 
-std::vector<FloatT> DelaunayInterpolator2D::compute_barycentric_coords(const std::array<Point, 3>& triangle_points,
-                                                                       const Point& x) const {
-    const Point& p0 = triangle_points[0];
-    const Point& p1 = triangle_points[1];
-    const Point& p2 = triangle_points[2];
-
-    // Compute vectors
-    FloatT v0x = p2.x() - p0.x();
-    FloatT v0y = p2.y() - p0.y();
-    FloatT v1x = p1.x() - p0.x();
-    FloatT v1y = p1.y() - p0.y();
-    FloatT v2x = x.x() - p0.x();
-    FloatT v2y = x.y() - p0.y();
-
-    // Compute dot products
-    FloatT dot00 = v0x * v0x + v0y * v0y;
-    FloatT dot01 = v0x * v1x + v0y * v1y;
-    FloatT dot02 = v0x * v2x + v0y * v2y;
-    FloatT dot11 = v1x * v1x + v1y * v1y;
-    FloatT dot12 = v1x * v2x + v1y * v2y;
-
-    // Compute barycentric coordinates
-    FloatT inv_denom = 1.0 / (dot00 * dot11 - dot01 * dot01);
-    FloatT u = (dot11 * dot02 - dot01 * dot12) * inv_denom;
-    FloatT v = (dot00 * dot12 - dot01 * dot02) * inv_denom;
-    FloatT w = 1.0 - u - v;
-
-    return {w, v, u}; // weights for p0, p1, p2
-}
-
-FloatT DelaunayInterpolator2D::interpolate(FloatT x, FloatT y) const {
+FloatT Interpolator2D::interpolate(FloatT x, FloatT y) const {
     Point query_point(x, y);
+    const auto unchecked_boundary = _boundary_map.unchecked<2>();
 
     // Locate the point in the triangulation
     Delaunay_2::Locate_type lt;
     int li;
-    Face_handle face = m_triangulation->locate(query_point, lt, li);
+    Face_handle face = _triangulation->locate(query_point, lt, li);
 
     // Handle different location results
     if (face == nullptr || lt == Delaunay_2::OUTSIDE_CONVEX_HULL || lt == Delaunay_2::OUTSIDE_AFFINE_HULL) {
@@ -92,36 +199,66 @@ FloatT DelaunayInterpolator2D::interpolate(FloatT x, FloatT y) const {
 
     if (lt == Delaunay_2::EDGE) {
         // Query point lies on an edge - interpolate between the two vertices
-        Vertex_handle v1 = face->vertex(face->ccw(li));
-        Vertex_handle v2 = face->vertex(face->cw(li));
+        Vertex_handle v0 = face->vertex(face->ccw(li));
+        Vertex_handle v1 = face->vertex(face->cw(li));
 
+        Point p0 = v0->point();
         Point p1 = v1->point();
-        Point p2 = v2->point();
 
         // Linear interpolation along the edge
-        FloatT total_dist = std::sqrt((p2.x() - p1.x()) * (p2.x() - p1.x()) + (p2.y() - p1.y()) * (p2.y() - p1.y()));
+        FloatT total_dist = std::sqrt(std::pow(p1.x() - p0.x(), 2) + std::pow(p1.y() - p0.y(), 2));
         if (total_dist < 1e-15) {
-            return v1->info(); // Points are essentially the same
+            return (v0->info() + v1->info()) / FloatT(2); // Points are essentially the same
         }
 
-        FloatT dist_to_p1 = std::sqrt((query_point.x() - p1.x()) * (query_point.x() - p1.x())
-                                      + (query_point.y() - p1.y()) * (query_point.y() - p1.y()));
+        IVector2D p0_int(static_cast<IntT>(std::round(p0.x())), static_cast<IntT>(std::round(p0.y())));
+        IVector2D p1_int(static_cast<IntT>(std::round(p1.x())), static_cast<IntT>(std::round(p1.y())));
 
-        FloatT t = dist_to_p1 / total_dist;
-        return (1.0 - t) * v1->info() + t * v2->info();
+        FloatT dist_to_p0 = std::sqrt(std::pow(query_point.x() - p0.x(), 2) + std::pow(query_point.y() - p0.y(), 2));
+
+        FloatT t = dist_to_p0 / total_dist;
+
+        FVector2D first_boundary_pixel;
+        if (raster::for_each_line_pixel(p0_int, p1_int, [&first_boundary_pixel, &unchecked_boundary](IntT x, IntT y) {
+                if (unchecked_boundary(y, x)) {
+                    first_boundary_pixel = FVector2D(x + FloatT(0.5), y + FloatT(0.5));
+                    return false; // Stop iteration
+                }
+                return true;
+            })) {
+            // No boundary pixel found between the two vertices - do linear interpolation
+            return t * v0->info() + (1 - t) * v1->info();
+        }
+        // Vertices separated by boundary
+        FloatT boundary_dist_to_p0
+          = std::sqrt((first_boundary_pixel.x() - p0.x()) * (first_boundary_pixel.x() - p0.x())
+                      + (first_boundary_pixel.y() - p0.y()) * (first_boundary_pixel.y() - p0.y()));
+        FloatT t_boundary = boundary_dist_to_p0 / total_dist;
+        return t < t_boundary ? v0->info() : v1->info();
     }
 
     if (lt == Delaunay_2::FACE) {
         // Query point lies inside a triangle - use barycentric interpolation
         std::array<Point, 3> triangle_points
           = {face->vertex(0)->point(), face->vertex(1)->point(), face->vertex(2)->point()};
+        FVector2D v0 = FVector2D(triangle_points[0].x(), triangle_points[0].y());
+        FVector2D v1 = FVector2D(triangle_points[1].x(), triangle_points[1].y());
+        FVector2D v2 = FVector2D(triangle_points[2].x(), triangle_points[2].y());
 
-        std::vector<FloatT> barycentric = compute_barycentric_coords(triangle_points, query_point);
+        const auto barycentric = compute_barycentric_coords({v0, v1, v2}, {x, y});
+        auto [vis0, vis1, vis2] = check_vertex_visibility(unchecked_boundary, x, y, v0, v1, v2);
 
-        FloatT result = 0.0;
-        for (int i = 0; i < 3; ++i) {
-            result += barycentric[i] * face->vertex(i)->info();
+        FloatT num_visible = static_cast<FloatT>(vis0 + vis1 + vis2);
+        if (num_visible == 0) {
+            vis0 = vis1 = vis2 = true;
+            num_visible = 3;
         }
+
+        FloatT sum_bar_visible = vis0 * barycentric[0] + vis1 * barycentric[1] + vis2 * barycentric[2];
+        FloatT result
+          = (barycentric[0] * face->vertex(0)->info() * vis0 + barycentric[1] * face->vertex(1)->info() * vis1
+             + barycentric[2] * face->vertex(2)->info() * vis2)
+            / sum_bar_visible;
 
         return result;
     }

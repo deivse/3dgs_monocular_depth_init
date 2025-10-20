@@ -1,6 +1,7 @@
 import torch
 
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
+    CameraIntrinsics,
     PredictedDepth,
 )
 from .interface import DepthAlignmentResult, DepthAlignmentStrategy
@@ -32,6 +33,7 @@ class DepthAlignmentLstSqrs(DepthAlignmentStrategy):
         cls,
         image: torch.Tensor,
         predicted_depth: PredictedDepth,
+        intrinsics: CameraIntrinsics,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
         *args,

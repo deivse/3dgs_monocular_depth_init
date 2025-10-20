@@ -26,6 +26,7 @@ setup(
         "pillow==10.2.0",
         "nerfbaselines==1.2.8",
         "open3d==0.18.0",
+        "kornia==0.8.1",
         # Moge requirements
         "click==8.2.1",
         "opencv-python==4.10.0",

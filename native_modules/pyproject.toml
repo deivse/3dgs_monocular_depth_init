@@ -10,3 +10,5 @@ dependencies = []
 
 [tool.scikit-build-core-conan]
 build = "missing"
+
+# TODO: use custom conan profile

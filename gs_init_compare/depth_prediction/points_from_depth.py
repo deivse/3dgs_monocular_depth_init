@@ -9,6 +9,7 @@ from gs_init_compare.config import Config
 from gs_init_compare.datasets.colmap import Parser
 from gs_init_compare.depth_alignment.interface import DepthAlignmentResult
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
+    CameraIntrinsics,
     PredictedDepth,
 )
 from gs_init_compare.depth_subsampling.adaptive_subsampling import (
@@ -45,7 +46,7 @@ def debug_export_point_clouds(
 ):
     camera_plane = torch.dstack(
         [
-            torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(
+            torch.from_numpy(np.mgrid[0: imsize[0], 0: imsize[1]].T).to(
                 cam2world.device
             ),
             torch.ones(imsize, device=cam2world.device).T,
@@ -57,12 +58,14 @@ def debug_export_point_clouds(
 
     export_point_cloud_to_ply(
         transform_c2w(camera_plane).reshape(-1, 3).cpu().numpy(),
-        rgb_image.reshape(-1, 3).cpu().numpy() if rgb_image is not None else None,
+        rgb_image.reshape(-1,
+                          3).cpu().numpy() if rgb_image is not None else None,
         dir,
         "camera_plane",
     )
     sfm_points_repro_world = P @ torch.vstack(
-        [sfm_points.T, torch.ones(sfm_points.shape[0], device=cam2world.device)]
+        [sfm_points.T, torch.ones(
+            sfm_points.shape[0], device=cam2world.device)]
     )
     sfm_points_repro_world = sfm_points_repro_world / sfm_points_repro_world[2]
     sfm_pt_rgbs = parser.points_rgb[parser.point_indices[image_name]] / 255.0
@@ -96,8 +99,10 @@ def get_valid_sfm_pts(
     sfm_pts_camera, sfm_pts_camera_depth, mask, imsize
 ) -> tuple[torch.Tensor, torch.Tensor]:
     valid_sfm_pt_indices = torch.logical_and(
-        torch.logical_and(sfm_pts_camera[0] >= 0, sfm_pts_camera[0] < imsize[0]),
-        torch.logical_and(sfm_pts_camera[1] >= 0, sfm_pts_camera[1] < imsize[1]),
+        torch.logical_and(sfm_pts_camera[0] >=
+                          0, sfm_pts_camera[0] < imsize[0]),
+        torch.logical_and(sfm_pts_camera[1] >=
+                          0, sfm_pts_camera[1] < imsize[1]),
     )
     valid_sfm_pt_indices = torch.logical_and(
         valid_sfm_pt_indices, sfm_pts_camera_depth >= 0
@@ -131,6 +136,7 @@ def align_depth(
     config: Config,
     sfm_points: torch.Tensor,
     P: torch.Tensor,
+    intrinsics: CameraIntrinsics,
     imsize: torch.Tensor,
     predicted_depth: PredictedDepth,
     debug_export_dir: Path | None,
@@ -150,6 +156,7 @@ def align_depth(
     return config.mdi.depth_alignment_strategy.get_implementation().align(
         image,
         predicted_depth,
+        intrinsics,
         sfm_points_camera,
         sfm_points_depth,
         config,
@@ -163,7 +170,8 @@ def get_subsampler(cfg: Config):
     elif isinstance(cfg.mdi.subsample_factor, int):
         return StaticDepthSubsampler(cfg.mdi.subsample_factor)  # noqa: F821
     else:
-        raise ValueError(f"Unsupported subsampling factor: {cfg.mdi.subsample_factor}")
+        raise ValueError(
+            f"Unsupported subsampling factor: {cfg.mdi.subsample_factor}")
 
 
 def get_pts_from_depth(
@@ -186,6 +194,8 @@ def get_pts_from_depth(
     C = image.cam2world[:3, 3]
     P = image.K @ R @ torch.hstack([torch.eye(3), -C[:, None]])
 
+    intrinsics = CameraIntrinsics(K=image.K)
+
     sfm_points = (
         torch.from_numpy(parser.points[parser.point_indices[image.name]])
         .to(device)
@@ -204,6 +214,7 @@ def get_pts_from_depth(
         config,
         sfm_points,
         P,
+        intrinsics,
         imsize,
         predicted_depth,
         debug_export_dir,
@@ -218,7 +229,8 @@ def get_pts_from_depth(
 
     pts_camera: torch.Tensor = torch.dstack(
         [
-            torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(device),
+            torch.from_numpy(
+                np.mgrid[0: imsize[0], 0: imsize[1]].T).to(device),
             aligned_depth,
         ],
     ).reshape(-1, 3)[mask]
@@ -231,7 +243,8 @@ def get_pts_from_depth(
         dense_world = (
             cam2world
             @ torch.vstack(
-                [dense_world, torch.ones(dense_world.shape[1], device=cam2world.device)]
+                [dense_world, torch.ones(
+                    dense_world.shape[1], device=cam2world.device)]
             )
         )[:3].T
         return dense_world

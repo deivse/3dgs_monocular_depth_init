@@ -1,6 +1,7 @@
 from enum import IntEnum
 from pathlib import Path
 from typing import NamedTuple
+import cv2
 from matplotlib.colors import ListedColormap
 import numpy as np
 import skimage
@@ -15,9 +16,11 @@ from gs_init_compare.depth_alignment.config import InterpConfig
 from gs_init_compare.depth_alignment.lstsqrs import DepthAlignmentLstSqrs
 from gs_init_compare.depth_alignment.ransacs import DepthAlignmentRansac
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
+    CameraIntrinsics,
     PredictedDepth,
 )
 from scale_factor_interpolation import interpolate_scale_factors
+import kornia
 from gs_init_compare.utils.image_filtering import box_blur2d, gaussian_filter2d
 from .interface import DepthAlignmentResult, DepthAlignmentStrategy
 from torchrbf import RBFInterpolator
@@ -120,6 +123,7 @@ def rbf_interpolation(
 def linear_interpolation(
     coords: torch.Tensor,
     values: torch.Tensor,
+    boundary_map: torch.Tensor,
     config: InterpConfig,
     device: torch.device,
     W: int,
@@ -156,13 +160,15 @@ def linear_interpolation(
         dt, values_np, fill_value=np.median(values_np))
     interp_old = interp(X, Y)
 
-    interpolated = interpolate_scale_factors(coords_np, values_np, W, H)
+    interpolated = interpolate_scale_factors(
+        coords_np, values_np, boundary_map.cpu().numpy(), W, H)
     return torch.from_numpy(interpolated).to(values)
 
 
 def interpolate_scale(
     coords: torch.Tensor,
     values: torch.Tensor,
+    boundary_map: torch.Tensor,
     config: InterpConfig,
     device: torch.device,
     W: int,
@@ -171,7 +177,7 @@ def interpolate_scale(
     if config.method == "rbf":
         return rbf_interpolation(coords, values, config, device, W, H)
     elif config.method == "linear":
-        return linear_interpolation(coords, values, config, device, W, H)
+        return linear_interpolation(coords, values, boundary_map, config, device, W, H)
     else:
         raise ValueError(f"Unknown interpolation method: {config.method}")
 
@@ -181,7 +187,6 @@ def pick_rbf_point_subset(
     max_points,
     sfm_pts_camera_coords,
     sfm_depth,
-    sfm_indices,
     device,
 ):
     indices = torch.randperm(
@@ -191,7 +196,7 @@ def pick_rbf_point_subset(
     return (
         sfm_pts_camera_coords[:, indices],
         sfm_depth[indices],
-        sfm_indices[indices],
+        indices,
     )
 
 
@@ -266,6 +271,7 @@ def scale_factor_outlier_removal(
 def initial_alignment(
     image: torch.Tensor,
     predicted_depth: PredictedDepth,
+    intrinsics: CameraIntrinsics,
     sfm_points_camera_coords: torch.Tensor,
     gt_depth: torch.Tensor,
     config: Config,
@@ -277,6 +283,7 @@ def initial_alignment(
         return DepthAlignmentLstSqrs.align(
             image,
             predicted_depth,
+            intrinsics,
             sfm_points_camera_coords,
             gt_depth,
             config,
@@ -286,6 +293,7 @@ def initial_alignment(
         return DepthAlignmentRansac.align(
             image,
             predicted_depth,
+            intrinsics,
             sfm_points_camera_coords,
             gt_depth,
             config,
@@ -297,9 +305,48 @@ def initial_alignment(
         )
 
 
+def create_boundary_map(
+    depth: torch.Tensor,
+    mask: torch.Tensor,
+    intrinsics: CameraIntrinsics,
+    image: torch.Tensor,
+    min_squared_grad_thresh: float = 0.001,
+) -> torch.Tensor:
+    # TODO: use more principled method based on depth discontinuities?
+
+    depth = depth.clone()
+    depth[~mask] = 0
+    depth = depth[None, None, :, :]
+
+    image = image.permute(2, 0, 1)[None, :, :, :].to(depth.device)
+    grad = kornia.filters.spatial_gradient(
+        depth, order=1, mode="sobel", normalized=True)
+
+    def local_median(tensor: torch.Tensor, window: int) -> torch.Tensor:
+        pad = window // 2
+        tensor_padded = torch.nn.functional.pad(
+            tensor, (pad, pad, pad, pad), mode="reflect"
+        )
+        unfolded = tensor_padded.unfold(2, window, 1).unfold(3, window, 1)
+        local_medians = unfolded.contiguous().view(
+            tensor.shape[0], tensor.shape[1], tensor.shape[2], tensor.shape[3], -1
+        ).median(dim=-1).values
+        return local_medians
+
+    mag_squared = grad[:, :, 0, :, :]**2 + grad[:, :, 1, :, :]**2
+
+    # adaptive threshold: threshold = alpha * median_filter(local_window, mag)
+    alpha = 100
+    T = alpha * local_median(mag_squared, window=19)
+    edges = (mag_squared > T) & (mag_squared > min_squared_grad_thresh)
+
+    return edges[0, 0, :, :] & mask
+
+
 def align_depth_interpolate(
     image: torch.Tensor,
     predicted_depth: PredictedDepth,
+    intrinsics: CameraIntrinsics,
     sfm_points_camera_coords: torch.Tensor,
     gt_depth: torch.Tensor,
     config: Config,
@@ -320,6 +367,7 @@ def align_depth_interpolate(
     unaligned, out_mask = initial_alignment(
         image,
         predicted_depth,
+        intrinsics,
         sfm_points_camera_coords,
         gt_depth,
         config,
@@ -327,132 +375,80 @@ def align_depth_interpolate(
     )
     out_mask = out_mask & predicted_depth.mask
 
-    if interp_config.segmentation:
-        region_map = torch.from_numpy(
-            segment_depth_regions(unaligned, out_mask, image, debug_export_dir)
-        ).to(device)
-        # Filter SfM points to keep only one point per depth region
-        region_ids = torch.unique(region_map[out_mask])
-        region_sfm_point_indices = []
-
-        region_map_blurred = region_map
-        if interp_config.segmentation_region_margin > 0:
-            KERNEL_REFERENCE_IMSIZE = 1297
-            adjusted_region_margin = int(
-                interp_config.segmentation_region_margin
-                * max(H, W)
-                / KERNEL_REFERENCE_IMSIZE
-            )
-            kernel_size = 2 * adjusted_region_margin + 1
-
-            region_map_blurred = box_blur2d(
-                region_map[None, None].float(), ksize=kernel_size
-            )[0, 0]
-            region_map_blurred = snap_to_int(region_map_blurred)
-            if interp_config.segmentation_deadzone_mask:
-                out_mask[region_map_blurred != region_map] = False
-
-        for region in region_ids:
-            region_points = (
-                region_map_blurred[
-                    sfm_points_camera_coords[1], sfm_points_camera_coords[0]
-                ]
-                == region
-            )
-            region_sfm_point_indices.append(torch.where(region_points)[0])
-    else:
-        region_map = torch.zeros_like(unaligned, dtype=torch.int)
-        region_ids = torch.tensor([0], device=device)
-        region_sfm_point_indices = [torch.arange(num_sfm_pts, device=device)]
+    boundary_map = create_boundary_map(unaligned, out_mask, intrinsics, image)
+    out_mask = out_mask & ~boundary_map
 
     global_outlier_type = torch.zeros(
         num_sfm_pts, dtype=torch.int, device=device)
     INVALID_SCALE_VAL = -42
     final_scale_map = torch.full_like(unaligned, INVALID_SCALE_VAL)
-    for region in region_ids:
-        region_sfm_coords = sfm_points_camera_coords[
-            :, region_sfm_point_indices[region.item()]
-        ]
-        region_gt_depth = gt_depth[region_sfm_point_indices[region.item()]]
-        region_num_pts = region_sfm_coords.shape[1]
 
-        # limit number of points for RBF to avoid OOM
-        if (
-            interp_config.method == "rbf"
-            and interp_config.max_rbf_points != -1
-            and region_num_pts > interp_config.max_rbf_points
-        ):
-            (
-                region_sfm_coords,
-                region_gt_depth,
-                region_sfm_point_indices[region.item()],
-            ) = pick_rbf_point_subset(
-                region_num_pts,
-                interp_config.max_rbf_points,
-                region_sfm_coords,
-                region_gt_depth,
-                region_sfm_point_indices[region.item()],
-                device,
-            )
-
-        if region_num_pts == 0:
-            # TODO: is it better to skip or use global least squares scale for the whole depth map
-            LOGGER.error(
-                "No SfM points found in region %s; skipping depth scale interpolation.",
-                region.item(),
-            )
-            continue
-
-        region_mask = region_map == region
-
-        scale_factors = (
-            region_gt_depth /
-            unaligned[region_sfm_coords[1], region_sfm_coords[0]]
+    sfm_points_indices = torch.arange(
+        num_sfm_pts, device=device)
+    # limit number of points for RBF to avoid OOM
+    if (
+        interp_config.method == "rbf"
+        and interp_config.max_rbf_points != -1
+        and num_sfm_pts > interp_config.max_rbf_points
+    ):
+        (
+            sfm_points_camera_coords,
+            gt_depth,
+            sfm_points_indices,
+        ) = pick_rbf_point_subset(
+            num_sfm_pts,
+            interp_config.max_rbf_points,
+            sfm_points_camera_coords,
+            gt_depth,
+            device,
         )
-        if interp_config.scale_outlier_removal:
-            outlier_type = scale_factor_outlier_removal(
-                region_sfm_coords.T, scale_factors, debug_export_dir
-            )
-            outlier_mask = outlier_type.scale_only_outliers
-            if outlier_mask.sum() > 0:
-                LOGGER.info(
-                    "Removed %d/%d scale outlier points from region %s",
-                    outlier_mask.sum().item(),
-                    region_num_pts,
-                    region.item(),
-                )
-            scale_factors = scale_factors[~outlier_mask]
-            region_sfm_coords = region_sfm_coords[:, ~outlier_mask]
-            global_outlier_type[
-                region_sfm_point_indices[region][outlier_type.scale_only_outliers]
-            ] = OutlierType.SCALE_ONLY
-            global_outlier_type[
-                region_sfm_point_indices[region][outlier_type.both_outliers]
-            ] = OutlierType.BOTH
-            global_outlier_type[
-                region_sfm_point_indices[region][outlier_type.position_only_outliers]
-            ] = OutlierType.POSITION_ONLY
-            global_outlier_type[
-                region_sfm_point_indices[region][outlier_type.regular]
-            ] = OutlierType.REGULAR
 
-        try:
-            region_scale_map = interpolate_scale(
-                region_sfm_coords,
-                scale_factors,
-                interp_config,
-                device,
-                W,
-                H,
+    scale_factors = (
+        gt_depth /
+        unaligned[sfm_points_camera_coords[1], sfm_points_camera_coords[0]]
+    )
+    if interp_config.scale_outlier_removal:
+        outlier_type = scale_factor_outlier_removal(
+            sfm_points_camera_coords.T, scale_factors, debug_export_dir
+        )
+        outlier_mask = outlier_type.scale_only_outliers
+        if outlier_mask.sum() > 0:
+            LOGGER.info(
+                "Removed %d/%d scale outlier points",
+                outlier_mask.sum().item(),
+                num_sfm_pts
             )
-            final_scale_map[region_mask] = region_scale_map[region_mask]
-        except Exception as e:
-            LOGGER.warning(
-                "Interpolation failed for region %s with error %s; using median scale instead of interpolation.",
-                region.item(),
-                e,
-            )
-            final_scale_map[region_mask] = scale_factors.median()
+        scale_factors = scale_factors[~outlier_mask]
+        sfm_points_camera_coords = sfm_points_camera_coords[:, ~outlier_mask]
+        global_outlier_type[
+            sfm_points_indices[outlier_type.scale_only_outliers]
+        ] = OutlierType.SCALE_ONLY
+        global_outlier_type[
+            sfm_points_indices[outlier_type.both_outliers]
+        ] = OutlierType.BOTH
+        global_outlier_type[
+            sfm_points_indices[outlier_type.position_only_outliers]
+        ] = OutlierType.POSITION_ONLY
+        global_outlier_type[
+            sfm_points_indices[outlier_type.regular]
+        ] = OutlierType.REGULAR
+
+    try:
+        final_scale_map = interpolate_scale(
+            sfm_points_camera_coords,
+            scale_factors,
+            boundary_map,
+            interp_config,
+            device,
+            W,
+            H,
+        )
+    except Exception as e:
+        LOGGER.warning(
+            "Interpolation failed with error %s; using median scale instead of interpolation.",
+            e,
+        )
+        final_scale_map = scale_factors.median()
 
     aligned_depth = final_scale_map * unaligned
     out_mask = out_mask & (final_scale_map != INVALID_SCALE_VAL)
@@ -621,6 +617,7 @@ class DepthAlignmentInterpolate(DepthAlignmentStrategy):
         cls,
         image: torch.Tensor,
         predicted_depth: PredictedDepth,
+        intrinsics: CameraIntrinsics,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
         config: Config,
@@ -629,6 +626,7 @@ class DepthAlignmentInterpolate(DepthAlignmentStrategy):
         return align_depth_interpolate(
             image,
             predicted_depth,
+            intrinsics,
             sfm_points_camera_coords,
             sfm_points_depth,
             config,

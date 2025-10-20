@@ -4,6 +4,7 @@ from typing import Callable
 from gs_init_compare.config import Config
 from gs_init_compare.depth_alignment.config import RansacConfig
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
+    CameraIntrinsics,
     PredictedDepth,
 )
 from .lstsqrs import align_depth_least_squares
@@ -19,6 +20,7 @@ class DepthAlignmentRansac(DepthAlignmentStrategy):
         cls,
         image: torch.Tensor,
         predicted_depth: PredictedDepth,
+        intrinsics: CameraIntrinsics,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
         config: Config,
@@ -42,6 +44,7 @@ class DepthAlignmentMsac(DepthAlignmentStrategy):
         cls,
         image: torch.Tensor,
         predicted_depth: PredictedDepth,
+        intrinsics: CameraIntrinsics,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
         config: Config,
@@ -160,14 +163,16 @@ def _align_depth_ransac_generic(
         depth[:, inlier_indices_best], gt_depth[inlier_indices_best]
     )
     inlier_indices_best = (
-        torch.abs(h_best[0] * depth[0] + h_best[1] - gt_depth) < p.inlier_threshold
+        torch.abs(h_best[0] * depth[0] + h_best[1] -
+                  gt_depth) < p.inlier_threshold
     )
     num_inliers_best = torch.sum(inlier_indices_best)
 
     if debug_export_dir is not None:
         h_test = align_depth_least_squares(depth, gt_depth)
         inlier_indices_test = (
-            torch.abs(h_test[0] * depth[0] + h_test[1] - gt_depth) < p.inlier_threshold
+            torch.abs(h_test[0] * depth[0] + h_test[1] -
+                      gt_depth) < p.inlier_threshold
         )
         num_inliers_test = torch.sum(inlier_indices_test)
         avg_err_best = torch.mean(

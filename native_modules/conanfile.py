@@ -17,7 +17,7 @@ class SubsamplingConan(ConanFile):
     exports_sources = "CMakeLists.txt", "src/*", "include/*"
 
     build_requires = ["cmake/3.26.4", "ninja/1.11.1"]
-    requires = ["cgal/6.0.2", "eigen/3.4.0", "pybind11/3.0.1"]
+    requires = ["cgal/6.0.2", "eigen/3.4.0", "pybind11/3.0.1", "fmt/10.1.1"]
 
     def configure(self):
         check_min_cppstd(self, "20")
