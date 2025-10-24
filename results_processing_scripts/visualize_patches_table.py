@@ -3,6 +3,7 @@ import argparse
 import csv
 from typing import List, Sequence, Union, Tuple, Optional
 import math
+from matplotlib import pyplot as plt
 import numpy as np
 import os
 import re
@@ -183,6 +184,7 @@ def main():
 
         fig, ax = visualize_preset_table(table)
         fig.savefig(out_path)
+        plt.show()
         print(f"Saved visualization to {out_path}")
 
 

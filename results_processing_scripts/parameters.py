@@ -160,20 +160,51 @@ class NerfbaselinesJSONParameter(Parameter):
                 f"Error loading JSON parameter {self.name} from {json_file}: {e}"
             )
 
-    def load_patches(self, results_dir, step) -> Dict[int, ParameterInstance]:
+    def load_patches(self, results_dir, step, reduce_bins=1) -> Dict[int, ParameterInstance]:
         json_file = results_dir / f"results-{step}.json"
         try:
             with open(json_file, "r") as f:
                 data = json.load(f)
                 patches: dict[str, dict] = data["metrics"]["patches"]
 
-                return {int(bin_ix): self.make_instance(bin_vals[self.json_name]) for bin_ix, bin_vals in patches.items()}
+                bins = {int(bin_ix): self.make_instance(
+                    bin_vals[self.json_name]) for bin_ix, bin_vals in patches.items()}
+                patch_counts = {int(bin_ix): bin_vals["num_patches"]
+                                for bin_ix, bin_vals in patches.items()}
+
+                if reduce_bins > 1:
+                    reduced_bins: Dict[int, ParameterInstance] = {}
+                    reduced_patch_counts: Dict[int, int] = {}
+                    sorted_bin_indices = sorted(bins.keys())
+                    for i in range(0, len(sorted_bin_indices), reduce_bins):
+                        bin_group = sorted_bin_indices[i:i + reduce_bins]
+                        if not bin_group:
+                            continue
+
+                        if self.json_name == "num_patches":
+                            total_count = sum(
+                                patch_counts[bin_ix] for bin_ix in bin_group)
+                            reduced_bin_index = bin_group[0] // reduce_bins
+                            reduced_bins[reduced_bin_index] = self.make_instance(
+                                total_count)
+                            reduced_patch_counts[reduced_bin_index] = total_count
+                        else:
+                            avg_value = sum(
+                                bins[bin_ix].value * patch_counts[bin_ix] for bin_ix in bin_group
+                            ) / sum(patch_counts[bin_ix] for bin_ix in bin_group)
+                            reduced_bin_index = bin_group[0] // reduce_bins
+                            reduced_bins[reduced_bin_index] = self.make_instance(
+                                avg_value)
+                            reduced_patch_counts[reduced_bin_index] = sum(
+                                patch_counts[bin_ix] for bin_ix in bin_group
+                            )
+                    return reduced_bins
+
+                return bins
+
         except FileNotFoundError:
             raise ValueError(
                 f"JSON file {json_file} not found in {results_dir}")
-        except KeyError:
-            raise ValueError(
-                f"Key metrics.{self.json_name} not found in {json_file}")
         except Exception as e:
             raise ValueError(
                 f"Error loading JSON parameter {self.name} from {json_file}: {e}"

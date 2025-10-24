@@ -128,9 +128,10 @@ class DataLoader:
         dataset_dir: Path,
         scenes: list[str],
         param_names: list[str],
-        step: int,
+        args,
         preset_filter: PresetFilter,
     ):
+        step = args.step
         logging.debug(f"Loading data at step {step} for:")
         logging.debug(f"Scenes: {scenes}")
         logging.debug(f"Params: {param_names}")
@@ -210,9 +211,11 @@ class DataLoaderPatches:
         dataset_dir: Path,
         scenes: list[str],
         param_names: list[str],
-        step: int,
+        args,
         preset_filter: PresetFilter,
     ):
+        step = args.step
+        self.reduce_bins: int = args.reduce_bins
         logging.debug(f"Loading per-patch data at step {step} for:")
         logging.debug(f"Scenes: {scenes}")
         logging.debug(f"Params: {param_names}")
@@ -262,7 +265,7 @@ class DataLoaderPatches:
                                 f"bin_size for {preset_dir / f'results-{step}.json'} does not match curr binsize ({self.bin_size}!={self.bin_size})")
 
                         per_bin_params_for_preset[param.name] = param.load_patches(
-                            preset_dir, step)
+                            preset_dir, step, self.reduce_bins)
                     except Exception as e:
                         logging.error(
                             f"Error loading {param.name} for {preset_dir}: {e}"
@@ -284,6 +287,9 @@ class DataLoaderPatches:
     @property
     def scenes(self) -> List[str]:
         return list(self.data.keys())
+
+    def bin_name(self, bin_ix: int) -> str:
+        return f"[{self.bin_size * bin_ix * self.reduce_bins}, {self.bin_size * (bin_ix+1) * self.reduce_bins})"
 
     def try_get(
         self, scene: str, preset: str, param: str | Parameter
@@ -493,9 +499,6 @@ class MakeTableFuncs:
     def patches_per_scene(data_loader: DataLoaderPatches, args) -> list[Table]:
         retval = []
 
-        def make_bin_name(bin_ix):
-            return f"[{data_loader.bin_size * bin_ix}, {data_loader.bin_size * (bin_ix+1)})"
-
         for scene in data_loader.scenes:
             for param in data_loader.params:
                 valid_presets = []
@@ -521,7 +524,7 @@ class MakeTableFuncs:
                 bin_indices = list(range(min_bin_ix, max_bin_ix+1))
 
                 first_row = [f"[{param.name} on {scene}]"] + \
-                    [make_bin_name(i) for i in bin_indices]
+                    [data_loader.bin_name(i) for i in bin_indices]
 
                 formatted_table = [first_row]
                 for preset_name, row in zip(valid_presets, rows):
@@ -541,9 +544,6 @@ class MakeTableFuncs:
     @staticmethod
     def patches(data_loader: DataLoaderPatches, args) -> list[Table]:
         retval = []
-
-        def make_bin_name(bin_ix):
-            return f"[{data_loader.bin_size * bin_ix}, {data_loader.bin_size * (bin_ix+1)})"
 
         min_bin_ix = +float("inf")
         max_bin_ix = -float("inf")
@@ -588,7 +588,7 @@ class MakeTableFuncs:
             bin_indices = list(range(min_bin_ix, max_bin_ix+1))
 
             first_row = [f"[{param.name} (all scene avg)]"] + \
-                [make_bin_name(i) for i in bin_indices]
+                [data_loader.bin_name(i) for i in bin_indices]
 
             formatted_table = [first_row]
             for preset_name, row in zip(valid_presets, rows):
@@ -685,9 +685,13 @@ def main():
 
     patches_per_scene = subparsers.add_parser("patches_per_scene")
     patches_per_scene.add_argument("params", nargs="+", choices=PARAMS.keys())
+    patches_per_scene.add_argument("--reduce-bins", type=int, default=1,
+                                   help="Reduce bin count by this factor by averaging adjacent bins.")
 
     patches = subparsers.add_parser("patches")
     patches.add_argument("params", nargs="+", choices=PARAMS.keys())
+    patches.add_argument("--reduce-bins", type=int, default=1,
+                         help="Reduce bin count by this factor by averaging adjacent bins.")
 
     args = parser.parse_args()
     if args.debug:
@@ -716,7 +720,7 @@ def main():
         dataset_dir,
         scenes,
         params,
-        args.step,
+        args,
         PresetFilter(args.preset_regex, args.preset_exclude),
     )
 
