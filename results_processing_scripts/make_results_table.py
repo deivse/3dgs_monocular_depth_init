@@ -569,7 +569,9 @@ class MakeTableFuncs:
                         else:
                             row[bin_id].value += instance.value
                             row_counts[bin_id] += 1
-                    valid_presets.append(preset)
+                if len(row) == 0:
+                    continue
+                valid_presets.append(preset)
 
                 for bin_id in row.keys():
                     row[bin_id].value /= row_counts[bin_id]
