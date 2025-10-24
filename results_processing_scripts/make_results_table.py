@@ -587,7 +587,7 @@ class MakeTableFuncs:
                              for row in rows if len(row.keys()) > 0)
             bin_indices = list(range(min_bin_ix, max_bin_ix+1))
 
-            first_row = [f"[{param.name} on {scene}]"] + \
+            first_row = [f"[{param.name} (all scene avg)]"] + \
                 [make_bin_name(i) for i in bin_indices]
 
             formatted_table = [first_row]
@@ -604,6 +604,17 @@ class MakeTableFuncs:
 
             retval.append(formatted_table)
         return retval
+
+
+def table_to_csv_string(table: Table) -> str:
+    import csv
+    from io import StringIO
+
+    output = StringIO()
+    writer = csv.writer(output)
+    for row in table:
+        writer.writerow(row)
+    return output.getvalue().strip()  # Remove trailing newline
 
 
 def main():
@@ -715,8 +726,13 @@ def main():
     for table in tables:
         if args.output_format == "latex":
             args.output_format = "latex_raw"
-        table_str = tabulate(table, headers="firstrow",
-                             tablefmt=args.output_format)
+
+        if args.output_format == "csv":
+            table_str = table_to_csv_string(table)
+        else:
+            table_str = tabulate(table, headers="firstrow",
+                                 tablefmt=args.output_format)
+
         if args.output_file:
             with open(args.output_file, "w", encoding="utf-8") as f:
                 f.write(table_str + "\n")
