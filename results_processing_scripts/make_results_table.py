@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import re
 from pathlib import Path
@@ -16,44 +17,50 @@ from tabulate import tabulate
 
 
 def make_pretty_preset_name(preset_name: str) -> str:
-    preset_name = re.sub(r"depth_downsample_(\d+|adaptive)", r"[\1]", preset_name)
+    # preset_name = re.sub(
+    #     r"depth_downsample_(\d+|adaptive)", r"[\1]", preset_name)
 
-    name = preset_name.replace("_", " ")
-    substitutions = {
-        "metric3d": "Metric3Dv2",
-        "unidepth": "UniDepth",
-        "depth anything v2": "DA V2",
-        "moge": "MoGe",
-    }
-    explicitly_capitalized = []
-    for sub in substitutions.values():
-        explicitly_capitalized.extend(sub.split(" "))
+    # name = preset_name.replace("_", " ")
+    # substitutions = {
+    #     "metric3d": "Metric3Dv2",
+    #     "unidepth": "UniDepth",
+    #     "depth anything v2": "DA V2",
+    #     "moge": "MoGe",
+    # }
+    # explicitly_capitalized = []
+    # for sub in substitutions.values():
+    #     explicitly_capitalized.extend(sub.split(" "))
 
-    for key, value in substitutions.items():
-        name = name.replace(key, value)
-    name = " ".join(
-        [
-            word.capitalize() if word not in explicitly_capitalized else word
-            for word in name.split(" ")
-        ]
-    )
-    return name
+    # for key, value in substitutions.items():
+    #     name = name.replace(key, value)
+    # name = " ".join(
+    #     [
+    #         word.capitalize() if word not in explicitly_capitalized else word
+    #         for word in name.split(" ")
+    #     ]
+    # )
+    return preset_name
 
 
 PARAMS: dict[str, Parameter] = {
     "psnr": NerfbaselinesJSONParameter(
-        name="PSNR", json_path="metrics.psnr", ordering=ParamOrdering.HIGHER_IS_BETTER
+        name="PSNR", json_name="psnr", ordering=ParamOrdering.HIGHER_IS_BETTER
     ),
     "ssim": NerfbaselinesJSONParameter(
-        name="SSIM", json_path="metrics.ssim", ordering=ParamOrdering.HIGHER_IS_BETTER
+        name="SSIM", json_name="ssim", ordering=ParamOrdering.HIGHER_IS_BETTER
     ),
     "lpips": NerfbaselinesJSONParameter(
-        name="LPIPS", json_path="metrics.lpips", ordering=ParamOrdering.LOWER_IS_BETTER
+        name="LPIPS", json_name="lpips", ordering=ParamOrdering.LOWER_IS_BETTER
     ),
     "lpips_vgg": NerfbaselinesJSONParameter(
         name="LPIPS(VGG)",
-        json_path="metrics.lpips_vgg",
+        json_name="lpips_vgg",
         ordering=ParamOrdering.LOWER_IS_BETTER,
+    ),
+    "num_patches": NerfbaselinesJSONParameter(
+        name="Num Patches",
+        json_name="num_patches",
+        formatter=lambda val: f"{int(val):,}",
     ),
     "num_gaussians": TensorboardParameter(
         name="Num Gaussians",
@@ -162,7 +169,8 @@ class DataLoader:
                 for param in param_pbar:
                     param_pbar.set_description(f"Processing {param.name}")
                     try:
-                        params_for_preset[param.name] = param.load(preset_dir, step)
+                        params_for_preset[param.name] = param.load(
+                            preset_dir, step)
                     except Exception as e:
                         logging.error(
                             f"Error loading {param.name} for {preset_dir}: {e}"
@@ -196,6 +204,98 @@ class DataLoader:
             return None
 
 
+class DataLoaderPatches:
+    def __init__(
+        self,
+        dataset_dir: Path,
+        scenes: list[str],
+        param_names: list[str],
+        step: int,
+        preset_filter: PresetFilter,
+    ):
+        logging.debug(f"Loading per-patch data at step {step} for:")
+        logging.debug(f"Scenes: {scenes}")
+        logging.debug(f"Params: {param_names}")
+
+        self.bin_size = -1
+        retval = {}  # {scene: preset: param: bin: value}
+        all_presets = set()
+
+        try:
+            params = [PARAMS[param.lower()] for param in param_names]
+        except KeyError as e:
+            raise ValueError(f"Invalid parameter {e}")
+        scene_pbar = tqdm(scenes, leave=False)
+        for scene_name in scene_pbar:
+            scene_pbar.set_description(f"Processing {scene_name}")
+            scene_dir = dataset_dir / scene_name
+            if not scene_dir.is_dir():
+                continue
+
+            presets_for_scene = {}
+
+            preset_dirs = [
+                preset_dir
+                for preset_dir in scene_dir.iterdir()
+                if preset_dir.is_dir() and preset_filter.allows(preset_dir.name)
+            ]
+
+            preset_pbar = tqdm(preset_dirs, leave=False)
+            for preset_dir in preset_pbar:
+                preset_pbar.set_description(f"Processing {preset_dir.name}")
+
+                per_bin_params_for_preset = {}
+
+                logging.debug(f"Processing {preset_dir}")
+
+                param_pbar = tqdm(params, leave=False)
+                for param in param_pbar:
+                    try:
+
+                        with (preset_dir / f"results-{step}.json").open("r", encoding="utf-8") as f:
+                            bin_size = json.loads(f.read())[
+                                "metrics"]["patches_bin_size"]
+                        if self.bin_size == -1:
+                            self.bin_size = bin_size
+                        if self.bin_size != bin_size:
+                            raise RuntimeError(
+                                f"bin_size for {preset_dir / f'results-{step}.json'} does not match curr binsize ({self.bin_size}!={self.bin_size})")
+
+                        per_bin_params_for_preset[param.name] = param.load_patches(
+                            preset_dir, step)
+                    except Exception as e:
+                        logging.error(
+                            f"Error loading {param.name} for {preset_dir}: {e}"
+                        )
+                        continue
+
+                presets_for_scene[preset_dir.name] = per_bin_params_for_preset
+                all_presets.add(preset_dir.name)
+            retval[scene_dir.name] = presets_for_scene
+
+        self.data = retval
+        self.params = params
+        self.presets = []
+        if "sfm" in all_presets:
+            self.presets.append("sfm")
+            all_presets.remove("sfm")
+        self.presets.extend(sorted(all_presets))
+
+    @property
+    def scenes(self) -> List[str]:
+        return list(self.data.keys())
+
+    def try_get(
+        self, scene: str, preset: str, param: str | Parameter
+    ) -> dict[int, ParameterInstance] | None:
+        try:
+            if isinstance(param, str):
+                param = PARAMS[param]
+            return self.data[scene][preset][param.name]
+        except KeyError:
+            return None
+
+
 def preset_without_predictor(preset_id: str):
     KNOWN_PREDICTOR_IDS = [
         "metric3d",
@@ -211,7 +311,8 @@ def preset_without_predictor(preset_id: str):
 
 
 def format_best(val, output_fmt):
-    MARKDOWN_FORMATS = ["github", "grid", "pipe", "jira", "presto", "pretty", "rst"]
+    MARKDOWN_FORMATS = ["github", "grid", "pipe",
+                        "jira", "presto", "pretty", "rst"]
     if output_fmt in MARKDOWN_FORMATS:
         return f"***{val}***"
     if output_fmt == "latex":
@@ -219,9 +320,12 @@ def format_best(val, output_fmt):
     return f"*{val}"
 
 
+Table = list[list[str]]
+
+
 class MakeTableFuncs:
     @staticmethod
-    def single_param(data_loader: DataLoader, args):
+    def single_param(data_loader: DataLoader, args) -> list[Table]:
         if args.param is None:
             raise ValueError("No parameter specified")
 
@@ -257,10 +361,10 @@ class MakeTableFuncs:
 
             table.append([scene] + formatted_params)
 
-        return list(map(list, zip(*table)))
+        return [list(map(list, zip(*table)))]
 
     @staticmethod
-    def all_scene_avg(data_loader: DataLoader, args):
+    def all_scene_avg(data_loader: DataLoader, args) -> list[Table]:
         """
         Average all parameters over all scenes for each preset.
         """
@@ -310,13 +414,15 @@ class MakeTableFuncs:
                 formatted_row.append(formatted)
             formatted_table.append(formatted_row)
 
-        return formatted_table
+        return [formatted_table]
 
-    def avg_per_config(data_loader: DataLoader, args):
+    @staticmethod
+    def avg_per_config(data_loader: DataLoader, args) -> list[Table]:
         """
         Average over all configurations, ignoring predictor used, and over all scenes, for each param.
         """
-        all_configs = set(preset_without_predictor(p) for p in data_loader.presets)
+        all_configs = set(preset_without_predictor(p)
+                          for p in data_loader.presets)
 
         i_per_param_per_base_preset: dict[str, dict[str, list[ParameterInstance]]] = {
             param.name: {config: [] for config in all_configs}
@@ -335,7 +441,8 @@ class MakeTableFuncs:
                     instances_for_all_scenes
                 )
 
-        avg_per_param_per_config = {param.name: {} for param in data_loader.params}
+        avg_per_param_per_config = {param.name: {}
+                                    for param in data_loader.params}
         for param in data_loader.params:
             for config in all_configs:
                 instances = i_per_param_per_base_preset[param.name][config]
@@ -357,7 +464,8 @@ class MakeTableFuncs:
                     best_avg_instance = avg_instance
             best_avg_per_param[param.name] = best_avg_instance
 
-        formatted_table = [["Config"] + [param.name for param in data_loader.params]]
+        formatted_table = [["Config"] +
+                           [param.name for param in data_loader.params]]
         for config in sorted(all_configs):
             row = [make_pretty_preset_name(config)]
             had_val = False
@@ -379,7 +487,56 @@ class MakeTableFuncs:
             if had_val:
                 formatted_table.append(row)
 
-        return formatted_table
+        return [formatted_table]
+
+    @staticmethod
+    def patches_per_scene(data_loader: DataLoaderPatches, args) -> list[Table]:
+        retval = []
+
+        def make_bin_name(bin_ix):
+            return f"[{data_loader.bin_size * bin_ix}, {data_loader.bin_size * (bin_ix+1)})"
+
+        for scene in data_loader.scenes:
+            for param in data_loader.params:
+                valid_presets = []
+                rows: list[dict[int, ParameterInstance]] = []
+
+                for preset in data_loader.presets:
+                    row: dict[int, ParameterInstance] = {}
+                    bins = data_loader.try_get(scene, preset, param)
+                    if bins is None:
+                        continue
+
+                    rows.append(bins)
+                    valid_presets.append(preset)
+
+                if len(rows) == 0:
+                    print(
+                        f"No patches info for {param.name} on {scene} at step {args.step}")
+                    continue
+                min_bin_ix = min(min(bin_id for bin_id in row.keys())
+                                 for row in rows if len(row.keys()) > 0)
+                max_bin_ix = max(max(bin_id for bin_id in row.keys())
+                                 for row in rows if len(row.keys()) > 0)
+                bin_indices = list(range(min_bin_ix, max_bin_ix+1))
+
+                first_row = [f"[{param.name} on {scene}]"] + \
+                    [make_bin_name(i) for i in bin_indices]
+
+                formatted_table = [first_row]
+                for preset_name, row in zip(valid_presets, rows):
+                    formatted_row = [make_pretty_preset_name(preset_name)]
+                    for bin_ix in bin_indices:
+                        if bin_ix not in row:
+                            formatted_row.append("-")
+                        else:
+                            formatted_val = row.get(
+                                bin_ix).get_formatted_value()
+                            formatted_row.append(formatted_val)
+                    formatted_table.append(formatted_row)
+
+                retval.append(formatted_table)
+        return retval
 
 
 def main():
@@ -396,7 +553,8 @@ def main():
         default=None,
         help="Scenes to exclude from the table.",
     )
-    parser.add_argument("--results-dir", type=str, default="./nerfbaselines_results")
+    parser.add_argument("--results-dir", type=str,
+                        default="./nerfbaselines_results")
     parser.add_argument(
         "--step",
         type=int,
@@ -447,13 +605,17 @@ def main():
     avg_per_config = subparsers.add_parser("avg_per_config")
     avg_per_config.add_argument("params", nargs="+", choices=PARAMS.keys())
 
+    patches_per_scene = subparsers.add_parser("patches_per_scene")
+    patches_per_scene.add_argument("params", nargs="+", choices=PARAMS.keys())
+
     args = parser.parse_args()
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
     dataset_dir: Path = Path(args.results_dir) / args.dataset
     if not dataset_dir.is_dir():
-        raise ValueError(f"Dataset directory {dataset_dir.absolute()} not found.")
+        raise ValueError(
+            f"Dataset directory {dataset_dir.absolute()} not found.")
 
     if args.subcommand == "single_param":
         params = [args.param]
@@ -462,12 +624,14 @@ def main():
 
     if args.scenes is None:
         scenes = sorted(
-            list(set(SCENES[args.dataset]).difference(args.scenes_exclude or []))
+            list(set(SCENES[args.dataset]).difference(
+                args.scenes_exclude or []))
         )
     else:
-        scenes = sorted(list(set(args.scenes).difference(args.scenes_exclude or [])))
-
-    data_loader = DataLoader(
+        scenes = sorted(
+            list(set(args.scenes).difference(args.scenes_exclude or [])))
+    data_loader_cls = DataLoaderPatches if "patch" in args.subcommand else DataLoader
+    data_loader = data_loader_cls(
         dataset_dir,
         scenes,
         params,
@@ -476,16 +640,18 @@ def main():
     )
 
     func = getattr(MakeTableFuncs, args.subcommand)
-    table = func(data_loader, args)
+    tables = func(data_loader, args)
 
-    if args.output_format == "latex":
-        args.output_format = "latex_raw"
-    table_str = tabulate(table, headers="firstrow", tablefmt=args.output_format)
-    if args.output_file:
-        with open(args.output_file, "w", encoding="utf-8") as f:
-            f.write(table_str)
-    else:
-        print(table_str)
+    for table in tables:
+        if args.output_format == "latex":
+            args.output_format = "latex_raw"
+        table_str = tabulate(table, headers="firstrow",
+                             tablefmt=args.output_format)
+        if args.output_file:
+            with open(args.output_file, "w", encoding="utf-8") as f:
+                f.write(table_str + "\n")
+        else:
+            print(table_str + "\n")
 
 
 if __name__ == "__main__":
