@@ -32,9 +32,41 @@
             "args": [
                 "--dataset=mipnerf360",
                 "--step=30000",
-                "all_scene_average",
-                "psnr",
-                "ssim"
+                "--results-dir=nerfbaselines_results",
+                "--scenes=garden",
+                "--step=500",
+                "patches_per_scene",
+                "psnr"
+            ],
+            "cwd": "${workspaceFolder}/",
+        },
+        {
+            "name": "patches",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/results_processing_scripts/patches.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--dataset=mipnerf360",
+                "--scenes=garden",
+                "--output-format=github",
+                "--debug",
+                "patches_improvement_percentile_dataset_avg",
+                "--preset-regex-b",
+                "metric3d.*align=interp\\|subsample=adaptive$",
+                "psnr"
+            ],
+            "cwd": "${workspaceFolder}/",
+        },
+        {
+            "name": "visualize_patches_table",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/results_processing_scripts/visualize_patches_table.py",
+            "console": "integratedTerminal",
+            "args": [
+                "test.csv",
+                "out.png"
             ],
             "cwd": "${workspaceFolder}/",
         },

@@ -1,118 +1,16 @@
 import argparse
 import logging
-import re
 from pathlib import Path
-from typing import Iterable, List
+from typing import List
 from tqdm import tqdm
 
 from parameters import (
-    NerfbaselinesJSONParameter,
-    ParamOrdering,
     Parameter,
     ParameterInstance,
-    TensorboardParameter,
 )
 from tabulate import tabulate
 
-
-def make_pretty_preset_name(preset_name: str) -> str:
-    preset_name = re.sub(r"depth_downsample_(\d+|adaptive)", r"[\1]", preset_name)
-
-    name = preset_name.replace("_", " ")
-    substitutions = {
-        "metric3d": "Metric3Dv2",
-        "unidepth": "UniDepth",
-        "depth anything v2": "DA V2",
-        "moge": "MoGe",
-    }
-    explicitly_capitalized = []
-    for sub in substitutions.values():
-        explicitly_capitalized.extend(sub.split(" "))
-
-    for key, value in substitutions.items():
-        name = name.replace(key, value)
-    name = " ".join(
-        [
-            word.capitalize() if word not in explicitly_capitalized else word
-            for word in name.split(" ")
-        ]
-    )
-    return name
-
-
-PARAMS: dict[str, Parameter] = {
-    "psnr": NerfbaselinesJSONParameter(
-        name="PSNR", json_path="metrics.psnr", ordering=ParamOrdering.HIGHER_IS_BETTER
-    ),
-    "ssim": NerfbaselinesJSONParameter(
-        name="SSIM", json_path="metrics.ssim", ordering=ParamOrdering.HIGHER_IS_BETTER
-    ),
-    "lpips": NerfbaselinesJSONParameter(
-        name="LPIPS", json_path="metrics.lpips", ordering=ParamOrdering.LOWER_IS_BETTER
-    ),
-    "lpips_vgg": NerfbaselinesJSONParameter(
-        name="LPIPS(VGG)",
-        json_path="metrics.lpips_vgg",
-        ordering=ParamOrdering.LOWER_IS_BETTER,
-    ),
-    "num_gaussians": TensorboardParameter(
-        name="Num Gaussians",
-        tensorboard_id="train/num-gaussians",
-        formatter=lambda val: f"{int(float(val) / 1000):,}K",
-        ordering=ParamOrdering.LOWER_IS_BETTER,
-        should_highlight_best=False,
-    ),
-}
-
-SCENES = {
-    "mipnerf360": [
-        "garden",
-        "bonsai",
-        "stump",
-        "flowers",
-        "bicycle",
-        "kitchen",
-        "treehill",
-        "room",
-        "counter",
-    ],
-    "tanksandtemples": [
-        "auditorium",
-        "ballroom",
-        "courtroom",
-        "museum",
-        "palace",
-        "temple",
-        "family",
-        "francis",
-        "horse",
-        "lighthouse",
-        "m60",
-        "panther",
-        "playground",
-        "train",
-        "barn",
-        "caterpillar",
-        "church",
-        "courthouse",
-        "ignatius",
-        "meetingroom",
-        "truck",
-    ],
-}
-
-
-class PresetFilter:
-    def __init__(self, in_regex: str | None, out_regex: str | None):
-        self.in_regex = re.compile(in_regex) if in_regex else None
-        self.out_regex = re.compile(out_regex) if out_regex else None
-
-    def allows(self, preset_name: str) -> bool:
-        if self.in_regex and not self.in_regex.search(preset_name):
-            return False
-        if self.out_regex and self.out_regex.search(preset_name):
-            return False
-        return True
+from results_processing_scripts.common import PARAMS, SCENES, PresetFilter, Table, format_best, make_pretty_preset_name, output_table, preset_without_predictor
 
 
 class DataLoader:
@@ -162,7 +60,8 @@ class DataLoader:
                 for param in param_pbar:
                     param_pbar.set_description(f"Processing {param.name}")
                     try:
-                        params_for_preset[param.name] = param.load(preset_dir, step)
+                        params_for_preset[param.name] = param.load(
+                            preset_dir, step)
                     except Exception as e:
                         logging.error(
                             f"Error loading {param.name} for {preset_dir}: {e}"
@@ -196,32 +95,9 @@ class DataLoader:
             return None
 
 
-def preset_without_predictor(preset_id: str):
-    KNOWN_PREDICTOR_IDS = [
-        "metric3d",
-        "unidepth",
-        "depth_anything_v2_indoor",
-        "depth_anything_v2_outdoor",
-        "moge",
-    ]
-    for predictor_id in KNOWN_PREDICTOR_IDS:
-        if predictor_id in preset_id:
-            return preset_id.replace(f"{predictor_id}_", "")
-    return preset_id
-
-
-def format_best(val, output_fmt):
-    MARKDOWN_FORMATS = ["github", "grid", "pipe", "jira", "presto", "pretty", "rst"]
-    if output_fmt in MARKDOWN_FORMATS:
-        return f"***{val}***"
-    if output_fmt == "latex":
-        return f"\\textbf{{{val}}}"
-    return f"*{val}"
-
-
 class MakeTableFuncs:
     @staticmethod
-    def single_param(data_loader: DataLoader, args):
+    def single_param(data_loader: DataLoader, args) -> list[Table]:
         if args.param is None:
             raise ValueError("No parameter specified")
 
@@ -257,10 +133,10 @@ class MakeTableFuncs:
 
             table.append([scene] + formatted_params)
 
-        return list(map(list, zip(*table)))
+        return [list(map(list, zip(*table)))]
 
     @staticmethod
-    def all_scene_avg(data_loader: DataLoader, args):
+    def all_scene_avg(data_loader: DataLoader, args) -> list[Table]:
         """
         Average all parameters over all scenes for each preset.
         """
@@ -310,13 +186,15 @@ class MakeTableFuncs:
                 formatted_row.append(formatted)
             formatted_table.append(formatted_row)
 
-        return formatted_table
+        return [formatted_table]
 
-    def avg_per_config(data_loader: DataLoader, args):
+    @staticmethod
+    def avg_per_config(data_loader: DataLoader, args) -> list[Table]:
         """
         Average over all configurations, ignoring predictor used, and over all scenes, for each param.
         """
-        all_configs = set(preset_without_predictor(p) for p in data_loader.presets)
+        all_configs = set(preset_without_predictor(p)
+                          for p in data_loader.presets)
 
         i_per_param_per_base_preset: dict[str, dict[str, list[ParameterInstance]]] = {
             param.name: {config: [] for config in all_configs}
@@ -335,7 +213,8 @@ class MakeTableFuncs:
                     instances_for_all_scenes
                 )
 
-        avg_per_param_per_config = {param.name: {} for param in data_loader.params}
+        avg_per_param_per_config = {param.name: {}
+                                    for param in data_loader.params}
         for param in data_loader.params:
             for config in all_configs:
                 instances = i_per_param_per_base_preset[param.name][config]
@@ -357,7 +236,8 @@ class MakeTableFuncs:
                     best_avg_instance = avg_instance
             best_avg_per_param[param.name] = best_avg_instance
 
-        formatted_table = [["Config"] + [param.name for param in data_loader.params]]
+        formatted_table = [["Config"] +
+                           [param.name for param in data_loader.params]]
         for config in sorted(all_configs):
             row = [make_pretty_preset_name(config)]
             had_val = False
@@ -379,7 +259,7 @@ class MakeTableFuncs:
             if had_val:
                 formatted_table.append(row)
 
-        return formatted_table
+        return [formatted_table]
 
 
 def main():
@@ -396,7 +276,8 @@ def main():
         default=None,
         help="Scenes to exclude from the table.",
     )
-    parser.add_argument("--results-dir", type=str, default="./nerfbaselines_results")
+    parser.add_argument("--results-dir", type=str,
+                        default="./nerfbaselines_results")
     parser.add_argument(
         "--step",
         type=int,
@@ -453,7 +334,8 @@ def main():
 
     dataset_dir: Path = Path(args.results_dir) / args.dataset
     if not dataset_dir.is_dir():
-        raise ValueError(f"Dataset directory {dataset_dir.absolute()} not found.")
+        raise ValueError(
+            f"Dataset directory {dataset_dir.absolute()} not found.")
 
     if args.subcommand == "single_param":
         params = [args.param]
@@ -462,10 +344,12 @@ def main():
 
     if args.scenes is None:
         scenes = sorted(
-            list(set(SCENES[args.dataset]).difference(args.scenes_exclude or []))
+            list(set(SCENES[args.dataset]).difference(
+                args.scenes_exclude or []))
         )
     else:
-        scenes = sorted(list(set(args.scenes).difference(args.scenes_exclude or [])))
+        scenes = sorted(
+            list(set(args.scenes).difference(args.scenes_exclude or [])))
 
     data_loader = DataLoader(
         dataset_dir,
@@ -476,16 +360,10 @@ def main():
     )
 
     func = getattr(MakeTableFuncs, args.subcommand)
-    table = func(data_loader, args)
+    tables: list[Table] = func(data_loader, args)
 
-    if args.output_format == "latex":
-        args.output_format = "latex_raw"
-    table_str = tabulate(table, headers="firstrow", tablefmt=args.output_format)
-    if args.output_file:
-        with open(args.output_file, "w", encoding="utf-8") as f:
-            f.write(table_str)
-    else:
-        print(table_str)
+    for table in tables:
+        output_table(args, table)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 import json
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Dict
 from tensorboard.backend.event_processing import event_accumulator
 
 
@@ -11,17 +11,20 @@ class TensorboardDataLoader:
     def __init__(self, file):
         self.ea = event_accumulator.EventAccumulator(
             str(file),
-            size_guidance={"tensors": 1, "histograms": 1, "images": 1, "scalars": 1},
+            size_guidance={"tensors": 1, "histograms": 1,
+                           "images": 1, "scalars": 1},
         )
         self.ea.Reload()
 
     def read_param(self, param_name, step):
         if param_name not in self.ea.Tags().get("scalars", []):
-            raise ValueError(f"Parameter {param_name} not found in TensorBoard logs.")
+            raise ValueError(
+                f"Parameter {param_name} not found in TensorBoard logs.")
 
         scalars = self.ea.Scalars(param_name)
         if not scalars:
-            raise ValueError(f"No scalar data found for parameter {param_name}.")
+            raise ValueError(
+                f"No scalar data found for parameter {param_name}.")
 
         for scalar in scalars:
             if scalar.step == step:
@@ -84,7 +87,27 @@ class Parameter(abc.ABC):
     def load(self, results_dir: Path, step: int) -> ParameterInstance:
         raise NotImplementedError()
 
+    @abc.abstractmethod
+    def load_patches(self, results_dir: Path, step: int) -> list[list[ParameterInstance]]:
+        raise NotImplementedError()
+
     def make_instance(self, value):
+        if not isinstance(value, (int, float)):
+            raise ValueError(
+                f"Invalid value {value} ({type(value)}) for parameter {self.name}"
+            )
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        if isinstance(value, float):
+            if (value != value):  # NaN check
+                raise ValueError(
+                    f"Invalid value NaN for parameter {self.name}"
+                )
+            if value == float("inf") or value == float("-inf"):
+                raise ValueError(
+                    f"Invalid value {value} for parameter {self.name}"
+                )
+
         return ParameterInstance(
             self.name, value, self.ordering, self.formatter, self.should_highlight_best
         )
@@ -119,32 +142,53 @@ class TensorboardParameter(Parameter):
                 f"Error loading tensorboard parameter {self.name} from {tensorboard_file}: {e}"
             )
 
+    def load_patches(self, results_dir, step):
+        raise NotImplementedError(
+            "TensorboardParameter does not support loading patches.")
+
 
 class NerfbaselinesJSONParameter(Parameter):
     def __init__(
         self,
         name: str,
-        json_path: str,
+        json_name: str,
         formatter: Callable[[int | float], str] = default_param_formatter,
         ordering: ParamOrdering = ParamOrdering.HIGHER_IS_BETTER,
         should_highlight_best: bool = True,
     ):
         super().__init__(name, formatter, ordering, should_highlight_best)
-        self.json_path = json_path.split(".")
+        self.json_name = json_name
 
     def load(self, results_dir, step) -> ParameterInstance:
         json_file = results_dir / f"results-{step}.json"
         try:
             with open(json_file, "r") as f:
                 data = json.load(f)
-                for key in self.json_path:
-                    data = data[key]
-                return self.make_instance(data)
+                return self.make_instance(data["metrics"][self.json_name])
         except FileNotFoundError:
-            raise ValueError(f"JSON file {json_file} not found in {results_dir}")
+            raise ValueError(
+                f"JSON file {json_file} not found in {results_dir}")
         except KeyError:
-            raise ValueError(f"Key {'/'.join(self.json_path)} not found in {json_file}")
+            raise ValueError(
+                f"Key metrics.{self.json_name} not found in {json_file}")
         except Exception as e:
             raise ValueError(
                 f"Error loading JSON parameter {self.name} from {json_file}: {e}"
+            )
+
+    def load_patches(self, results_dir, step) -> list[list[ParameterInstance]]:
+        json_file = results_dir / f"results-{step}.json"
+        try:
+            with open(json_file, "r") as f:
+                data = json.load(f)
+                # patches is list[image_patches], where image_patches is list[dict[metric_name, value]]
+                patches: list[list[dict]] = data["metrics"]["patches"]
+
+                return [[self.make_instance(metrics[self.json_name]) for metrics in image_patches] for image_patches in patches]
+        except FileNotFoundError:
+            raise ValueError(
+                f"JSON file {json_file} not found in {results_dir}")
+        except Exception as e:
+            raise ValueError(
+                f"Error loading patches JSON parameter {self.name} ({self.json_name}) from {json_file}: {e}"
             )
