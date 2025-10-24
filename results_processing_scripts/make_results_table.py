@@ -512,7 +512,7 @@ class MakeTableFuncs:
 
                 if len(rows) == 0:
                     print(
-                        f"No patches info for {param.name} on {scene} at step {args.step}")
+                        f"No patches info for {scene}/{preset}/{param.name} at step {args.step}")
                     continue
                 min_bin_ix = min(min(bin_id for bin_id in row.keys())
                                  for row in rows if len(row.keys()) > 0)
@@ -536,6 +536,71 @@ class MakeTableFuncs:
                     formatted_table.append(formatted_row)
 
                 retval.append(formatted_table)
+        return retval
+
+    @staticmethod
+    def patches(data_loader: DataLoaderPatches, args) -> list[Table]:
+        retval = []
+
+        def make_bin_name(bin_ix):
+            return f"[{data_loader.bin_size * bin_ix}, {data_loader.bin_size * (bin_ix+1)})"
+
+        min_bin_ix = +float("inf")
+        max_bin_ix = -float("inf")
+        for param in data_loader.params:
+            valid_presets = []
+            rows: list[dict[int, ParameterInstance]] = []
+
+            for preset in data_loader.presets:
+
+                row = {}
+                row_counts = {}
+                for scene in data_loader.scenes:
+                    bins = data_loader.try_get(scene, preset, param)
+                    if bins is None:
+                        continue
+                    min_bin_ix = min(min_bin_ix, min(bins.keys()))
+                    max_bin_ix = max(max_bin_ix, max(bins.keys()))
+
+                    for bin_id, instance in bins.items():
+                        if bin_id not in row:
+                            row[bin_id] = instance
+                            row_counts[bin_id] = 1
+                        else:
+                            row[bin_id].value += instance.value
+                            row_counts[bin_id] += 1
+                    valid_presets.append(preset)
+
+                for bin_id in row.keys():
+                    row[bin_id].value /= row_counts[bin_id]
+                rows.append(row)
+
+            if len(rows) == 0:
+                print(
+                    f"No patches info for {preset}/{param.name} at step {args.step}")
+                continue
+            min_bin_ix = min(min(bin_id for bin_id in row.keys())
+                             for row in rows if len(row.keys()) > 0)
+            max_bin_ix = max(max(bin_id for bin_id in row.keys())
+                             for row in rows if len(row.keys()) > 0)
+            bin_indices = list(range(min_bin_ix, max_bin_ix+1))
+
+            first_row = [f"[{param.name} on {scene}]"] + \
+                [make_bin_name(i) for i in bin_indices]
+
+            formatted_table = [first_row]
+            for preset_name, row in zip(valid_presets, rows):
+                formatted_row = [make_pretty_preset_name(preset_name)]
+                for bin_ix in bin_indices:
+                    if bin_ix not in row:
+                        formatted_row.append("-")
+                    else:
+                        formatted_val = row.get(
+                            bin_ix).get_formatted_value()
+                        formatted_row.append(formatted_val)
+                formatted_table.append(formatted_row)
+
+            retval.append(formatted_table)
         return retval
 
 
@@ -607,6 +672,9 @@ def main():
 
     patches_per_scene = subparsers.add_parser("patches_per_scene")
     patches_per_scene.add_argument("params", nargs="+", choices=PARAMS.keys())
+
+    patches = subparsers.add_parser("patches")
+    patches.add_argument("params", nargs="+", choices=PARAMS.keys())
 
     args = parser.parse_args()
     if args.debug:
