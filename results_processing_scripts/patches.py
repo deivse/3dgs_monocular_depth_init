@@ -159,7 +159,7 @@ class MakeTableFuncs:
                 [make_bin_name(i) for i in range(min_bin_id, max_bin_id+1)]
 
             values_row = [""]
-            for bin_id in range(min_bin_id, max_bin_id):
+            for bin_id in range(min_bin_id, max_bin_id + 1):
                 if bin_id in bins:
                     values_row.append(param.make_instance(
                         bins[bin_id]).get_formatted_value())
