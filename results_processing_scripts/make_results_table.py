@@ -1,125 +1,16 @@
 import argparse
-import json
 import logging
-import re
 from pathlib import Path
-from typing import Iterable, List
+from typing import List
 from tqdm import tqdm
 
 from parameters import (
-    NerfbaselinesJSONParameter,
-    ParamOrdering,
     Parameter,
     ParameterInstance,
-    TensorboardParameter,
 )
 from tabulate import tabulate
 
-
-def make_pretty_preset_name(preset_name: str) -> str:
-    # preset_name = re.sub(
-    #     r"depth_downsample_(\d+|adaptive)", r"[\1]", preset_name)
-
-    # name = preset_name.replace("_", " ")
-    # substitutions = {
-    #     "metric3d": "Metric3Dv2",
-    #     "unidepth": "UniDepth",
-    #     "depth anything v2": "DA V2",
-    #     "moge": "MoGe",
-    # }
-    # explicitly_capitalized = []
-    # for sub in substitutions.values():
-    #     explicitly_capitalized.extend(sub.split(" "))
-
-    # for key, value in substitutions.items():
-    #     name = name.replace(key, value)
-    # name = " ".join(
-    #     [
-    #         word.capitalize() if word not in explicitly_capitalized else word
-    #         for word in name.split(" ")
-    #     ]
-    # )
-    return preset_name
-
-
-PARAMS: dict[str, Parameter] = {
-    "psnr": NerfbaselinesJSONParameter(
-        name="PSNR", json_name="psnr", ordering=ParamOrdering.HIGHER_IS_BETTER
-    ),
-    "ssim": NerfbaselinesJSONParameter(
-        name="SSIM", json_name="ssim", ordering=ParamOrdering.HIGHER_IS_BETTER
-    ),
-    "lpips": NerfbaselinesJSONParameter(
-        name="LPIPS", json_name="lpips", ordering=ParamOrdering.LOWER_IS_BETTER
-    ),
-    "lpips_vgg": NerfbaselinesJSONParameter(
-        name="LPIPS(VGG)",
-        json_name="lpips_vgg",
-        ordering=ParamOrdering.LOWER_IS_BETTER,
-    ),
-    "num_patches": NerfbaselinesJSONParameter(
-        name="Num Patches",
-        json_name="num_patches",
-        formatter=lambda val: f"{int(val):,}",
-    ),
-    "num_gaussians": TensorboardParameter(
-        name="Num Gaussians",
-        tensorboard_id="train/num-gaussians",
-        formatter=lambda val: f"{int(float(val) / 1000):,}K",
-        ordering=ParamOrdering.LOWER_IS_BETTER,
-        should_highlight_best=False,
-    ),
-}
-
-SCENES = {
-    "mipnerf360": [
-        "garden",
-        "bonsai",
-        "stump",
-        "flowers",
-        "bicycle",
-        "kitchen",
-        "treehill",
-        "room",
-        "counter",
-    ],
-    "tanksandtemples": [
-        "auditorium",
-        "ballroom",
-        "courtroom",
-        "museum",
-        "palace",
-        "temple",
-        "family",
-        "francis",
-        "horse",
-        "lighthouse",
-        "m60",
-        "panther",
-        "playground",
-        "train",
-        "barn",
-        "caterpillar",
-        "church",
-        "courthouse",
-        "ignatius",
-        "meetingroom",
-        "truck",
-    ],
-}
-
-
-class PresetFilter:
-    def __init__(self, in_regex: str | None, out_regex: str | None):
-        self.in_regex = re.compile(in_regex) if in_regex else None
-        self.out_regex = re.compile(out_regex) if out_regex else None
-
-    def allows(self, preset_name: str) -> bool:
-        if self.in_regex and not self.in_regex.search(preset_name):
-            return False
-        if self.out_regex and self.out_regex.search(preset_name):
-            return False
-        return True
+from results_processing_scripts.common import PARAMS, SCENES, PresetFilter, Table, format_best, make_pretty_preset_name, output_table, preset_without_predictor
 
 
 class DataLoader:
@@ -128,10 +19,9 @@ class DataLoader:
         dataset_dir: Path,
         scenes: list[str],
         param_names: list[str],
-        args,
+        step: int,
         preset_filter: PresetFilter,
     ):
-        step = args.step
         logging.debug(f"Loading data at step {step} for:")
         logging.debug(f"Scenes: {scenes}")
         logging.debug(f"Params: {param_names}")
@@ -203,130 +93,6 @@ class DataLoader:
             return self.data[scene][preset][param.name]
         except KeyError:
             return None
-
-
-class DataLoaderPatches:
-    def __init__(
-        self,
-        dataset_dir: Path,
-        scenes: list[str],
-        param_names: list[str],
-        args,
-        preset_filter: PresetFilter,
-    ):
-        step = args.step
-        self.reduce_bins: int = args.reduce_bins
-        logging.debug(f"Loading per-patch data at step {step} for:")
-        logging.debug(f"Scenes: {scenes}")
-        logging.debug(f"Params: {param_names}")
-
-        self.bin_size = -1
-        retval = {}  # {scene: preset: param: bin: value}
-        all_presets = set()
-
-        try:
-            params = [PARAMS[param.lower()] for param in param_names]
-        except KeyError as e:
-            raise ValueError(f"Invalid parameter {e}")
-        scene_pbar = tqdm(scenes, leave=False)
-        for scene_name in scene_pbar:
-            scene_pbar.set_description(f"Processing {scene_name}")
-            scene_dir = dataset_dir / scene_name
-            if not scene_dir.is_dir():
-                continue
-
-            presets_for_scene = {}
-
-            preset_dirs = [
-                preset_dir
-                for preset_dir in scene_dir.iterdir()
-                if preset_dir.is_dir() and preset_filter.allows(preset_dir.name)
-            ]
-
-            preset_pbar = tqdm(preset_dirs, leave=False)
-            for preset_dir in preset_pbar:
-                preset_pbar.set_description(f"Processing {preset_dir.name}")
-
-                per_bin_params_for_preset = {}
-
-                logging.debug(f"Processing {preset_dir}")
-
-                param_pbar = tqdm(params, leave=False)
-                for param in param_pbar:
-                    try:
-
-                        with (preset_dir / f"results-{step}.json").open("r", encoding="utf-8") as f:
-                            bin_size = json.loads(f.read())[
-                                "metrics"]["patches_bin_size"]
-                        if self.bin_size == -1:
-                            self.bin_size = bin_size
-                        if self.bin_size != bin_size:
-                            raise RuntimeError(
-                                f"bin_size for {preset_dir / f'results-{step}.json'} does not match curr binsize ({self.bin_size}!={self.bin_size})")
-
-                        per_bin_params_for_preset[param.name] = param.load_patches(
-                            preset_dir, step, self.reduce_bins)
-                    except Exception as e:
-                        logging.error(
-                            f"Error loading {param.name} for {preset_dir}: {e}"
-                        )
-                        continue
-
-                presets_for_scene[preset_dir.name] = per_bin_params_for_preset
-                all_presets.add(preset_dir.name)
-            retval[scene_dir.name] = presets_for_scene
-
-        self.data = retval
-        self.params = params
-        self.presets = []
-        if "sfm" in all_presets:
-            self.presets.append("sfm")
-            all_presets.remove("sfm")
-        self.presets.extend(sorted(all_presets))
-
-    @property
-    def scenes(self) -> List[str]:
-        return list(self.data.keys())
-
-    def bin_name(self, bin_ix: int) -> str:
-        return f"[{self.bin_size * bin_ix * self.reduce_bins}, {self.bin_size * (bin_ix+1) * self.reduce_bins})"
-
-    def try_get(
-        self, scene: str, preset: str, param: str | Parameter
-    ) -> dict[int, ParameterInstance] | None:
-        try:
-            if isinstance(param, str):
-                param = PARAMS[param]
-            return self.data[scene][preset][param.name]
-        except KeyError:
-            return None
-
-
-def preset_without_predictor(preset_id: str):
-    KNOWN_PREDICTOR_IDS = [
-        "metric3d",
-        "unidepth",
-        "depth_anything_v2_indoor",
-        "depth_anything_v2_outdoor",
-        "moge",
-    ]
-    for predictor_id in KNOWN_PREDICTOR_IDS:
-        if predictor_id in preset_id:
-            return preset_id.replace(f"{predictor_id}_", "")
-    return preset_id
-
-
-def format_best(val, output_fmt):
-    MARKDOWN_FORMATS = ["github", "grid", "pipe",
-                        "jira", "presto", "pretty", "rst"]
-    if output_fmt in MARKDOWN_FORMATS:
-        return f"***{val}***"
-    if output_fmt == "latex":
-        return f"\\textbf{{{val}}}"
-    return f"*{val}"
-
-
-Table = list[list[str]]
 
 
 class MakeTableFuncs:
@@ -495,127 +261,6 @@ class MakeTableFuncs:
 
         return [formatted_table]
 
-    @staticmethod
-    def patches_per_scene(data_loader: DataLoaderPatches, args) -> list[Table]:
-        retval = []
-
-        for scene in data_loader.scenes:
-            for param in data_loader.params:
-                valid_presets = []
-                rows: list[dict[int, ParameterInstance]] = []
-
-                for preset in data_loader.presets:
-                    row: dict[int, ParameterInstance] = {}
-                    bins = data_loader.try_get(scene, preset, param)
-                    if bins is None:
-                        continue
-
-                    rows.append(bins)
-                    valid_presets.append(preset)
-
-                if len(rows) == 0:
-                    print(
-                        f"No patches info for {scene}/{preset}/{param.name} at step {args.step}")
-                    continue
-                min_bin_ix = min(min(bin_id for bin_id in row.keys())
-                                 for row in rows if len(row.keys()) > 0)
-                max_bin_ix = max(max(bin_id for bin_id in row.keys())
-                                 for row in rows if len(row.keys()) > 0)
-                bin_indices = list(range(min_bin_ix, max_bin_ix+1))
-
-                first_row = [f"[{param.name} on {scene}]"] + \
-                    [data_loader.bin_name(i) for i in bin_indices]
-
-                formatted_table = [first_row]
-                for preset_name, row in zip(valid_presets, rows):
-                    formatted_row = [make_pretty_preset_name(preset_name)]
-                    for bin_ix in bin_indices:
-                        if bin_ix not in row:
-                            formatted_row.append("-")
-                        else:
-                            formatted_val = row.get(
-                                bin_ix).get_formatted_value()
-                            formatted_row.append(formatted_val)
-                    formatted_table.append(formatted_row)
-
-                retval.append(formatted_table)
-        return retval
-
-    @staticmethod
-    def patches(data_loader: DataLoaderPatches, args) -> list[Table]:
-        retval = []
-
-        min_bin_ix = +float("inf")
-        max_bin_ix = -float("inf")
-        for param in data_loader.params:
-            valid_presets = []
-            rows: list[dict[int, ParameterInstance]] = []
-
-            for preset in data_loader.presets:
-
-                row = {}
-                row_counts = {}
-                for scene in data_loader.scenes:
-                    bins = data_loader.try_get(scene, preset, param)
-                    if bins is None:
-                        continue
-                    min_bin_ix = min(min_bin_ix, min(bins.keys()))
-                    max_bin_ix = max(max_bin_ix, max(bins.keys()))
-
-                    for bin_id, instance in bins.items():
-                        if bin_id not in row:
-                            row[bin_id] = instance
-                            row_counts[bin_id] = 1
-                        else:
-                            row[bin_id].value += instance.value
-                            row_counts[bin_id] += 1
-                if len(row) == 0:
-                    continue
-                valid_presets.append(preset)
-
-                for bin_id in row.keys():
-                    row[bin_id].value /= row_counts[bin_id]
-                rows.append(row)
-
-            if len(rows) == 0:
-                print(
-                    f"No patches info for {preset}/{param.name} at step {args.step}")
-                continue
-            min_bin_ix = min(min(bin_id for bin_id in row.keys())
-                             for row in rows if len(row.keys()) > 0)
-            max_bin_ix = max(max(bin_id for bin_id in row.keys())
-                             for row in rows if len(row.keys()) > 0)
-            bin_indices = list(range(min_bin_ix, max_bin_ix+1))
-
-            first_row = [f"[{param.name} (all scene avg)]"] + \
-                [data_loader.bin_name(i) for i in bin_indices]
-
-            formatted_table = [first_row]
-            for preset_name, row in zip(valid_presets, rows):
-                formatted_row = [make_pretty_preset_name(preset_name)]
-                for bin_ix in bin_indices:
-                    if bin_ix not in row:
-                        formatted_row.append("-")
-                    else:
-                        formatted_val = row.get(
-                            bin_ix).get_formatted_value()
-                        formatted_row.append(formatted_val)
-                formatted_table.append(formatted_row)
-
-            retval.append(formatted_table)
-        return retval
-
-
-def table_to_csv_string(table: Table) -> str:
-    import csv
-    from io import StringIO
-
-    output = StringIO()
-    writer = csv.writer(output)
-    for row in table:
-        writer.writerow(row)
-    return output.getvalue().strip()  # Remove trailing newline
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -683,16 +328,6 @@ def main():
     avg_per_config = subparsers.add_parser("avg_per_config")
     avg_per_config.add_argument("params", nargs="+", choices=PARAMS.keys())
 
-    patches_per_scene = subparsers.add_parser("patches_per_scene")
-    patches_per_scene.add_argument("params", nargs="+", choices=PARAMS.keys())
-    patches_per_scene.add_argument("--reduce-bins", type=int, default=1,
-                                   help="Reduce bin count by this factor by averaging adjacent bins.")
-
-    patches = subparsers.add_parser("patches")
-    patches.add_argument("params", nargs="+", choices=PARAMS.keys())
-    patches.add_argument("--reduce-bins", type=int, default=1,
-                         help="Reduce bin count by this factor by averaging adjacent bins.")
-
     args = parser.parse_args()
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
@@ -715,33 +350,20 @@ def main():
     else:
         scenes = sorted(
             list(set(args.scenes).difference(args.scenes_exclude or [])))
-    data_loader_cls = DataLoaderPatches if "patch" in args.subcommand else DataLoader
-    data_loader = data_loader_cls(
+
+    data_loader = DataLoader(
         dataset_dir,
         scenes,
         params,
-        args,
+        args.step,
         PresetFilter(args.preset_regex, args.preset_exclude),
     )
 
     func = getattr(MakeTableFuncs, args.subcommand)
-    tables = func(data_loader, args)
+    tables: list[Table] = func(data_loader, args)
 
     for table in tables:
-        if args.output_format == "latex":
-            args.output_format = "latex_raw"
-
-        if args.output_format == "csv":
-            table_str = table_to_csv_string(table)
-        else:
-            table_str = tabulate(table, headers="firstrow",
-                                 tablefmt=args.output_format)
-
-        if args.output_file:
-            with open(args.output_file, "w", encoding="utf-8") as f:
-                f.write(table_str + "\n")
-        else:
-            print(table_str + "\n")
+        output_table(args, table)
 
 
 if __name__ == "__main__":
