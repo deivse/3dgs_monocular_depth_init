@@ -8,6 +8,7 @@ class DepthAlignmentStrategyEnum(str, Enum):
     ransac = "ransac"
     msac = "msac"
     interp = "interp"
+    sam = "sam"
 
     def get_implementation(self):
         if self == self.lstsqrs:
@@ -26,8 +27,13 @@ class DepthAlignmentStrategyEnum(str, Enum):
             from .interp import DepthAlignmentInterpolate
 
             return DepthAlignmentInterpolate
+        elif self == self.sam:
+            from .segmentation.sam import DepthAlignmentSAM
+
+            return DepthAlignmentSAM
         else:
-            raise NotImplementedError(f"Unknown depth alignment strategy: {self}")
+            raise NotImplementedError(
+                f"Unknown depth alignment strategy: {self}")
 
 
 @dataclass
@@ -46,8 +52,9 @@ class InterpConfig:
     init: Literal["lstsqrs", "ransac"] | None = "ransac"
     """If set, use this method to get an initial estimate of scale and shift before scale factor interpolation."""
 
-    segmentation: bool = True
-    """If true, use depth segmentation to split the image into regions without large depth discontinuities and align each region separately"""
+    segmentation: Literal["sam", "slic"] | None = "none"
+    """If true, use SAM or SLIC based segmentation algorithm to split the image into regions and align each region separately"""
+    
     segmentation_region_margin: int = 10
     """
     Pixels closer than this distance from the depth segmentation boundary are ignored when interpolating scale factors. 

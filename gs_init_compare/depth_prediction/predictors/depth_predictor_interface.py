@@ -1,10 +1,12 @@
 from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass
 from typing import Optional, NamedTuple
 
 import torch
 
 
-class PredictedDepth(NamedTuple):
+@dataclass
+class PredictedDepth:
     depth: torch.Tensor
     """ Float tensor of shape (H, W) """
     mask: torch.Tensor

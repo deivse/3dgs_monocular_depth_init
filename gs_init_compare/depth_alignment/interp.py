@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import NamedTuple
 from matplotlib.colors import ListedColormap
 import numpy as np
-import skimage
 from scipy.interpolate import LinearNDInterpolator
 from scipy.spatial import Delaunay
 from sklearn.neighbors import LocalOutlierFactor, NearestNeighbors
@@ -12,61 +11,18 @@ import logging
 
 from gs_init_compare.config import Config
 from gs_init_compare.depth_alignment.config import InterpConfig
+from gs_init_compare.depth_alignment.segmentation import segment_pred_depth_sam, segment_pred_depth_slic
 from gs_init_compare.depth_alignment.lstsqrs import DepthAlignmentLstSqrs
 from gs_init_compare.depth_alignment.ransacs import DepthAlignmentRansac
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
-from gs_init_compare.utils.image_filtering import box_blur2d, gaussian_filter2d
+from gs_init_compare.utils.image_filtering import box_blur2d
 from .interface import DepthAlignmentResult, DepthAlignmentStrategy
 from torchrbf import RBFInterpolator
 import matplotlib.pyplot as plt
 
 LOGGER = logging.getLogger(__name__)
-
-
-def segment_depth_regions(
-    predicted_depth: torch.Tensor,
-    mask: torch.Tensor,
-    image: torch.Tensor,
-    debug_export_dir: Path | None,
-):
-    valid_pred_depth = predicted_depth[mask]
-    pred_depth_norm = (predicted_depth - valid_pred_depth.min()) / (
-        valid_pred_depth.max() - valid_pred_depth.min() + 1e-8
-    )
-    pred_depth_norm = pred_depth_norm.cpu().numpy()
-
-    compactness = 0.0001
-    num_regions = 5
-    slic_depth_regions = skimage.segmentation.slic(
-        pred_depth_norm,
-        n_segments=num_regions,
-        start_label=0,
-        compactness=compactness,
-        channel_axis=None,
-        mask=mask.cpu().numpy().astype(bool),
-    )
-
-    if debug_export_dir is not None:
-        # overlay image with slic depth regions for visualization
-        depth_region_cmap = ListedColormap(
-            plt.cm.get_cmap("tab20").colors[: np.unique(slic_depth_regions).shape[0]]
-        )
-
-        if np.max(slic_depth_regions) != 0:
-            region_colors = depth_region_cmap(
-                slic_depth_regions / np.max(slic_depth_regions)
-            )[:, :, :3]
-        else:
-            region_colors = depth_region_cmap(slic_depth_regions)[:, :, :3]
-        depth_region_overlay = 0.5 * image.cpu().numpy() + 0.5 * region_colors
-        depth_region_overlay = np.clip(depth_region_overlay, 0, 1)
-        debug_export_dir.mkdir(parents=True, exist_ok=True)
-        plt.imsave(
-            debug_export_dir / "slic_depth_regions_overlay.png", depth_region_overlay
-        )
-    return slic_depth_regions
 
 
 def rbf_interpolation(
@@ -105,7 +61,8 @@ def rbf_interpolation(
 
     # Query RBF on grid points
     interpolated = interpolator(grid_points)
-    interpolated = interpolated.reshape(query_width, query_height)[None, None, :, :]
+    interpolated = interpolated.reshape(query_width, query_height)[
+        None, None, :, :]
     return torch.nn.functional.interpolate(
         interpolated,
         size=(W, H),
@@ -134,9 +91,11 @@ def linear_interpolation(
     dt = Delaunay(coords_np)
     for corner_ix in corner_indices:
         indptr, indices = dt.vertex_neighbor_vertices
-        neighbors = indices[indptr[corner_ix] : indptr[corner_ix + 1]]
-        neighbors = np.setdiff1d(neighbors, corner_indices)  # exclude other corners
-        distances = np.linalg.norm(coords_np[neighbors] - coords_np[corner_ix], axis=1)
+        neighbors = indices[indptr[corner_ix]: indptr[corner_ix + 1]]
+        # exclude other corners
+        neighbors = np.setdiff1d(neighbors, corner_indices)
+        distances = np.linalg.norm(
+            coords_np[neighbors] - coords_np[corner_ix], axis=1)
         weights = 1.0 / (distances + 1e-8)
         weights /= np.sum(weights)
         corner_value = np.sum(values_np[neighbors] * weights)
@@ -147,7 +106,8 @@ def linear_interpolation(
     X = np.linspace(0, W - 1, W)
     Y = np.linspace(0, H - 1, H)
     X, Y = np.meshgrid(X, Y)
-    interp = LinearNDInterpolator(dt, values_np, fill_value=np.median(values_np))
+    interp = LinearNDInterpolator(
+        dt, values_np, fill_value=np.median(values_np))
     return torch.from_numpy(interp(X, Y)).to(values)
 
 
@@ -184,16 +144,6 @@ def pick_rbf_point_subset(
         sfm_depth[indices],
         sfm_indices[indices],
     )
-
-
-def snap_to_int(x: torch.Tensor):
-    """
-    Round values that are within `tol` of an integer,
-    leave everything else unchanged.
-    """
-    nearest = x.round()
-    mask = torch.isclose(x, nearest)
-    return torch.where(mask, nearest, x)
 
 
 class OutlierType(IntEnum):
@@ -243,7 +193,8 @@ def scale_factor_outlier_removal(
     scale_diff_threshold = torch.quantile(scale_diff, 0.99)
     scale_outliers = scale_diff > scale_diff_threshold
 
-    position_outliers = torch.from_numpy(position_outliers_np).to(scale_outliers)
+    position_outliers = torch.from_numpy(
+        position_outliers_np).to(scale_outliers)
 
     return OutlierClassification(
         scale_only_outliers=scale_outliers & ~position_outliers,
@@ -287,6 +238,58 @@ def initial_alignment(
         )
 
 
+def segment_depth_regions(
+    pred_depth: PredictedDepth,
+    sfm_points_camera_coords: torch.Tensor,
+    image: torch.Tensor,
+    config: Config,
+    debug_export_dir: Path | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    interp_config = config.mdi.interp
+    if interp_config.segmentation == "sam":
+        segmentation, mask = segment_pred_depth_sam(
+            pred_depth,
+            checkpoint_dir=Path(config.mdi.cache_dir) / "checkpoints",
+            sfm_points_camera_coords=sfm_points_camera_coords,
+            config=config.mdi.interp
+        )
+    elif interp_config.segmentation == "slic":
+        segmentation, mask = segment_pred_depth_slic(
+            pred_depth.depth,
+            pred_depth.mask,
+            config.mdi.interp
+        )
+    else:
+        raise ValueError(
+            f"Unknown segmentation method: {interp_config.segmentation_method}"
+        )
+
+    if debug_export_dir is not None:
+        seg_np = segmentation.cpu().numpy()
+        # overlay image with slic depth regions for visualization
+        depth_region_cmap = ListedColormap(
+            plt.cm.get_cmap("tab20").colors[: np.unique(seg_np).shape[0]]
+        )
+
+        if np.max(seg_np) != 0:
+            region_colors = depth_region_cmap(
+                seg_np / np.max(seg_np)
+            )[:, :, :3]
+        else:
+            region_colors = depth_region_cmap(seg_np)[:, :, :3]
+        depth_region_overlay = 0.5 * image.cpu().numpy() + 0.5 * region_colors
+        depth_region_overlay = np.clip(depth_region_overlay, 0, 1)
+
+        depth_region_overlay[~mask.cpu().numpy()] = 0.0
+
+        debug_export_dir.mkdir(parents=True, exist_ok=True)
+        plt.imsave(
+            debug_export_dir / "depth_regions_overlay.png", depth_region_overlay
+        )
+
+    return segmentation, mask
+
+
 def align_depth_interpolate(
     image: torch.Tensor,
     predicted_depth: PredictedDepth,
@@ -307,7 +310,7 @@ def align_depth_interpolate(
     device = predicted_depth.depth.device
     interp_config = config.mdi.interp
 
-    unaligned, out_mask = initial_alignment(
+    predicted_depth.depth, predicted_depth.mask = initial_alignment(
         image,
         predicted_depth,
         sfm_points_camera_coords,
@@ -315,47 +318,35 @@ def align_depth_interpolate(
         config,
         debug_export_dir,
     )
-    out_mask = out_mask & predicted_depth.mask
+    unaligned = predicted_depth.depth
+    out_mask = predicted_depth.mask
 
     if interp_config.segmentation:
-        region_map = torch.from_numpy(
-            segment_depth_regions(unaligned, out_mask, image, debug_export_dir)
-        ).to(device)
-        # Filter SfM points to keep only one point per depth region
-        region_ids = torch.unique(region_map[out_mask])
+        segmentation, segment_deadzone_mask = segment_depth_regions(
+            predicted_depth, sfm_points_camera_coords, image, config, debug_export_dir)
+        region_ids = torch.unique(segmentation[out_mask])
         region_sfm_point_indices = []
 
-        region_map_blurred = region_map
-        if interp_config.segmentation_region_margin > 0:
-            KERNEL_REFERENCE_IMSIZE = 1297
-            adjusted_region_margin = int(
-                interp_config.segmentation_region_margin
-                * max(H, W)
-                / KERNEL_REFERENCE_IMSIZE
-            )
-            kernel_size = 2 * adjusted_region_margin + 1
+        if interp_config.segmentation_deadzone_mask:
+            out_mask = out_mask & segment_deadzone_mask
 
-            region_map_blurred = box_blur2d(
-                region_map[None, None].float(), ksize=kernel_size
-            )[0, 0]
-            region_map_blurred = snap_to_int(region_map_blurred)
-            if interp_config.segmentation_deadzone_mask:
-                out_mask[region_map_blurred != region_map] = False
+        sfm_pts_regions = segmentation[
+            sfm_points_camera_coords[1], sfm_points_camera_coords[0]
+        ]
+        sfm_points_segment_mask = segment_deadzone_mask[
+            sfm_points_camera_coords[1], sfm_points_camera_coords[0]
+        ]
 
         for region in region_ids:
-            region_points = (
-                region_map_blurred[
-                    sfm_points_camera_coords[1], sfm_points_camera_coords[0]
-                ]
-                == region
-            )
+            region_points = (sfm_pts_regions == region) & sfm_points_segment_mask
             region_sfm_point_indices.append(torch.where(region_points)[0])
     else:
-        region_map = torch.zeros_like(unaligned, dtype=torch.int)
+        segmentation = torch.zeros_like(unaligned, dtype=torch.int)
         region_ids = torch.tensor([0], device=device)
         region_sfm_point_indices = [torch.arange(num_sfm_pts, device=device)]
 
-    global_outlier_type = torch.zeros(num_sfm_pts, dtype=torch.int, device=device)
+    global_outlier_type = torch.zeros(
+        num_sfm_pts, dtype=torch.int, device=device)
     INVALID_SCALE_VAL = -42
     final_scale_map = torch.full_like(unaligned, INVALID_SCALE_VAL)
     for region in region_ids:
@@ -392,10 +383,11 @@ def align_depth_interpolate(
             )
             continue
 
-        region_mask = region_map == region
+        region_mask = segmentation == region
 
         scale_factors = (
-            region_gt_depth / unaligned[region_sfm_coords[1], region_sfm_coords[0]]
+            region_gt_depth /
+            unaligned[region_sfm_coords[1], region_sfm_coords[0]]
         )
         if interp_config.scale_outlier_removal:
             outlier_type = scale_factor_outlier_removal(
@@ -595,7 +587,8 @@ def align_depth_interpolate(
             bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
             verticalalignment="top",
         )
-        aligned_depth_path = Path(debug_export_dir) / "interp_aligned_depth.png"
+        aligned_depth_path = Path(debug_export_dir) / \
+            "interp_aligned_depth.png"
         plt.savefig(aligned_depth_path, dpi=150, bbox_inches="tight")
         plt.close()
 
