@@ -133,6 +133,11 @@ def segment_pred_depth_sam(
 
     segmentation = new_segmentation
 
+    if np.unique(segmentation).size == 1:
+        # only one region, return zeros (in case that region didn't have ID 0)
+        segmentation = torch.zeros_like(segmentation).to(device)
+        return segmentation, torch.ones_like(segmentation, dtype=bool, device=device)
+
     rag = ski.graph.rag_boundary(
         segmentation, np.ones_like(segmentation).astype(float))
 
