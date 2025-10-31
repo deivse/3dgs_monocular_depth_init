@@ -194,7 +194,7 @@ def pts_and_rgb_from_monocular_depth(
     if config.mdi.pts_output_dir is not None:
         output_dir = Path(config.mdi.pts_output_dir) / dataset_name
         output_dir.mkdir(exist_ok=True, parents=True)
-        filename = f"{model.name}_{config.mdi.subsample_factor}_{config.mdi.depth_alignment_strategy.value}"
+        filename = f"{model.name}_{config.mdi.subsample_factor}_{config.mdi.alignment.segmenter}_{config.mdi.alignment.aligner}"
         export_point_cloud_to_ply(
             pts.cpu().numpy(),
             rgbs.cpu().numpy(),

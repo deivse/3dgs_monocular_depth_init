@@ -1,9 +1,11 @@
 import abc
 from pathlib import Path
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
+import numpy as np
 import torch
 
+from gs_init_compare.depth_alignment.config import DepthSegmentationConfig
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
@@ -19,7 +21,6 @@ class DepthAlignmentStrategy(abc.ABC):
     @abc.abstractmethod
     def align(
         cls,
-        image: torch.Tensor,
         predicted_depth: PredictedDepth,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
@@ -33,5 +34,11 @@ class DepthAlignmentStrategy(abc.ABC):
             predicted_depth: The predicted depth map. Shape: [Width, Height]
             sfm_points_camera_coords: The (y, x) (in that order!) coordinates of the SfM points in the camera frame. Shape: [2, NumPoints]
             sfm_points_depth: The depth of the SfM points. Shape: [NumPoints]
-            ransac_config: Configuration for RANSAC (will be ignored if not applicable).
+            config: Config
+            debug_export_dir: Path | None
         """
+
+
+DepthSegmentationFn = Callable[
+    [PredictedDepth, Path, torch.Tensor, DepthSegmentationConfig], np.ndarray
+]

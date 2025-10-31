@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
+from typing import Literal, Optional
 
 
 class DepthAlignmentStrategyEnum(str, Enum):
@@ -8,23 +8,22 @@ class DepthAlignmentStrategyEnum(str, Enum):
     ransac = "ransac"
     msac = "msac"
     interp = "interp"
-    sam = "sam"
 
     def get_implementation(self):
         if self == self.lstsqrs:
-            from .lstsqrs import DepthAlignmentLstSqrs
+            from .alignment.lstsqrs import DepthAlignmentLstSqrs
 
             return DepthAlignmentLstSqrs
         elif self == self.ransac:
-            from .ransacs import DepthAlignmentRansac
+            from .alignment.ransacs import DepthAlignmentRansac
 
             return DepthAlignmentRansac
         elif self == self.msac:
-            from .ransacs import DepthAlignmentMsac
+            from .alignment.ransacs import DepthAlignmentMsac
 
             return DepthAlignmentMsac
         elif self == self.interp:
-            from .interp import DepthAlignmentInterpolate
+            from .alignment.interp import DepthAlignmentInterpolate
 
             return DepthAlignmentInterpolate
         elif self == self.sam:
@@ -32,8 +31,69 @@ class DepthAlignmentStrategyEnum(str, Enum):
 
             return DepthAlignmentSAM
         else:
-            raise NotImplementedError(
-                f"Unknown depth alignment strategy: {self}")
+            raise NotImplementedError(f"Unknown depth alignment strategy: {self}")
+
+
+class DepthSegmentationStrategyEnum(str, Enum):
+    slic = "slic"
+    sam = "sam"
+
+    def get_implementation(self):
+        if self == self.slic:
+            from .segmentation.slic import segment_pred_depth_slic
+
+            return segment_pred_depth_slic
+        elif self == self.sam:
+            from .segmentation.sam import segment_pred_depth_sam
+
+            return segment_pred_depth_sam
+        else:
+            raise NotImplementedError(f"Unknown depth segmentation strategy: {self}")
+
+
+@dataclass
+class SAMSegmentationconfig:
+    degenerate_mask_thresh: float = 0.9
+    """
+    Masks the area of which is above this fraction of the image area are ignored as degenerate.
+    """
+
+    expansion_radius: int = 4
+    """
+    Since SAM masks don't necessarily cover the entire object, expand each mask by this
+    radius (in pixels) so merging can properly detect neighboring regions.
+    """
+    tiny_region_area_fraction: float = 1e-4
+    """
+    Disconnected sub-regions of a given SAM mask that are smaller than this fraction of the image area
+    are assigned new region IDs so they can be removed during merging.
+    """
+
+
+@dataclass
+class SLICSegmentationConfig:
+    compactness = 0.01
+    num_regions = 40
+
+
+@dataclass
+class DepthSegmentationConfig:
+    region_margin: int = 10
+    """
+    Pixels closer than this distance from the depth segmentation boundary are ignored when interpolating scale factors. 
+    Helps avoid issues at object boundaries. The value is normalized for image size, for an image of size (H, W), the actual margin is:
+        margin = int(segmentation_region_margin * min(H, W) / 480)
+    """
+    propagate_mask: bool = False
+    """
+    If segmentation is used, mask out deadzones around segmentation boundaries in the alignment pipeline output mask.
+    """
+
+    min_sfm_pts_in_region: int = 5
+    min_region_area_fraction: float = 0.015
+
+    sam: SAMSegmentationconfig = SAMSegmentationconfig()
+    slic: SLICSegmentationConfig = SLICSegmentationConfig()
 
 
 @dataclass
@@ -52,20 +112,6 @@ class InterpConfig:
     init: Literal["lstsqrs", "ransac"] | None = "ransac"
     """If set, use this method to get an initial estimate of scale and shift before scale factor interpolation."""
 
-    segmentation: Literal["sam", "slic"] | None = "none"
-    """If true, use SAM or SLIC based segmentation algorithm to split the image into regions and align each region separately"""
-    
-    segmentation_region_margin: int = 10
-    """
-    Pixels closer than this distance from the depth segmentation boundary are ignored when interpolating scale factors. 
-    Helps avoid issues at object boundaries. The value is normalized for image size, for an image of size (H, W), the actual margin is:
-        margin = int(segmentation_region_margin * min(H, W) / 480)
-    """
-    segmentation_deadzone_mask: bool = False
-    """
-    If segmentation is used, mask out deadzones around segmentation boundaries in the output mask.
-    """
-
     scale_outlier_removal: bool = True
     """If true, use Local Outlier Factor to remove outliers in scale factors before RBF interpolation"""
 
@@ -76,3 +122,16 @@ class InterpConfig:
     """RBF kernel type, see torch_rbf doc"""
     max_rbf_points: int = 5000
     """Maximum number of points to use for RBF interpolation, -1 means use all points"""
+
+
+@dataclass
+class DepthAlignmentConfig:
+    # Strategy to align predicted depth to depth of known SfM points.
+    segmenter: Optional[DepthSegmentationStrategyEnum] = None
+    aligner: DepthAlignmentStrategyEnum = DepthAlignmentStrategyEnum.ransac
+
+    segmentation: DepthSegmentationConfig = DepthSegmentationConfig()
+
+    # Applies to both RANSAC and MSAC.
+    ransac: RansacConfig = RansacConfig()
+    interp: InterpConfig = InterpConfig()

@@ -10,14 +10,13 @@ from .lstsqrs import align_depth_least_squares
 import math
 import torch
 
-from .interface import DepthAlignmentResult, DepthAlignmentStrategy
+from ..interface import DepthAlignmentResult, DepthAlignmentStrategy
 
 
 class DepthAlignmentRansac(DepthAlignmentStrategy):
     @classmethod
     def align(
         cls,
-        image: torch.Tensor,
         predicted_depth: PredictedDepth,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
@@ -31,7 +30,7 @@ class DepthAlignmentRansac(DepthAlignmentStrategy):
             sfm_points_camera_coords,
             sfm_points_depth,
             _ransac_loss,
-            config.mdi.ransac,
+            config.mdi.alignment.ransac,
             debug_export_dir,
         )
 
@@ -40,7 +39,6 @@ class DepthAlignmentMsac(DepthAlignmentStrategy):
     @classmethod
     def align(
         cls,
-        image: torch.Tensor,
         predicted_depth: PredictedDepth,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,
@@ -54,7 +52,7 @@ class DepthAlignmentMsac(DepthAlignmentStrategy):
             sfm_points_camera_coords,
             sfm_points_depth,
             _msac_loss,
-            config.mdi.ransac,
+            config.mdi.alignment.ransac,
             debug_export_dir,
         )
 

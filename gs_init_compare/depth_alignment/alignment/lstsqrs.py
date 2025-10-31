@@ -3,7 +3,7 @@ import torch
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
-from .interface import DepthAlignmentResult, DepthAlignmentStrategy
+from ..interface import DepthAlignmentResult, DepthAlignmentStrategy
 
 
 def align_depth_least_squares(depth: torch.Tensor, gt_depth: torch.Tensor):
@@ -30,7 +30,6 @@ class DepthAlignmentLstSqrs(DepthAlignmentStrategy):
     @classmethod
     def align(
         cls,
-        image: torch.Tensor,
         predicted_depth: PredictedDepth,
         sfm_points_camera_coords: torch.Tensor,
         sfm_points_depth: torch.Tensor,

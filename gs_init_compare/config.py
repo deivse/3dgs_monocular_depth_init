@@ -7,11 +7,7 @@ from gsplat.strategy import DefaultStrategy, MCMCStrategy
 from gs_init_compare.point_cloud_postprocess.config import PointCloudPostprocessConfig
 
 
-from .depth_alignment.config import (
-    DepthAlignmentStrategyEnum,
-    InterpConfig,
-    RansacConfig,
-)
+from .depth_alignment.config import DepthAlignmentConfig
 from .depth_subsampling.config import AdaptiveSubsamplingConfig
 from .depth_prediction.configs import (
     Metric3dV2Config,
@@ -37,13 +33,7 @@ class MonocularDepthInitConfig:
     depthanything: DepthAnythingV2Config = DepthAnythingV2Config()
     moge: MogeConfig = MogeConfig()
 
-    # Strategy to align predicted depth to depth of known SfM points.
-    depth_alignment_strategy: DepthAlignmentStrategyEnum = (
-        DepthAlignmentStrategyEnum.ransac
-    )
-    # Applies to both RANSAC and MSAC.
-    ransac: RansacConfig = RansacConfig()
-    interp: InterpConfig = InterpConfig()
+    alignment: DepthAlignmentConfig = DepthAlignmentConfig()
 
     # How depth is subsampled to temper the number of generated 3D points.
     # If set to an int, a constant subsampling factor is used. If set to
