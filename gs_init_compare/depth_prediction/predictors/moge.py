@@ -25,9 +25,9 @@ class MoGe(DepthPredictor):
     def predict_depth(self, img: torch.Tensor, *_):
         result = self.__model.infer(self.__preprocess(img))
         return PredictedDepth(
-            depth=result["depth"],
-            mask=result["mask"],
+            depth=result["depth"].clone(),
+            mask=result["mask"].clone(),
             depth_confidence=None,
-            normal=result["normal"],
+            normal=result["normal"].clone(),
             normal_confidence=None,
         )

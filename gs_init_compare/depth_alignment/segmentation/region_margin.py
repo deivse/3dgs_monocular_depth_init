@@ -13,19 +13,18 @@ def snap_to_int_if_close(x: torch.Tensor):
     return torch.where(mask, nearest, x)
 
 
+def get_actual_margin_size(image_shape, region_margin) -> int:
+    KERNEL_REFERENCE_IMSIZE = 1297
+    return int(region_margin * max(image_shape) / KERNEL_REFERENCE_IMSIZE)
+
+
 def calculate_region_margin_mask(
     region_map: torch.Tensor, region_margin: int
 ) -> torch.Tensor:
     if region_margin == 0:
         return torch.ones_like(region_map, dtype=torch.bool)
-
-    image_shape = region_map.shape
-
-    KERNEL_REFERENCE_IMSIZE = 1297
-    adjusted_region_margin = int(
-        region_margin * max(image_shape) / KERNEL_REFERENCE_IMSIZE
-    )
-    kernel_size = 2 * adjusted_region_margin + 1
+    
+    kernel_size = 2 * get_actual_margin_size(region_map.shape, region_margin) + 1
 
     region_map_blurred = box_blur2d(region_map[None, None].float(), ksize=kernel_size)[
         0, 0

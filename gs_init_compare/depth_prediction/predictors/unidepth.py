@@ -39,7 +39,7 @@ class UniDepth(DepthPredictor):
 
     def __predict(self, img: torch.Tensor, intrinsics: CameraIntrinsics):
         rgb = self.__preprocess(img)
-        return self.model.infer(rgb, intrinsics.K)
+        return self.model.infer(rgb, intrinsics.K.clone())
 
     def predict_depth(self, img: torch.Tensor, intrinsics: CameraIntrinsics):
         result = self.__predict(img, intrinsics)

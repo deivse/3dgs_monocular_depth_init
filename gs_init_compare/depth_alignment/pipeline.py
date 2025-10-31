@@ -195,14 +195,9 @@ class DepthAlignmentPipeline:
 
         if self.segmentation:
             segmentation_config = config.mdi.alignment.segmentation
-            # pred_depth: PredictedDepth,
-            # checkpoint_dir: Path,
-            # sfm_points_camera_coords: torch.Tensor,
-            # config: InterpConfig,
             segmentation = self.segmentation(
                 predicted_depth,
                 Path(config.mdi.cache_dir) / "checkpoints",
-                sfm_points_camera_coords,
                 segmentation_config,
             )
 

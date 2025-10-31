@@ -53,6 +53,11 @@ class DepthSegmentationStrategyEnum(str, Enum):
 
 @dataclass
 class SAMSegmentationconfig:
+    use_normals: bool = True
+    """
+    If true, merge masks for depth and normals (if available), otherwise use only depth masks.
+    """
+
     degenerate_mask_thresh: float = 0.9
     """
     Masks the area of which is above this fraction of the image area are ignored as degenerate.
@@ -89,8 +94,8 @@ class DepthSegmentationConfig:
     If segmentation is used, mask out deadzones around segmentation boundaries in the alignment pipeline output mask.
     """
 
+    min_border_grad_threshold: float = 0.0005
     min_sfm_pts_in_region: int = 5
-    min_region_area_fraction: float = 0.015
 
     sam: SAMSegmentationconfig = SAMSegmentationconfig()
     slic: SLICSegmentationConfig = SLICSegmentationConfig()

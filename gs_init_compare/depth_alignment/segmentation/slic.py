@@ -12,7 +12,6 @@ from gs_init_compare.depth_prediction.predictors.depth_predictor_interface impor
 def segment_pred_depth_slic(
     pred_depth: PredictedDepth,
     checkpoint_dir: Path,
-    sfm_points_camera_coords: torch.Tensor,
     config: DepthSegmentationConfig,
 ) -> np.ndarray:
     depth = pred_depth.depth

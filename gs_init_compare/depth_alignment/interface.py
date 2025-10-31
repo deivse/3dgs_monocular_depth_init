@@ -40,5 +40,5 @@ class DepthAlignmentStrategy(abc.ABC):
 
 
 DepthSegmentationFn = Callable[
-    [PredictedDepth, Path, torch.Tensor, DepthSegmentationConfig], np.ndarray
+    [PredictedDepth, Path, DepthSegmentationConfig], np.ndarray
 ]

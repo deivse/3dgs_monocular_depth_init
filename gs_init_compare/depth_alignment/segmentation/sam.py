@@ -68,11 +68,10 @@ def _create_segmentation(masks, image_shape, degenerate_mask_thresh: float):
 def segment_pred_depth_sam(
     pred_depth: PredictedDepth,
     checkpoint_dir: Path,
-    sfm_points_camera_coords: torch.Tensor,
     config: DepthSegmentationConfig,
 ) -> np.ndarray:
-    normals = pred_depth.normal
     depth = pred_depth.depth
+    device = depth.device
 
     depth_lower_bound = torch.quantile(depth, 0.05)
     depth_upper_bound = torch.quantile(depth, 0.95)
@@ -80,7 +79,7 @@ def segment_pred_depth_sam(
     depth[depth > depth_upper_bound] = depth_upper_bound
     depth_norm = (depth - depth.min()) / (depth.max() - depth.min() + 1e-8)
 
-    device = normals.device
+    normals = pred_depth.normal
 
     mask_generator = SamAutomaticMaskGenerator(_get_sam(checkpoint_dir, device))
     depth_rgb = (
@@ -88,8 +87,10 @@ def segment_pred_depth_sam(
     )
     masks_depth = mask_generator.generate(depth_rgb.astype(np.uint8))
 
-    if normals is not None:
-        normals_rgb = torch.round(127.5 * (normals + 1.0)).cpu().numpy().astype(np.uint8)
+    if config.sam.use_normals and normals is not None:
+        normals_rgb = (
+            torch.round(127.5 * (normals + 1.0)).cpu().numpy().astype(np.uint8)
+        )
         masks_normals = mask_generator.generate(normals_rgb)
         all_masks = masks_normals + masks_depth
     else:
@@ -101,7 +102,9 @@ def segment_pred_depth_sam(
     )
     # segmentation_depth_only = create_segmentation(masks_depth, image_shape)
     # segmentation_normals_only = create_segmentation(masks_normals, image_shape)
-    segmentation = ski.segmentation.expand_labels(segmentation, config.sam.expansion_radius)
+    segmentation = ski.segmentation.expand_labels(
+        segmentation, config.sam.expansion_radius
+    )
 
     # separate unassigned regions into connected components
     unassigned_mask = segmentation == UNASSIGNED_OVERLAP_ID

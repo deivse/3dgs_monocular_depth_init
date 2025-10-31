@@ -4,6 +4,7 @@ from typing import Optional
 import numpy as np
 import torch
 
+from matplotlib import pyplot as plt
 
 from gs_init_compare.config import Config
 from gs_init_compare.datasets.colmap import Parser
@@ -46,7 +47,7 @@ def debug_export_point_clouds(
 ):
     camera_plane = torch.dstack(
         [
-            torch.from_numpy(np.mgrid[0: imsize[0], 0: imsize[1]].T).to(
+            torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(
                 cam2world.device
             ),
             torch.ones(imsize, device=cam2world.device).T,
@@ -58,14 +59,12 @@ def debug_export_point_clouds(
 
     export_point_cloud_to_ply(
         transform_c2w(camera_plane).reshape(-1, 3).cpu().numpy(),
-        rgb_image.reshape(-1,
-                          3).cpu().numpy() if rgb_image is not None else None,
+        rgb_image.reshape(-1, 3).cpu().numpy() if rgb_image is not None else None,
         dir,
         "camera_plane",
     )
     sfm_points_repro_world = P @ torch.vstack(
-        [sfm_points.T, torch.ones(
-            sfm_points.shape[0], device=cam2world.device)]
+        [sfm_points.T, torch.ones(sfm_points.shape[0], device=cam2world.device)]
     )
     sfm_points_repro_world = sfm_points_repro_world / sfm_points_repro_world[2]
     sfm_pt_rgbs = parser.points_rgb[parser.point_indices[image_name]] / 255.0
@@ -99,10 +98,8 @@ def get_valid_sfm_pts(
     sfm_pts_camera, sfm_pts_camera_depth, mask, imsize
 ) -> tuple[torch.Tensor, torch.Tensor]:
     valid_sfm_pt_indices = torch.logical_and(
-        torch.logical_and(sfm_pts_camera[0] >=
-                          0, sfm_pts_camera[0] < imsize[0]),
-        torch.logical_and(sfm_pts_camera[1] >=
-                          0, sfm_pts_camera[1] < imsize[1]),
+        torch.logical_and(sfm_pts_camera[0] >= 0, sfm_pts_camera[0] < imsize[0]),
+        torch.logical_and(sfm_pts_camera[1] >= 0, sfm_pts_camera[1] < imsize[1]),
     )
     valid_sfm_pt_indices = torch.logical_and(
         valid_sfm_pt_indices, sfm_pts_camera_depth >= 0
@@ -152,6 +149,21 @@ def align_depth(
     sfm_points_camera, sfm_points_depth = get_valid_sfm_pts(
         sfm_points_camera, sfm_points_depth, predicted_depth.mask, imsize
     )
+    if debug_export_dir is not None:
+        debug_export_dir.mkdir(parents=True, exist_ok=True)
+        plt.figure(figsize=(10, 10))
+        plt.scatter(
+            sfm_points_camera[0].cpu(),
+            sfm_points_camera[1].cpu(),
+            s=1,
+            c="red",
+        )
+        plt.imshow(image.clone().cpu())
+        plt.axis("off")
+        plt.savefig(
+            debug_export_dir / "sfm_points_on_image.png", bbox_inches="tight", dpi=300
+        )
+        plt.close()
     return DepthAlignmentPipeline.from_config(config).align(
         image,
         predicted_depth,
@@ -168,8 +180,7 @@ def get_subsampler(cfg: Config):
     elif isinstance(cfg.mdi.subsample_factor, int):
         return StaticDepthSubsampler(cfg.mdi.subsample_factor)  # noqa: F821
     else:
-        raise ValueError(
-            f"Unsupported subsampling factor: {cfg.mdi.subsample_factor}")
+        raise ValueError(f"Unsupported subsampling factor: {cfg.mdi.subsample_factor}")
 
 
 def get_pts_from_depth(
@@ -224,8 +235,7 @@ def get_pts_from_depth(
 
     pts_camera: torch.Tensor = torch.dstack(
         [
-            torch.from_numpy(
-                np.mgrid[0: imsize[0], 0: imsize[1]].T).to(device),
+            torch.from_numpy(np.mgrid[0 : imsize[0], 0 : imsize[1]].T).to(device),
             aligned_depth,
         ],
     ).reshape(-1, 3)[mask]
@@ -238,8 +248,7 @@ def get_pts_from_depth(
         dense_world = (
             cam2world
             @ torch.vstack(
-                [dense_world, torch.ones(
-                    dense_world.shape[1], device=cam2world.device)]
+                [dense_world, torch.ones(dense_world.shape[1], device=cam2world.device)]
             )
         )[:3].T
         return dense_world
