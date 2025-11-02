@@ -3,7 +3,7 @@
 #include "geometry.h"
 #include "stack.h"
 #include "stat_accumulator.h"
-#include "util.h"
+#include <common/util.h>
 
 #include <Eigen/Dense>
 #include <iostream>
@@ -63,7 +63,7 @@ namespace {
             return oss.str();
         }
         void print() const { std::cout << to_string(); }
-        void save() const { util::dump_str_to_file("min_gaussian_extents_stats.txt", to_string()); }
+        void save() const { common::dump_str_to_file("min_gaussian_extents_stats.txt", to_string()); }
     };
 } // namespace
 
@@ -191,7 +191,7 @@ namespace {
             }
             return oss.str();
         }
-        void save() const { util::dump_str_to_file("subsample_pointcloud_stats.txt", to_string()); }
+        void save() const { common::dump_str_to_file("subsample_pointcloud_stats.txt", to_string()); }
         void print() const { std::cout << to_string(); }
     };
 

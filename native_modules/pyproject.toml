@@ -1,0 +1,14 @@
+[build-system]
+requires = ["scikit-build-core-conan"]
+build-backend = "scikit_build_core_conan.build"
+
+[project]
+name = "mdi_native_modules"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.scikit-build-core-conan]
+build = "missing"
+
+# TODO: use custom conan profile
