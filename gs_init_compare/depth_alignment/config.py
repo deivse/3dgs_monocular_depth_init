@@ -103,10 +103,10 @@ class DepthSegmentationConfig:
 
 @dataclass
 class RansacConfig:
-    inlier_threshold: float = 0.1
+    inlier_threshold: float = 0.01
     max_iters: int = 2500
-    confidence: float = 0.99
-    sample_size: int = 2
+    confidence: float = 0.999
+    sample_size: int = 4
     min_iters: int = 0
 
 

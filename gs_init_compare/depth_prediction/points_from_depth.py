@@ -8,6 +8,7 @@ from matplotlib import pyplot as plt
 
 from gs_init_compare.config import Config
 from gs_init_compare.datasets.colmap import Parser
+from gs_init_compare.depth_alignment.exceptions import LowDepthAlignmentConfidenceError
 from gs_init_compare.depth_alignment.interface import DepthAlignmentResult
 from gs_init_compare.depth_alignment.pipeline import DepthAlignmentPipeline
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
@@ -27,9 +28,6 @@ from gs_init_compare.types import InputImage
 
 _LOGGER = logging.getLogger(__name__)
 
-
-class LowDepthAlignmentConfidenceError(Exception):
-    pass
 
 
 def debug_export_point_clouds(

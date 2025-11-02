@@ -119,48 +119,47 @@ def _align_depth_ransac_generic(
         ]
     )
 
-    h_best: tuple[float, float] | None = None
-    loss_best = float("inf")
-    inlier_indices_best = torch.empty_like(gt_depth, dtype=bool)
-    num_inliers_best = 0
+    h_best_lo: tuple[float, float] | None = None
+    inlier_indices_best_lo = torch.empty_like(gt_depth, dtype=bool)
+    num_inliers_best_lo = 0
+    loss_best_lo = float("inf")
+    loss_best_sample = float("inf")
 
     p = config
 
     for iteration in range(p.max_iters):
-        sample_indices = torch.randint(0, num_samples, (config.sample_size,))
-        h = align_depth_least_squares(
+        sample_indices = torch.randperm(num_samples)[: config.sample_size]
+        h_sample = align_depth_least_squares(
             depth[:, sample_indices], gt_depth[sample_indices]
         )
 
-        dists = _l2_dists_squared(h, depth[0], gt_depth)
-        inlier_indices = dists < p.inlier_threshold
-        loss = loss_func(dists, p.inlier_threshold)
-        if loss < loss_best:
-            h_best = align_depth_least_squares(
-                depth[:, inlier_indices], gt_depth[inlier_indices]
+        dists_sample = _l2_dists_squared(h_sample, depth[0], gt_depth)
+        inlier_indices_sample = dists_sample < p.inlier_threshold
+
+        loss_sample = loss_func(dists_sample, p.inlier_threshold)
+
+        if loss_sample < loss_best_sample:
+            h_lo = align_depth_least_squares(
+                depth[:, inlier_indices_sample], gt_depth[inlier_indices_sample]
             )
-            dists = _l2_dists_squared(h_best, depth[0], gt_depth)
-            loss_best = loss_func(dists, p.inlier_threshold)
-            inlier_indices_best = dists < p.inlier_threshold
-            num_inliers_best = torch.sum(inlier_indices_best)
+            dists_lo = _l2_dists_squared(h_lo, depth[0], gt_depth)
+            loss_lo = loss_func(dists_lo, p.inlier_threshold)
+            if loss_lo < loss_best_lo:
+                h_best_lo = h_lo
+                loss_best_lo = loss_lo
+                loss_best_sample = loss_sample
+                inlier_indices_best_lo = dists_lo < p.inlier_threshold
+                num_inliers_best_lo = torch.sum(inlier_indices_best_lo)
 
         if (
             _required_samples(
-                num_inliers_best, num_samples, config.sample_size, p.confidence
+                num_inliers_best_lo, num_samples, config.sample_size, p.confidence
             )
             <= iteration
-            and h_best is not None
+            and h_best_lo is not None
             and iteration >= config.min_iters
         ):
             break
-
-    h_best = align_depth_least_squares(
-        depth[:, inlier_indices_best], gt_depth[inlier_indices_best]
-    )
-    inlier_indices_best = (
-        torch.abs(h_best[0] * depth[0] + h_best[1] - gt_depth) < p.inlier_threshold
-    )
-    num_inliers_best = torch.sum(inlier_indices_best)
 
     if debug_export_dir is not None:
         h_test = align_depth_least_squares(depth, gt_depth)
@@ -169,7 +168,7 @@ def _align_depth_ransac_generic(
         )
         num_inliers_test = torch.sum(inlier_indices_test)
         avg_err_best = torch.mean(
-            torch.abs(h_best[0] * depth[0] + h_best[1] - gt_depth)
+            torch.abs(h_best_lo[0] * depth[0] + h_best_lo[1] - gt_depth)
         )
         avg_err_test = torch.mean(
             torch.abs(h_test[0] * depth[0] + h_test[1] - gt_depth)
@@ -178,10 +177,13 @@ def _align_depth_ransac_generic(
         debug_export_dir.mkdir(parents=True, exist_ok=True)
         with open(debug_export_dir / "ransac_log.txt", "a") as f:
             f.write(
-                f"#(iter): {iteration}, (RAN/M)SAC inliers: {num_inliers_best}, Naive inliers: {num_inliers_test}, (RAN/M)SAC Error: {avg_err_best}, Naive Error: {avg_err_test}\n"
+                f"#(iter): {iteration}, (RAN/M)SAC inliers: {num_inliers_best_lo}, Naive inliers: {num_inliers_test}, (RAN/M)SAC Error: {avg_err_best}, Naive Error: {avg_err_test}\n"
             )
+    print(
+        f"[RANSAC] Iterations: {iteration}, Inliers: {num_inliers_best_lo}/{num_samples}"
+    )
 
     return DepthAlignmentResult(
-        aligned_depth=full_predicted_depth * h_best[0] + h_best[1],
+        aligned_depth=full_predicted_depth * h_best_lo[0] + h_best_lo[1],
         mask=predicted_depth.mask,
     )
