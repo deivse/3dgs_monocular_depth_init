@@ -34,7 +34,7 @@ def merge_segmentation_regions(
     if np.unique(segmentation).size == 1:
         # only one region, return zeros (in case that region didn't have ID 0)
         segmentation = np.zeros_like(segmentation)
-        return segmentation, np.ones_like(segmentation, dtype=bool)
+        return segmentation
 
     start = time.perf_counter()
 
