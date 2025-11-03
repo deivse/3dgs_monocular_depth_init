@@ -38,24 +38,6 @@ def postprocess_point_cloud(
     config: PointCloudPostprocessConfig,
     device: str,
 ):
-    if config.subsample:
-        pts, rgbs, _, merged, mergedrgb = subsample_pointcloud(
-            pts.cpu().numpy(),
-            rgbs.cpu().numpy(),
-            intrinsic_matrices,
-            proj_matrices,
-            image_sizes,
-            params=config.subsample_params,
-        )
-        export_point_cloud_to_ply(
-            merged,
-            mergedrgb,
-            Path.cwd(),
-            "merged",
-        )
-        pts, rgbs = torch.from_numpy(pts).to(device), torch.from_numpy(rgbs).to(device)
-
-    # Perform after subsampling because more points may be considered outliers after their "duplicates" are removed
     if config.outlier_removal != OutlierRemovalMethod.off:
         outliers = get_outlier_removal_func(config.outlier_removal)(pts, config)
 
@@ -74,5 +56,22 @@ def postprocess_point_cloud(
 
         pts = pts[~outliers]
         rgbs = rgbs[~outliers]
+
+    if config.subsample:
+        pts, rgbs, _, merged, mergedrgb = subsample_pointcloud(
+            pts.cpu().numpy(),
+            rgbs.cpu().numpy(),
+            intrinsic_matrices,
+            proj_matrices,
+            image_sizes,
+            params=config.subsample_params,
+        )
+        export_point_cloud_to_ply(
+            merged,
+            mergedrgb,
+            Path.cwd(),
+            "merged",
+        )
+        pts, rgbs = torch.from_numpy(pts).to(device), torch.from_numpy(rgbs).to(device)
 
     return pts, rgbs

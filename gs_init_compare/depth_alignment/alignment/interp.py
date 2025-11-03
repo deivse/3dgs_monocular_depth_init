@@ -12,7 +12,10 @@ import logging
 from gs_init_compare.config import Config
 from gs_init_compare.depth_alignment.alignment.lstsqrs import DepthAlignmentLstSqrs
 from gs_init_compare.depth_alignment.config import InterpConfig
-from gs_init_compare.depth_alignment.segmentation import segment_pred_depth_sam, segment_pred_depth_slic
+from gs_init_compare.depth_alignment.segmentation import (
+    segment_pred_depth_sam,
+    segment_pred_depth_slic,
+)
 from gs_init_compare.depth_alignment.alignment.ransacs import DepthAlignmentRansac
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     PredictedDepth,
@@ -60,8 +63,7 @@ def rbf_interpolation(
 
     # Query RBF on grid points
     interpolated = interpolator(grid_points)
-    interpolated = interpolated.reshape(query_width, query_height)[
-        None, None, :, :]
+    interpolated = interpolated.reshape(query_width, query_height)[None, None, :, :]
     return torch.nn.functional.interpolate(
         interpolated,
         size=(W, H),
@@ -90,11 +92,10 @@ def linear_interpolation(
     dt = Delaunay(coords_np)
     for corner_ix in corner_indices:
         indptr, indices = dt.vertex_neighbor_vertices
-        neighbors = indices[indptr[corner_ix]: indptr[corner_ix + 1]]
+        neighbors = indices[indptr[corner_ix] : indptr[corner_ix + 1]]
         # exclude other corners
         neighbors = np.setdiff1d(neighbors, corner_indices)
-        distances = np.linalg.norm(
-            coords_np[neighbors] - coords_np[corner_ix], axis=1)
+        distances = np.linalg.norm(coords_np[neighbors] - coords_np[corner_ix], axis=1)
         weights = 1.0 / (distances + 1e-8)
         weights /= np.sum(weights)
         corner_value = np.sum(values_np[neighbors] * weights)
@@ -105,8 +106,7 @@ def linear_interpolation(
     X = np.linspace(0, W - 1, W)
     Y = np.linspace(0, H - 1, H)
     X, Y = np.meshgrid(X, Y)
-    interp = LinearNDInterpolator(
-        dt, values_np, fill_value=np.median(values_np))
+    interp = LinearNDInterpolator(dt, values_np, fill_value=np.median(values_np))
     return torch.from_numpy(interp(X, Y)).to(values)
 
 
@@ -191,8 +191,7 @@ def scale_factor_outlier_removal(
     scale_diff_threshold = torch.quantile(scale_diff, 0.99)
     scale_outliers = scale_diff > scale_diff_threshold
 
-    position_outliers = torch.from_numpy(
-        position_outliers_np).to(scale_outliers)
+    position_outliers = torch.from_numpy(position_outliers_np).to(scale_outliers)
 
     return OutlierClassification(
         scale_only_outliers=scale_outliers & ~position_outliers,
@@ -203,27 +202,24 @@ def scale_factor_outlier_removal(
 
 
 def initial_alignment(
-    image: torch.Tensor,
     predicted_depth: PredictedDepth,
     sfm_points_camera_coords: torch.Tensor,
     gt_depth: torch.Tensor,
     config: Config,
     debug_export_dir: Path | None = None,
 ) -> DepthAlignmentResult:
-    if config.mdi.interp.init is None:
-        return predicted_depth.depth, predicted_depth.mask
-    if config.mdi.interp.init == "lstsqrs":
+    if config.mdi.alignment.interp.init is None:
+        return DepthAlignmentResult(predicted_depth.depth, predicted_depth.mask)
+    if config.mdi.alignment.interp.init == "lstsqrs":
         return DepthAlignmentLstSqrs.align(
-            image,
             predicted_depth,
             sfm_points_camera_coords,
             gt_depth,
             config,
             debug_export_dir,
         )
-    elif config.mdi.interp.init == "ransac":
+    elif config.mdi.alignment.interp.init == "ransac":
         return DepthAlignmentRansac.align(
-            image,
             predicted_depth,
             sfm_points_camera_coords,
             gt_depth,
@@ -249,13 +245,11 @@ def segment_depth_regions(
             pred_depth,
             checkpoint_dir=Path(config.mdi.cache_dir) / "checkpoints",
             sfm_points_camera_coords=sfm_points_camera_coords,
-            config=config.mdi.interp
+            config=config.mdi.interp,
         )
     elif interp_config.segmentation == "slic":
         segmentation, mask = segment_pred_depth_slic(
-            pred_depth.depth,
-            pred_depth.mask,
-            config.mdi.interp
+            pred_depth.depth, pred_depth.mask, config.mdi.interp
         )
     else:
         raise ValueError(
@@ -270,9 +264,7 @@ def segment_depth_regions(
         )
 
         if np.max(seg_np) != 0:
-            region_colors = depth_region_cmap(
-                seg_np / np.max(seg_np)
-            )[:, :, :3]
+            region_colors = depth_region_cmap(seg_np / np.max(seg_np))[:, :, :3]
         else:
             region_colors = depth_region_cmap(seg_np)[:, :, :3]
         depth_region_overlay = 0.5 * image.cpu().numpy() + 0.5 * region_colors
@@ -281,9 +273,7 @@ def segment_depth_regions(
         depth_region_overlay[~mask.cpu().numpy()] = 0.0
 
         debug_export_dir.mkdir(parents=True, exist_ok=True)
-        plt.imsave(
-            debug_export_dir / "depth_regions_overlay.png", depth_region_overlay
-        )
+        plt.imsave(debug_export_dir / "depth_regions_overlay.png", depth_region_overlay)
 
     return segmentation, mask
 
@@ -307,6 +297,14 @@ def align_depth_interpolate(
     device = predicted_depth.depth.device
     interp_config = config.mdi.alignment.interp
 
+    prealigned = initial_alignment(
+        predicted_depth,
+        sfm_points_camera_coords,
+        gt_depth,
+        config,
+        debug_export_dir,
+    )
+
     # limit number of points for RBF to avoid OOM
     if (
         interp_config.method == "rbf"
@@ -325,9 +323,10 @@ def align_depth_interpolate(
         )
 
     scale_factors = (
-        gt_depth /
-        predicted_depth.depth[sfm_points_camera_coords[1],
-                              sfm_points_camera_coords[0]]
+        gt_depth
+        / prealigned.aligned_depth[
+            sfm_points_camera_coords[1], sfm_points_camera_coords[0]
+        ]
     )
     if interp_config.scale_outlier_removal:
         outlier_type = scale_factor_outlier_removal(
@@ -338,7 +337,7 @@ def align_depth_interpolate(
             LOGGER.info(
                 "Removed %d/%d scale outlier points.",
                 outlier_mask.sum().item(),
-                num_sfm_pts
+                num_sfm_pts,
             )
         scale_factors = scale_factors[~outlier_mask]
         sfm_points_camera_coords = sfm_points_camera_coords[:, ~outlier_mask]
@@ -359,7 +358,7 @@ def align_depth_interpolate(
         )
         scale_map = scale_factors.median()
 
-    return DepthAlignmentResult(scale_map * predicted_depth.depth, predicted_depth.mask)
+    return DepthAlignmentResult(scale_map * prealigned.aligned_depth, prealigned.mask)
 
 
 class DepthAlignmentInterpolate(DepthAlignmentStrategy):

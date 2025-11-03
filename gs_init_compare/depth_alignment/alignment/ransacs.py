@@ -180,7 +180,7 @@ def _align_depth_ransac_generic(
                 f"#(iter): {iteration}, (RAN/M)SAC inliers: {num_inliers_best_lo}, Naive inliers: {num_inliers_test}, (RAN/M)SAC Error: {avg_err_best}, Naive Error: {avg_err_test}\n"
             )
     print(
-        f"[RANSAC] Iterations: {iteration}, Inliers: {num_inliers_best_lo}/{num_samples}"
+        f"[RANSAC] Iterations: {iteration}, Inliers: {num_inliers_best_lo}/{num_samples}, best scale: {h_best_lo[0]}, best shift: {h_best_lo[1]}",
     )
 
     return DepthAlignmentResult(
