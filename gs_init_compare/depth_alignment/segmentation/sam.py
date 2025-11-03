@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 import matplotlib
 import numpy as np
 import torch
@@ -81,6 +82,7 @@ def segment_pred_depth_sam(
 
     normals = pred_depth.normal
 
+    start = time.perf_counter()
     mask_generator = SamAutomaticMaskGenerator(_get_sam(checkpoint_dir, device))
     depth_rgb = (
         255.0 * matplotlib.cm.get_cmap("viridis")(depth_norm.cpu().numpy())[:, :, :3]
@@ -95,11 +97,16 @@ def segment_pred_depth_sam(
         all_masks = masks_normals + masks_depth
     else:
         all_masks = masks_depth
+    LOGGER.info(f"Creating masks took {time.perf_counter() - start:.2f} seconds")
+    start = time.perf_counter()
 
     image_shape = (depth.shape[0], depth.shape[1])
     segmentation = _create_segmentation(
         all_masks, image_shape, config.sam.degenerate_mask_thresh
     )
+    LOGGER.info(f"Initial mask merging took {time.perf_counter() - start:.2f} seconds")
+    start = time.perf_counter()
+
     # segmentation_depth_only = create_segmentation(masks_depth, image_shape)
     # segmentation_normals_only = create_segmentation(masks_normals, image_shape)
     segmentation = ski.segmentation.expand_labels(
@@ -139,5 +146,9 @@ def segment_pred_depth_sam(
                 curr_additional_label += 1
 
     segmentation = new_segmentation
+
+    LOGGER.info(
+        f"Post-processing segmentation took {time.perf_counter() - start:.2f} seconds"
+    )
 
     return segmentation

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import logging
+import time
 from typing import Dict
 import numpy as np
 import torch
@@ -34,6 +35,8 @@ def merge_segmentation_regions(
         # only one region, return zeros (in case that region didn't have ID 0)
         segmentation = np.zeros_like(segmentation)
         return segmentation, np.ones_like(segmentation, dtype=bool)
+
+    start = time.perf_counter()
 
     # Ensures that RAG includes link to region that had id 0 which ski treats as background.
     segmentation = segmentation + 1
@@ -146,6 +149,8 @@ def merge_segmentation_regions(
     segmentation -= segmentation.min()
     segmentation = ski.segmentation.relabel_sequential(segmentation)[0]
     segmentation = torch.from_numpy(segmentation).to(depth.device)
+
+    LOGGER.info(f"Merging regions took {time.perf_counter() - start:.2f} seconds")
     return segmentation
 
 
