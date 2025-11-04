@@ -41,8 +41,7 @@ class ANSIEscapes(Enum):
 
     @staticmethod
     def format(text: str, escape: str | Self):
-        seq = escape if isinstance(
-            escape, ANSIEscapes) else ANSIEscapes.by_name(escape)
+        seq = escape if isinstance(escape, ANSIEscapes) else ANSIEscapes.by_name(escape)
         return f"{seq.value}{text}{ANSIEscapes.END_SEQUENCE.value}"
 
 
@@ -202,11 +201,9 @@ def get_config_strings(args: argparse.Namespace):
         args.configs_file is not None
     )
     if num_exclusive_options_specified == 0:
-        raise ValueError(
-            "Either --configs or --configs-file must be specified.")
+        raise ValueError("Either --configs or --configs-file must be specified.")
     if num_exclusive_options_specified > 1:
-        raise ValueError(
-            "Only one of  {--configs, --configs-file} may be specified.")
+        raise ValueError("Only one of  {--configs, --configs-file} may be specified.")
 
     if args.configs_file is None:
         return args.configs
@@ -224,8 +221,7 @@ def get_all_possible_vals_of_param(name: str):
     address_parts = name.split(".")
     curr_type = Config
     for field_name in address_parts:
-        curr_type = {field.name: field.type for field in fields(curr_type)}[
-            field_name]
+        curr_type = {field.name: field.type for field in fields(curr_type)}[field_name]
 
     def raise_if_empty(vals):
         if len(vals) == 0:
@@ -321,7 +317,7 @@ def parse_config_string(config_str: str) -> list[ParamList]:
 
         found_special_val = False
         for val, handler in special_val_handlers.items():
-            full_values_part = part[eq_pos + 1:]
+            full_values_part = part[eq_pos + 1 :]
             if full_values_part == val:
                 values = handler(name)
                 if len(values) != 0:
@@ -333,9 +329,8 @@ def parse_config_string(config_str: str) -> list[ParamList]:
 
         if part[eq_pos + 1] == "{":  # List of options
             if not part[-1] == "}":
-                raise ValueError(
-                    "Invalid config string: unclosed {} at " + part)
-            values = part[eq_pos + 2: -1].replace(" ", "").split(",")
+                raise ValueError("Invalid config string: unclosed {} at " + part)
+            values = part[eq_pos + 2 : -1].replace(" ", "").split(",")
             parsed.append((name, values))
             continue
 
@@ -343,7 +338,7 @@ def parse_config_string(config_str: str) -> list[ParamList]:
             raise ValueError(
                 "{} contained in part, but open brace is not on first pos: " + part
             )
-        value = part[eq_pos + 1:]
+        value = part[eq_pos + 1 :]
         parsed.append((name, [value]))
 
     with_param_name = []
@@ -482,8 +477,7 @@ def read_param_from_last_tensorboard_step(file, param_name):
     )
     ea.Reload()
     if param_name not in ea.Tags().get("scalars", []):
-        raise ValueError(
-            f"Parameter {param_name} not found in TensorBoard logs.")
+        raise ValueError(f"Parameter {param_name} not found in TensorBoard logs.")
 
     scalars = ea.Scalars(param_name)
     if not scalars:
@@ -502,6 +496,13 @@ MCMC_GAUSSIAN_CAPS = {
     "mipnerf360/treehill": 3800000,
     "mipnerf360/room": 5500000,
     "mipnerf360/counter": 4000000,
+}
+
+MCMC_DEFAULT_PARAMS = {
+    "init_opa": 0.5,
+    "init_scale": 0.1,
+    "opacity_reg": 0.01,
+    "scale_reg": 0.01,
 }
 
 
@@ -528,8 +529,7 @@ def train_combination(
 
     if directory_exists_and_has_files(curr_output_dir) and not args.pts_only:
         if not curr_output_dir.is_dir():
-            raise ValueError(
-                f"Output path is not a directory: {curr_output_dir}")
+            raise ValueError(f"Output path is not a directory: {curr_output_dir}")
 
         if not output_dir_needs_overwrite(
             curr_output_dir, args, run_id, eval_all_iters
@@ -542,8 +542,7 @@ def train_combination(
             )
             return
 
-        new_path = rename_old_dir_with_timestamp(
-            curr_output_dir, args.output_dir)
+        new_path = rename_old_dir_with_timestamp(curr_output_dir, args.output_dir)
         print(
             ANSIEscapes.format(
                 f"Detected results mismatch. Old output directory moved to: {new_path}",
@@ -567,14 +566,6 @@ def train_combination(
     for kv_pair in make_method_config_overrides(args).items():
         overrides_cli.extend(["--set", "=".join(kv_pair)])
 
-    if "mcmc" in {param_name for param_name, _ in config}:
-        overrides_cli.extend(
-            [
-                "--set",
-                f"strategy.cap_max={MCMC_GAUSSIAN_CAPS[scene]}",
-            ]
-        )
-
     for param_name, value in config:
         param_name = param_name.replace("-", "_")
         if param_name == "strategy":
@@ -582,6 +573,15 @@ def train_combination(
                 value = "DefaultStrategy"
             elif value.lower() == "mcmc":
                 value = "MCMCStrategy"
+                overrides_cli.extend(
+                    [
+                        "--set",
+                        f"strategy.cap_max={MCMC_GAUSSIAN_CAPS[scene]}",
+                    ]
+                )
+                for key, val in MCMC_DEFAULT_PARAMS.items():
+                    overrides_cli.extend(["--set", f"{key}={val}"])
+
         overrides_cli.extend(["--set", f"{param_name}={value}"])
 
     subprocess.run(
@@ -611,11 +611,9 @@ def train_combination(
         # Delete predictions except last step and middle step:
         for iter in eval_all_iters:
             if iter not in [0, 8000, 14000, args.max_steps]:
-                Path(curr_output_dir /
-                     f"predictions-{str(iter)}.tar.gz").unlink()
+                Path(curr_output_dir / f"predictions-{str(iter)}.tar.gz").unlink()
     except FileNotFoundError as e:
-        print(ANSIEscapes.format(
-            f"Error: Training output not found:\n {e}", "red"))
+        print(ANSIEscapes.format(f"Error: Training output not found:\n {e}", "red"))
 
 
 def eval_combination(
@@ -653,7 +651,7 @@ def eval_combination(
             f"--eval-num-patches={args.eval_num_patches}",
             f"--output={output}",
             f"--data=external://{scene}",
-            f"{curr_output_dir}/predictions-{args.max_steps}.tar.gz"
+            f"{curr_output_dir}/predictions-{args.max_steps}.tar.gz",
         ]
     )
 
@@ -672,8 +670,7 @@ def adjust_combinations_if_slurm(
         raise RuntimeError(
             "SLURM_ARRAY_TASK_ID is set, but SLURM_ARRAY_TASK_COUNT or SLURM_ARRAY_TASK_MIN is not!"
         )
-    task_id, task_id_min, array_size = int(
-        task_id), int(task_id_min), int(array_size)
+    task_id, task_id_min, array_size = int(task_id), int(task_id_min), int(array_size)
 
     job_ix = task_id - task_id_min
     ansiesc_print(
@@ -697,7 +694,7 @@ def adjust_combinations_if_slurm(
         f"This job will run {this_job_tasks} combinations - [{tasks_before_this_job}, {tasks_before_this_job + this_job_tasks - 1}].",
         ANSIEscapes.YELLOW,
     )
-    return combinations[tasks_before_this_job: tasks_before_this_job + this_job_tasks]
+    return combinations[tasks_before_this_job : tasks_before_this_job + this_job_tasks]
 
 
 def get_eval_it_list(args: argparse.Namespace):
@@ -723,8 +720,7 @@ def main():
     scenes = {scene for scene, _ in combinations}
     print(
         ANSIEscapes.format("_" * 80, "bold"),
-        ANSIEscapes.format(
-            f"Will train {len(combinations)} combinations.", "bold"),
+        ANSIEscapes.format(f"Will train {len(combinations)} combinations.", "bold"),
         ANSIEscapes.format("Settings:", "bold"),
         f"\tOutput directory: {ANSIEscapes.format(args.output_dir, 'cyan')}",
         f"\tMax steps: {ANSIEscapes.format(args.max_steps, 'cyan')}",
