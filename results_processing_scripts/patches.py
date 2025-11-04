@@ -15,6 +15,7 @@ from results_processing_scripts.parameters import (
     TensorboardParameter,
 )
 from tabulate import tabulate
+import uuid, pickle
 
 from results_processing_scripts.common import (
     PARAMS,
@@ -409,8 +410,19 @@ class MakeTableFuncs:
                     not np.isfinite(patch_vals_a).all()
                     or not np.isfinite(patch_vals_b).all()
                 ):
-                    print(patch_vals_a)
-                    print(patch_vals_b)
+                    fname = f"nonfinite_debug_{uuid.uuid4().hex}.pkl"
+                    with open(fname, "wb") as f:
+                        pickle.dump(
+                            {
+                                "patch_vals_a": patch_vals_a,
+                                "patch_vals_b": patch_vals_b,
+                            },
+                            f,
+                        )
+                    logging.error(
+                        f"Non-finite values encountered. Saved arrays to {fname}"
+                    )
+                    raise RuntimeError("Non-finite patch values detected.")
 
                 m = (
                     -1
