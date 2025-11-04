@@ -137,22 +137,42 @@ def make_bin_name(bin_size, bin_ix):
     return f"[{bin_size * bin_ix}, {bin_size * (bin_ix + 1)})"
 
 
-def accumulate_param_bins(patches_a, patches_b, num_sfm_points, bin_size):
+def accumulate_param_bins(
+    patches_a: list[ParameterInstance],
+    patches_b: list[ParameterInstance],
+    num_sfm_points: list[ParameterInstance],
+    bin_size: int,
+    scene: str,
+    param_name: str,
+):
     bins_sum_count: dict[int, list[float, int]] = {}
 
-    for patch_a, patch_b, num_sfm_points in zip(patches_a, patches_b, num_sfm_points):
-        delta = patch_b.value - patch_a.value
-        bin_id: int = num_sfm_points.value // bin_size
+    patches_a: np.ndarray = np.array([p.value for p in patches_a])
+    patches_b: np.ndarray = np.array([p.value for p in patches_b])
+    num_sfm_points: np.ndarray = np.array(num_sfm_points)
+
+    valid_indices = np.isfinite(patches_a) & np.isfinite(patches_b)
+    if not np.all(valid_indices):
+        logging.warning(
+            "Encountered invalid patch values for scene %s param %s", scene, param_name
+        )
+
+    patches_a = patches_a[valid_indices]
+    patches_b = patches_b[valid_indices]
+
+    deltas: np.ndarray = patches_b - patches_a
+    for i in range(deltas.size):
+        bin_id: int = num_sfm_points[i] // bin_size
         if bin_id not in bins_sum_count:
-            bins_sum_count[bin_id] = [delta, 1]
+            bins_sum_count[bin_id] = [deltas[i], 1]
         else:
             prev_sum = bins_sum_count[bin_id][0]
-            bins_sum_count[bin_id][0] += delta
+            bins_sum_count[bin_id][0] += deltas[i]
             bins_sum_count[bin_id][1] += 1
 
         if bins_sum_count[bin_id][0] != bins_sum_count[bin_id][0]:
             raise RuntimeError(
-                f"Sum mismatch in bin {bin_id}: {bins_sum_count[bin_id][0]} vs {prev_sum} + {delta}"
+                f"Sum mismatch in bin {bin_id}: {bins_sum_count[bin_id][0]} vs {prev_sum} + {deltas[i]}"
             )
 
     # check vals, nan is creeping in somehow
@@ -207,7 +227,7 @@ class MakeTableFuncs:
             )
 
             bins, _ = accumulate_param_bins(
-                patches_a, patches_b, num_sfm_points, args.bin_size
+                patches_a, patches_b, num_sfm_points, args.bin_size, scene, param.name
             )
 
             min_bin_id, max_bin_id = min(bins.keys()), max(bins.keys())
@@ -270,7 +290,7 @@ class MakeTableFuncs:
                 )
 
             return accumulate_param_bins(
-                patches_a, patches_b, num_sfm_points, args.bin_size
+                patches_a, patches_b, num_sfm_points, args.bin_size, scene, param.name
             )
 
         min_bin_id, max_bin_id = None, None
@@ -352,6 +372,17 @@ class MakeTableFuncs:
             patch_vals_a = np.array([p.value for p in patches_a])
             patch_vals_b = np.array([p.value for p in patches_b])
 
+            valid_indices = np.isfinite(patch_vals_a) & np.isfinite(patch_vals_b)
+            if not np.all(valid_indices):
+                logging.warning(
+                    "Encountered invalid patch values for scene %s param %s",
+                    scene,
+                    param.name,
+                )
+
+            patch_vals_a = patch_vals_a[valid_indices]
+            patch_vals_b = patch_vals_b[valid_indices]
+
             percentiles = list(range(10, 101, 10))
             percentile_indices = patch_percentile_indices(
                 patch_vals_a
@@ -405,24 +436,16 @@ class MakeTableFuncs:
                 patch_vals_b = np.array(
                     [p.value for patches in patches_per_image_b for p in patches]
                 )
-
-                if (
-                    not np.isfinite(patch_vals_a).all()
-                    or not np.isfinite(patch_vals_b).all()
-                ):
-                    fname = f"nonfinite_debug_{uuid.uuid4().hex}.pkl"
-                    with open(fname, "wb") as f:
-                        pickle.dump(
-                            {
-                                "patch_vals_a": patch_vals_a,
-                                "patch_vals_b": patch_vals_b,
-                            },
-                            f,
-                        )
-                    logging.error(
-                        f"Non-finite values encountered. Saved arrays to {fname}"
+                valid_indices = np.isfinite(patch_vals_a) & np.isfinite(patch_vals_b)
+                if not np.all(valid_indices):
+                    logging.warning(
+                        "Encountered invalid patch values for scene %s param %s",
+                        scene,
+                        param.name,
                     )
-                    raise RuntimeError("Non-finite patch values detected.")
+
+                patch_vals_a = patch_vals_a[valid_indices]
+                patch_vals_b = patch_vals_b[valid_indices]
 
                 m = (
                     -1
