@@ -323,6 +323,10 @@ class MakeTableFuncs:
             patch_vals_a = np.array([p.value for p in patches_a])
             patch_vals_b = np.array([p.value for p in patches_b])
 
+            if np.isinf(patch_vals_a).any() or np.isinf(patch_vals_b).any():
+                print(patch_vals_a)
+                print(patch_vals_b)
+
             percentiles = list(range(10, 101, 10))
             percentile_indices = patch_percentile_indices(
                 patch_vals_a if param.ordering == ParamOrdering.HIGHER_IS_BETTER else (patch_vals_a * -1), percentiles)
