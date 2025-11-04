@@ -149,7 +149,7 @@ def accumulate_param_bins(
 
     patches_a: np.ndarray = np.array([p.value for p in patches_a])
     patches_b: np.ndarray = np.array([p.value for p in patches_b])
-    num_sfm_points: np.ndarray = np.array(num_sfm_points)
+    num_sfm_points: np.ndarray = np.array([p.value for p in num_sfm_points])
 
     valid_indices = np.isfinite(patches_a) & np.isfinite(patches_b)
     if not np.all(valid_indices):
