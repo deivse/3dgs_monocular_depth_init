@@ -710,6 +710,7 @@ def main():
     configs: list[ParamList] = []
     for config_str in get_config_strings(args):
         configs.extend(parse_config_string(config_str))
+    configs = list(set(configs)) # deduplicate
 
     args_str = get_args_str(args)
     eval_all_iters = get_eval_it_list(args)
