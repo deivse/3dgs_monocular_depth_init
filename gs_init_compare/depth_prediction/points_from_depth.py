@@ -29,6 +29,22 @@ from gs_init_compare.types import InputImage
 _LOGGER = logging.getLogger(__name__)
 
 
+def debug_export_depth_map(depth: torch.Tensor, mask: torch.Tensor, dir: Path):
+    dir.mkdir(exist_ok=True, parents=True)
+    depth_np: np.ndarray = depth.cpu().numpy()
+    mask_np: np.ndarray = mask.cpu().numpy()
+    depth_vis: np.ndarray = depth_np.copy()
+
+    vmax = np.percentile(depth_np[mask_np.reshape(depth.shape)], 99)
+    depth_vis = depth_vis / vmax
+    depth_vis = np.clip(depth_vis, 0.0, 1.0)
+
+    colormap = plt.get_cmap("viridis")
+    depth_vis = colormap(depth_vis)[:, :, :3]
+    depth_vis[~mask_np.reshape(depth.shape)] = 0.0
+    plt.imsave(dir / "masked_depth.png", depth_vis)
+    
+
 
 def debug_export_point_clouds(
     imsize,
@@ -181,6 +197,29 @@ def get_subsampler(cfg: Config):
         raise ValueError(f"Unsupported subsampling factor: {cfg.mdi.subsample_factor}")
 
 
+def depth_gradient_mask(
+    depth: torch.Tensor,
+    gradient_threshold: float,
+) -> torch.Tensor:
+    """Computes a mask of pixels where the depth gradient is below a threshold.
+
+    Args:
+        depth: (H, W) tensor of depth values.
+        gradient_threshold: Threshold for the depth gradient.
+    Returns:
+        A boolean tensor of shape (H, W) where True indicates that the depth
+        gradient is below the threshold.
+    """
+    depth_dx = torch.abs(depth[:, 1:] - depth[:, :-1])
+    depth_dy = torch.abs(depth[1:, :] - depth[:-1, :])
+    depth_grad_both = torch.zeros_like(depth, dtype=depth.dtype)
+    depth_grad_both[:, 1:] += depth_dx
+    depth_grad_both[1:, :] += depth_dy
+    depth_grad_both = depth_grad_both - depth_grad_both.min()
+    depth_grad_both = depth_grad_both / (depth_grad_both.max() + 1e-8)
+    return depth_grad_both <= gradient_threshold
+
+
 def get_pts_from_depth(
     predicted_depth: PredictedDepth,
     image: InputImage,
@@ -227,9 +266,18 @@ def get_pts_from_depth(
     if torch.any(torch.isinf(aligned_depth[mask])):
         _LOGGER.warning("Encountered negative depths in aligned depth map.")
 
-    # NOTE: get_mask applies the passed in mask as well
-    mask = get_subsampler(config).get_mask(image.data, aligned_depth, mask)
-    mask &= (aligned_depth >= 0).flatten()
+    subsampling_mask = get_subsampler(config).get_mask(image.data, aligned_depth, mask)
+
+    mask = (mask & (aligned_depth >= 0)).flatten()
+    if config.mdi.depth_grad_mask_thresh is not None:
+        depth_grad_mask = depth_gradient_mask(
+            aligned_depth, config.mdi.depth_grad_mask_thresh
+        ).flatten()
+        mask &= depth_grad_mask
+    if debug_export_dir is not None:
+        debug_export_depth_map(aligned_depth, mask, debug_export_dir)
+
+    mask = mask & subsampling_mask
 
     pts_camera: torch.Tensor = torch.dstack(
         [
