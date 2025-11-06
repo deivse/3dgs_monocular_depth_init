@@ -35,6 +35,7 @@ class MonocularDepthInitConfig:
 
     alignment: DepthAlignmentConfig = DepthAlignmentConfig()
     depth_grad_mask_thresh: Optional[float] = None
+    include_sfm_points: bool = False
 
     # How depth is subsampled to temper the number of generated 3D points.
     # If set to an int, a constant subsampling factor is used. If set to

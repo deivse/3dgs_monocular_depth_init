@@ -176,6 +176,10 @@ def pts_and_rgb_from_monocular_depth(
 
         progress_bar.set_description(f"Last processed '{image.name}'", refresh=True)
 
+    if config.mdi.include_sfm_points:
+        points_list.append(torch.from_numpy(parser.points).float().to(device))
+        rgbs_list.append(torch.from_numpy(parser.points_rgb / 255.0).float())
+
     pts = torch.cat(points_list, dim=0).float()
     rgbs = torch.cat(rgbs_list, dim=0).float()
 
