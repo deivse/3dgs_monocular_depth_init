@@ -8,7 +8,7 @@ from gs_init_compare.point_cloud_postprocess.config import PointCloudPostprocess
 
 
 from .depth_alignment.config import DepthAlignmentConfig
-from .depth_subsampling.config import AdaptiveSubsamplingConfig
+from .depth_subsampling.config import AdaptiveSubsamplingConfig, NumSfMPointsMaskConfig
 from .depth_prediction.configs import (
     Metric3dV2Config,
     DepthAnythingV2Config,
@@ -44,6 +44,8 @@ class MonocularDepthInitConfig:
     subsample_factor: Union[int, Literal["adaptive"]] = 10
     # Configuration for adaptive subsampling. Ignored if not using "adaptive" subsampling.
     adaptive_subsampling: AdaptiveSubsamplingConfig = AdaptiveSubsamplingConfig()
+    use_num_sfm_points_mask: bool = False
+    num_sfm_points_mask: NumSfMPointsMaskConfig = NumSfMPointsMaskConfig()
 
     postprocess: PointCloudPostprocessConfig = PointCloudPostprocessConfig()
     limit_init_scale: bool = False

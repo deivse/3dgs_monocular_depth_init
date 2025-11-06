@@ -14,6 +14,7 @@ from gs_init_compare.depth_alignment.pipeline import DepthAlignmentPipeline
 from gs_init_compare.depth_prediction.predictors.depth_predictor_interface import (
     PredictedDepth,
 )
+from gs_init_compare.depth_subsampling.num_sfm_points_mask import num_sfm_points_mask
 from gs_init_compare.depth_subsampling.adaptive_subsampling import (
     AdaptiveDepthSubsampler,
 )
@@ -43,7 +44,6 @@ def debug_export_depth_map(depth: torch.Tensor, mask: torch.Tensor, dir: Path):
     depth_vis = colormap(depth_vis)[:, :, :3]
     depth_vis[~mask_np.reshape(depth.shape)] = 0.0
     plt.imsave(dir / "masked_depth.png", depth_vis)
-    
 
 
 def debug_export_point_clouds(
@@ -142,9 +142,8 @@ def get_valid_sfm_pts(
     ]
 
 
-def align_depth(
+def project_and_filter_sfm_pts(
     image: torch.Tensor,
-    config: Config,
     sfm_points: torch.Tensor,
     P: torch.Tensor,
     imsize: torch.Tensor,
@@ -178,14 +177,7 @@ def align_depth(
             debug_export_dir / "sfm_points_on_image.png", bbox_inches="tight", dpi=300
         )
         plt.close()
-    return DepthAlignmentPipeline.from_config(config).align(
-        image,
-        predicted_depth,
-        sfm_points_camera,
-        sfm_points_depth,
-        config,
-        debug_export_dir,
-    )
+    return sfm_points_camera, sfm_points_depth
 
 
 def get_subsampler(cfg: Config):
@@ -253,13 +245,20 @@ def get_pts_from_depth(
     if torch.any(torch.isinf(predicted_depth.depth[predicted_depth.mask])):
         _LOGGER.warning("Encountered infinite depths in predicted depth map.")
 
-    aligned_depth, mask = align_depth(
+    sfm_points_camera, sfm_points_depth = project_and_filter_sfm_pts(
         image.data,
-        config,
         sfm_points,
         P,
         imsize,
         predicted_depth,
+        debug_export_dir,
+    )
+    aligned_depth, mask = DepthAlignmentPipeline.from_config(config).align(
+        image,
+        predicted_depth,
+        sfm_points_camera,
+        sfm_points_depth,
+        config,
         debug_export_dir,
     )
 
@@ -274,6 +273,17 @@ def get_pts_from_depth(
             aligned_depth, config.mdi.depth_grad_mask_thresh
         ).flatten()
         mask &= depth_grad_mask
+    if config.mdi.use_num_sfm_points_mask:
+        mask &= (
+            num_sfm_points_mask(
+                sfm_points_camera,
+                (imsize[1], imsize[0]),
+                config.mdi.num_sfm_points_mask,
+            )
+            .flatten()
+            .to(mask.device)
+        )
+
     if debug_export_dir is not None:
         debug_export_depth_map(aligned_depth, mask, debug_export_dir)
 
