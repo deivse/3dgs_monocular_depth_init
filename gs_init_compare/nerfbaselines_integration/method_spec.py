@@ -56,3 +56,10 @@ fi
         "supported_outputs": ("color", "depth", "accumulation"),
     }
 )
+
+register(
+    {
+        "id": "scannet++",
+        "load_dataset_function": "gs_init_compare.nerfbaselines_integration.scannetpp_nerfbaselines_loader:customized_load_nerfstudio_dataset",
+    }
+)

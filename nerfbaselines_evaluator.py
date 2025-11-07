@@ -6,6 +6,7 @@ from dataclasses import fields
 from datetime import datetime
 from enum import Enum
 import itertools
+import logging
 from math import ceil
 import os
 from pathlib import Path
@@ -84,7 +85,15 @@ def directory_exists_and_has_files(dir: Path) -> bool:
     return False
 
 
-def get_dataset_scenes(dataset_id: str, exclude_list) -> list[str]:
+def get_dataset_scenes(dataset_id: str, exclude_list) -> list[str] | list[Path]:
+    if dataset_id == "scannet++":
+        if os.environ.get("SCANNETPP_PATH", None) is None:
+            logging.warning(
+                "SCANNETPP_PATH environment variable not set. Skipping scannet++ scenes."
+            )
+            return []
+        return [d for d in Path(os.environ["SCANNETPP_PATH"]).glob("*")]
+
     scenes = get_dataset_spec(dataset_id)["metadata"]["scenes"]
 
     def excluded(scene_id):
@@ -98,10 +107,10 @@ def get_dataset_scenes(dataset_id: str, exclude_list) -> list[str]:
     ]
 
 
-ALL_SCENES = [
-    *get_dataset_scenes("mipnerf360", []),
-    *get_dataset_scenes("tanksandtemples", []),
-]
+SCENES_PER_DATASET = {
+    dataset: get_dataset_scenes(dataset, [])
+    for dataset in ["mipnerf360", "tanksandtemples", "scannet++"]
+}
 
 # print(ALL_SCENES)
 
@@ -155,10 +164,22 @@ def create_argument_parser():
         help="Maximum number of steps to run training for.",
     )
     add_argument(
-        "--scenes",
+        "--datasets",
         nargs="+",
-        default=ALL_SCENES,
-        help="Scenes to train and evaluate on. Scene names passed to nerfbaselines with 'external://' prefix.",
+        default=[],
+        help="Datasets to train and evaluate on.",
+    )
+    add_argument(
+        "--scenes",
+        nargs="*",
+        default=[],
+        help="Scenes to train and evaluate on. Scene names passed to nerfbaselines with 'external://' prefix. If both --scenes and --custom-scenes are empty, all scenes from the specified datasets are used.",
+    )
+    add_argument(
+        "--custom-scenes",
+        nargs="*",
+        default=[],
+        help="Custom scenes to train and evaluate on. Full scene names passed to nerfbaselines directly. If both --scenes and --custom-scenes are empty, all scenes from the specified datasets are used.",
     )
     add_argument(
         "--invalidate-mono-depth-cache",
@@ -420,7 +441,9 @@ def get_args_str(args: argparse.Namespace):
     UNHASHED_PARAMS = [
         "eval_frequency",
         "output_dir",
+        "datasets",
         "scenes",
+        "custom_scenes",
         "configs",
         "configs_file",
         "invalidate_mono_depth_cache",
@@ -506,6 +529,31 @@ MCMC_DEFAULT_PARAMS = {
 }
 
 
+def get_run_id(scene, config_name, args_str):
+    if isinstance(scene, Path):
+        scene_str = f"{scene.parent.name}/{scene.name}"
+    else:
+        scene_str = scene
+    run_id = args_str + config_name + scene_str
+
+    return run_id
+
+
+def get_output_dir(args, scene, config_name):
+    if isinstance(scene, Path):
+        curr_output_dir = Path(
+            args.output_dir / scene.parent.name / scene.name / config_name
+        )
+    else:
+        curr_output_dir = Path(args.output_dir / scene / config_name)
+
+    if args.run_label:
+        curr_output_dir = curr_output_dir.with_name(
+            f"{curr_output_dir.name}_{args.run_label}"
+        )
+    return curr_output_dir
+
+
 def train_combination(
     scene: str,
     config: ParamList,
@@ -519,13 +567,8 @@ def train_combination(
         sep="\n",
     )
     config_name = make_config_name(config)
-    curr_output_dir = Path(args.output_dir / scene / config_name)
-    if args.run_label:
-        curr_output_dir = curr_output_dir.with_name(
-            f"{curr_output_dir.name}_{args.run_label}"
-        )
-
-    run_id = args_str + config_name + scene
+    curr_output_dir = get_output_dir(args, scene, config_name)
+    run_id = get_run_id(scene, config_name, args_str)
 
     if directory_exists_and_has_files(curr_output_dir) and not args.pts_only:
         if not curr_output_dir.is_dir():
@@ -583,20 +626,21 @@ def train_combination(
                     overrides_cli.extend(["--set", f"{key}={val}"])
 
         overrides_cli.extend(["--set", f"{param_name}={value}"])
+    full_command = [
+        "nerfbaselines",
+        "train",
+        "--backend=python",
+        "--method=gs-init-compare",
+        f"--eval-num-patches={args.eval_num_patches}",
+        f"--output={curr_output_dir}",
+        f"--data={scene}",
+        f"--eval-all-iters={','.join(map(str, eval_all_iters))}",
+    ] + overrides_cli
 
-    subprocess.run(
-        [
-            "nerfbaselines",
-            "train",
-            "--backend=python",
-            "--method=gs-init-compare",
-            f"--eval-num-patches={args.eval_num_patches}",
-            f"--output={curr_output_dir}",
-            f"--data=external://{scene}",
-            f"--eval-all-iters={','.join(map(str, eval_all_iters))}",
-        ]
-        + overrides_cli
-    )
+    print(ANSIEscapes.format("Running command:", "bold"))
+    print(full_command[0], " ".join([f'"{x}"' for x in full_command[1:]]))
+
+    subprocess.run(full_command)
 
     try:
         checkpoint_dir = curr_output_dir / f"checkpoint-{args.max_steps}"
@@ -617,7 +661,7 @@ def train_combination(
 
 
 def eval_combination(
-    scene: str,
+    scene: str | Path,
     config: ParamList,
     args: argparse.Namespace,
 ):
@@ -627,11 +671,7 @@ def eval_combination(
         sep="\n",
     )
     config_name = make_config_name(config)
-    curr_output_dir = Path(args.output_dir / scene / config_name)
-    if args.run_label:
-        curr_output_dir = curr_output_dir.with_name(
-            f"{curr_output_dir.name}_{args.run_label}"
-        )
+    curr_output_dir = get_output_dir(args, scene, config_name)
 
     print(
         ANSIEscapes.format(
@@ -704,21 +744,35 @@ def get_eval_it_list(args: argparse.Namespace):
     return eval_all_iters
 
 
+def get_scenes(args: argparse.Namespace) -> list[str | Path]:
+    if len(args.custom_scenes) + len(args.scenes) > 0:
+        return [f"external://{scene}" for scene in args.scenes] + args.custom_scenes
+
+    scenes: list[str | Path] = []
+    for dataset in args.datasets:
+        if dataset not in SCENES_PER_DATASET:
+            raise ValueError(f"Unknown dataset specified: {dataset}")
+        scenes.extend(SCENES_PER_DATASET[dataset])
+    return scenes
+
+
 def main():
     sys.stdout.reconfigure(line_buffering=True)
     args = create_argument_parser().parse_args()
     configs: list[ParamList] = []
     for config_str in get_config_strings(args):
         configs.extend(parse_config_string(config_str))
-    configs = list(set(configs)) # deduplicate
+    configs = list(set(configs))  # deduplicate
 
     args_str = get_args_str(args)
     eval_all_iters = get_eval_it_list(args)
 
-    combinations = list(product(args.scenes, configs))
+    scenes = get_scenes(args)
+
+    combinations = list(product(scenes, configs))
     combinations = adjust_combinations_if_slurm(combinations)
-    configs = {cfg for _, cfg in combinations}
-    scenes = {scene for scene, _ in combinations}
+    configs_for_print = {cfg for _, cfg in combinations}
+    scenes_for_print = {str(scene) for scene, _ in combinations}
     print(
         ANSIEscapes.format("_" * 80, "bold"),
         ANSIEscapes.format(f"Will train {len(combinations)} combinations.", "bold"),
@@ -728,9 +782,10 @@ def main():
         f"\tEvaluation frequency: {ANSIEscapes.format(args.eval_frequency, 'cyan')}",
         "\tConfigs: "
         + ANSIEscapes.format(
-            "\n\t          ".join(make_config_name(c) for c in configs), "cyan"
+            "\n\t          ".join(make_config_name(c) for c in configs_for_print),
+            "cyan",
         ),
-        f"\tScenes: {ANSIEscapes.format(scenes, 'cyan')}",
+        f"\tScenes: {ANSIEscapes.format(scenes_for_print, 'cyan')}",
         f"\tEval all iters: {ANSIEscapes.format(eval_all_iters, 'cyan')}",
         sep="\n",
     )
