@@ -546,8 +546,10 @@ def get_output_dir(args, scene, config_name):
         curr_output_dir = Path(
             args.output_dir / scene.parent.name / scene.name / config_name
         )
-    else:
-        curr_output_dir = Path(args.output_dir / scene / config_name)
+    elif isinstance(scene, str):
+        curr_output_dir = Path(
+            args.output_dir / scene.removeprefix("external://") / config_name
+        )
 
     if args.run_label:
         curr_output_dir = curr_output_dir.with_name(
