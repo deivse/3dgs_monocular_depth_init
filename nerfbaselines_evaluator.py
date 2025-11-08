@@ -749,7 +749,12 @@ def get_scenes(args: argparse.Namespace) -> list[str | Path]:
         return [f"external://{scene}" for scene in args.scenes] + args.custom_scenes
 
     scenes: list[str | Path] = []
-    for dataset in args.datasets:
+
+    datasets = [key for key, values in SCENES_PER_DATASET.items() if len(values) > 0]
+    if args.datasets != []:
+        datasets = args.datasets
+
+    for dataset in datasets:
         if dataset not in SCENES_PER_DATASET:
             raise ValueError(f"Unknown dataset specified: {dataset}")
         scenes.extend(SCENES_PER_DATASET[dataset])
