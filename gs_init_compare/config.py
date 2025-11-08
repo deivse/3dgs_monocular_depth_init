@@ -35,7 +35,7 @@ class MonocularDepthInitConfig:
 
     alignment: DepthAlignmentConfig = DepthAlignmentConfig()
     depth_grad_mask_thresh: Optional[float] = None
-    include_sfm_points: bool = False
+    include_sfm_points: bool = True
 
     # How depth is subsampled to temper the number of generated 3D points.
     # If set to an int, a constant subsampling factor is used. If set to
@@ -44,7 +44,7 @@ class MonocularDepthInitConfig:
     subsample_factor: Union[int, Literal["adaptive"]] = 10
     # Configuration for adaptive subsampling. Ignored if not using "adaptive" subsampling.
     adaptive_subsampling: AdaptiveSubsamplingConfig = AdaptiveSubsamplingConfig()
-    use_num_sfm_points_mask: bool = False
+    use_num_sfm_points_mask: bool = True
     num_sfm_points_mask: NumSfMPointsMaskConfig = NumSfMPointsMaskConfig()
 
     postprocess: PointCloudPostprocessConfig = PointCloudPostprocessConfig()
