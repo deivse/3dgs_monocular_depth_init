@@ -73,6 +73,12 @@ def default_param_formatter(value):
     return str(value)
 
 
+def seconds_to_mins_secs_formatter(seconds: float):
+    mins = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{mins}:{secs}"
+
+
 @dataclass
 class Parameter(abc.ABC):
     name: str
@@ -145,24 +151,33 @@ class NerfbaselinesJSONParameter(Parameter):
     def __init__(
         self,
         name: str,
-        json_name: str,
+        json_path: list[str],
         formatter: Callable[[int | float], str] = default_param_formatter,
         ordering: ParamOrdering = ParamOrdering.HIGHER_IS_BETTER,
         should_highlight_best: bool = True,
     ):
         super().__init__(name, formatter, ordering, should_highlight_best)
-        self.json_name = json_name
+        self.json_path = json_path
+
+    def __get_val_by_json_path(self, dictionary):
+        val = dictionary
+        for key in self.json_path:
+            val = val[key]
+        return val
 
     def load(self, results_dir, step) -> ParameterInstance:
         json_file = results_dir / f"results-{step}.json"
         try:
             with open(json_file, "r") as f:
-                data = json.load(f)
-                return self.make_instance(data["metrics"][self.json_name])
+                data: dict = json.load(f)
+
+                return self.make_instance(self.__get_val_by_json_path(data))
         except FileNotFoundError:
             raise ValueError(f"JSON file {json_file} not found in {results_dir}")
         except KeyError:
-            raise ValueError(f"Key metrics.{self.json_name} not found in {json_file}")
+            raise ValueError(
+                f"Key metrics.{'.'.join(self.json_path)} not found in {json_file}"
+            )
         except Exception as e:
             raise ValueError(
                 f"Error loading JSON parameter {self.name} from {json_file}: {e}"
@@ -178,7 +193,7 @@ class NerfbaselinesJSONParameter(Parameter):
 
                 return [
                     [
-                        self.make_instance(metrics[self.json_name])
+                        self.make_instance(metrics[self.json_path[-1]])  # this is awful
                         for metrics in image_patches
                     ]
                     for image_patches in patches
@@ -187,5 +202,5 @@ class NerfbaselinesJSONParameter(Parameter):
             raise ValueError(f"JSON file {json_file} not found in {results_dir}")
         except Exception as e:
             raise ValueError(
-                f"Error loading patches JSON parameter {self.name} ({self.json_name}) from {json_file}: {e}"
+                f"Error loading patches JSON parameter {self.name} ({'.'.join(self.json_path)}) from {json_file}: {e}"
             )

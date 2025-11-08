@@ -1,9 +1,13 @@
-
-
 import re
 
 from tabulate import tabulate
-from results_processing_scripts.parameters import NerfbaselinesJSONParameter, ParamOrdering, Parameter, TensorboardParameter
+from results_processing_scripts.parameters import (
+    NerfbaselinesJSONParameter,
+    ParamOrdering,
+    Parameter,
+    TensorboardParameter,
+    seconds_to_mins_secs_formatter,
+)
 
 
 def make_pretty_preset_name(preset_name: str) -> str:
@@ -34,22 +38,34 @@ def make_pretty_preset_name(preset_name: str) -> str:
 
 PARAMS: dict[str, Parameter] = {
     "psnr": NerfbaselinesJSONParameter(
-        name="PSNR", json_name="psnr", ordering=ParamOrdering.HIGHER_IS_BETTER
+        name="PSNR",
+        json_path=["metrics", "psnr"],
+        ordering=ParamOrdering.HIGHER_IS_BETTER,
     ),
     "ssim": NerfbaselinesJSONParameter(
-        name="SSIM", json_name="ssim", ordering=ParamOrdering.HIGHER_IS_BETTER
+        name="SSIM",
+        json_path=["metrics", "ssim"],
+        ordering=ParamOrdering.HIGHER_IS_BETTER,
     ),
     "lpips": NerfbaselinesJSONParameter(
-        name="LPIPS", json_name="lpips", ordering=ParamOrdering.LOWER_IS_BETTER
+        name="LPIPS",
+        json_path=["metrics", "lpips"],
+        ordering=ParamOrdering.LOWER_IS_BETTER,
     ),
     "lpips_vgg": NerfbaselinesJSONParameter(
         name="LPIPS(VGG)",
-        json_name="lpips_vgg",
+        json_path=["metrics", "lpips_vgg"],
         ordering=ParamOrdering.LOWER_IS_BETTER,
     ),
-    "num_sfm_points": NerfbaselinesJSONParameter(
+    "train_time": NerfbaselinesJSONParameter(
+        name="Training Time",
+        json_path=["nb_info", "total_train_time"],
+        ordering=ParamOrdering.LOWER_IS_BETTER,
+        formatter=seconds_to_mins_secs_formatter,
+    ),
+    "num_sfm_points": NerfbaselinesJSONParameter(  # for patches only
         name="Num Sfm Points",
-        json_name="num_sfm_points",
+        json_path=["num_sfm_points"],
         formatter=lambda val: f"{int(val):,}",
     ),
     "num_gaussians": TensorboardParameter(
@@ -127,8 +143,7 @@ def preset_without_predictor(preset_id: str):
 
 
 def format_best(val, output_fmt):
-    MARKDOWN_FORMATS = ["github", "grid", "pipe",
-                        "jira", "presto", "pretty", "rst"]
+    MARKDOWN_FORMATS = ["github", "grid", "pipe", "jira", "presto", "pretty", "rst"]
     if output_fmt in MARKDOWN_FORMATS:
         return f"***{val}***"
     if output_fmt == "latex":
@@ -157,8 +172,7 @@ def output_table(args, table: Table):
     if args.output_format == "csv":
         table_str = table_to_csv_string(table)
     else:
-        table_str = tabulate(table, headers="firstrow",
-                             tablefmt=args.output_format)
+        table_str = tabulate(table, headers="firstrow", tablefmt=args.output_format)
 
     if args.output_file:
         with open(args.output_file, "w", encoding="utf-8") as f:
