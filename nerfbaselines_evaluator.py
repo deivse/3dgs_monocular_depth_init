@@ -103,7 +103,9 @@ def get_dataset_scenes(dataset_id: str, exclude_list) -> list[str] | list[Path]:
         return False
 
     return [
-        f"{dataset_id}/{scene['id']}" for scene in scenes if not excluded(scene["id"])
+        f"external://{dataset_id}/{scene['id']}"
+        for scene in scenes
+        if not excluded(scene["id"])
     ]
 
 
